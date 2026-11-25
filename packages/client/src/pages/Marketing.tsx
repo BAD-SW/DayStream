@@ -1,5 +1,7 @@
+import { askText, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
@@ -30,6 +32,7 @@ export function Marketing() {
 }
 
 function MarketingPage() {
+  const { t } = useTranslation('marketing');
   const navigate = useGuardedNavigate();
   const { dirtySections } = useDraftSections();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -50,21 +53,21 @@ function MarketingPage() {
   }, []);
 
   const handleSchedule = async (id: string) => {
-    const scheduledAt = prompt('Enter schedule date (ISO format, e.g. 2025-01-15T10:00:00Z):');
+    const scheduledAt = await askText({ message: t('page.schedulePrompt') });
     if (!scheduledAt) return;
     try {
       await marketingApi.scheduleCampaign(id, { scheduled_at: scheduledAt });
       setCampaigns(campaigns.map((c) => c.id === id ? { ...c, status: 'scheduled' } : c));
-    } catch { alert('Schedule failed'); }
+    } catch { void showMessage({ message: t('page.scheduleFailed'), tone: 'error' }); }
   };
 
   const handleTestSend = async (id: string) => {
-    const email = prompt('Enter test email address:');
+    const email = await askText({ message: t('page.testEmailPrompt') });
     if (!email) return;
     try {
       await marketingApi.testCampaign(id, { email });
-      alert('Test sent');
-    } catch { alert('Test send failed'); }
+      void showMessage({ message: t('page.testSent'), tone: 'success' });
+    } catch { void showMessage({ message: t('page.testFailed'), tone: 'error' }); }
   };
 
   const handleViewRecipients = async (id: string) => {
@@ -72,7 +75,7 @@ function MarketingPage() {
     try {
       const data = await marketingApi.getCampaignRecipients(id);
       setRecipients(data); setSelectedCampaign(id);
-    } catch { alert('Could not load recipients'); }
+    } catch { void showMessage({ message: t('page.recipientsFailed'), tone: 'error' }); }
   };
 
   const handleViewEnrollments = async (id: string) => {
@@ -80,11 +83,11 @@ function MarketingPage() {
     try {
       const data = await marketingApi.getSequenceEnrollments(id);
       setEnrollments(data); setSelectedSequence(id);
-    } catch { alert('Could not load enrollments'); }
+    } catch { void showMessage({ message: t('page.enrollmentsFailed'), tone: 'error' }); }
   };
 
   const tabs: { key: MarketingTab; label: string }[] = [
-    { key: 'leads', label: 'Leads' }, { key: 'campaigns', label: 'Campaigns' }, { key: 'sequences', label: 'Sequences' },
+    { key: 'leads', label: t('page.tabLeads') }, { key: 'campaigns', label: t('page.tabCampaigns') }, { key: 'sequences', label: t('page.tabSequences') },
   ];
 
   return (
@@ -92,14 +95,14 @@ function MarketingPage() {
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
       <PageHeader
-        title="Marketing"
+        title={t('page.title')}
         actions={<>
           <SaveChanges />
-          <Button onClick={() => navigate('/marketing/campaigns/new')}>New Campaign</Button>
-          <Button variant="ghost" onClick={() => navigate('/marketing/sequences/new')}>New Sequence</Button>
+          <Button onClick={() => navigate('/marketing/campaigns/new')}>{t('page.newCampaign')}</Button>
+          <Button variant="ghost" onClick={() => navigate('/marketing/sequences/new')}>{t('page.newSequence')}</Button>
         </>}
       />
-      <TabBar aria-label="Marketing sections" tabs={tabs.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+      <TabBar aria-label={t('page.sections')} tabs={tabs.map((tb) => ({ ...tb, changed: dirtySections.some((s) => s.tab === tb.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
 
       {/* Leads stays mounted, so its unsaved changes survive switching tabs. */}
@@ -107,33 +110,33 @@ function MarketingPage() {
 
       {activeTab === 'campaigns' && (
         <ListRows>
-          {campaigns.length === 0 ? <ListEmpty>No campaigns yet</ListEmpty> : campaigns.map((c: any) => (
+          {campaigns.length === 0 ? <ListEmpty>{t('page.noCampaigns')}</ListEmpty> : campaigns.map((c: any) => (
             <div key={c.id}>
               <ListRow
                 onClick={() => navigate(`/marketing/campaigns/${c.id}`)}
                 actions={<>
                   {c.status === 'draft' && (
                     <>
-                      <Button size="sm" variant="ghost" onClick={() => handleSchedule(c.id)}>Schedule</Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleTestSend(c.id)}>Test</Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleSchedule(c.id)}>{t('page.schedule')}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleTestSend(c.id)}>{t('page.test')}</Button>
                     </>
                   )}
                   <Button size="sm" variant="ghost" onClick={() => handleViewRecipients(c.id)}>
-                    {selectedCampaign === c.id ? 'Hide Recipients' : 'Recipients'}
+                    {selectedCampaign === c.id ? t('page.hideRecipients') : t('page.recipients')}
                   </Button>
-                  <Badge variant={STATUS_VARIANTS[c.status] || 'neutral'}>{c.status}</Badge>
+                  <Badge variant={STATUS_VARIANTS[c.status] || 'neutral'}>{t('status.' + c.status, { defaultValue: c.status })}</Badge>
                 </>}
               >
                 <ListRowTitle>{c.name}</ListRowTitle>
-                <ListRowMeta>{c.channel}</ListRowMeta>
+                <ListRowMeta>{t('channel.' + c.channel, { defaultValue: c.channel })}</ListRowMeta>
               </ListRow>
               {selectedCampaign === c.id && recipients.length > 0 && (
                 <div className="mk-sublist">
-                  <p className="mk-sublist__count">{recipients.length} recipients</p>
+                  <p className="mk-sublist__count">{t('page.recipientCount', { count: recipients.length })}</p>
                   {recipients.slice(0, 10).map((r: any, i: number) => (
                     <div key={i} className="mk-sublist__item">{r.email || r.name || r.customer_id}</div>
                   ))}
-                  {recipients.length > 10 && <p className="mk-sublist__count">...and {recipients.length - 10} more</p>}
+                  {recipients.length > 10 && <p className="mk-sublist__count">{t('page.andMore', { count: recipients.length - 10 })}</p>}
                 </div>
               )}
             </div>
@@ -143,30 +146,30 @@ function MarketingPage() {
 
       {activeTab === 'sequences' && (
         <ListRows>
-          {sequences.length === 0 ? <ListEmpty>No sequences yet</ListEmpty> : sequences.map((s: any) => (
+          {sequences.length === 0 ? <ListEmpty>{t('page.noSequences')}</ListEmpty> : sequences.map((s: any) => (
             <div key={s.id}>
               <ListRow
                 onClick={() => navigate(`/marketing/sequences/${s.id}`)}
                 actions={<>
                   <Button size="sm" variant="ghost" onClick={() => handleViewEnrollments(s.id)}>
-                    {selectedSequence === s.id ? 'Hide Enrollments' : 'Enrollments'}
+                    {selectedSequence === s.id ? t('page.hideEnrollments') : t('page.enrollments')}
                   </Button>
-                  <Badge variant={STATUS_VARIANTS[s.status] || 'neutral'}>{s.status}</Badge>
+                  <Badge variant={STATUS_VARIANTS[s.status] || 'neutral'}>{t('status.' + s.status, { defaultValue: s.status })}</Badge>
                 </>}
               >
                 <ListRowTitle>{s.name}</ListRowTitle>
-                {s.is_template && <span className="mk-tag">Template</span>}
+                {s.is_template && <span className="mk-tag">{t('page.template')}</span>}
               </ListRow>
               {selectedSequence === s.id && enrollments.length > 0 && (
                 <div className="mk-sublist">
-                  <p className="mk-sublist__count">{enrollments.length} enrollments</p>
+                  <p className="mk-sublist__count">{t('page.enrollmentCount', { count: enrollments.length })}</p>
                   {enrollments.slice(0, 10).map((e: any, i: number) => (
                     <div key={i} className="mk-sublist__item mk-sublist__item--split">
                       <span>{e.customer_name || e.email || e.customer_id}</span>
-                      <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{e.status}</Badge>
+                      <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{t('status.' + e.status, { defaultValue: e.status })}</Badge>
                     </div>
                   ))}
-                  {enrollments.length > 10 && <p className="mk-sublist__count">...and {enrollments.length - 10} more</p>}
+                  {enrollments.length > 10 && <p className="mk-sublist__count">{t('page.andMore', { count: enrollments.length - 10 })}</p>}
                 </div>
               )}
             </div>

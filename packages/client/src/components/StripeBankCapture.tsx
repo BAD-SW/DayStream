@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadStripe, Stripe, StripeIbanElement } from '@stripe/stripe-js';
 import { Elements, IbanElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Button } from '../design-system/components/actions/Button';
@@ -36,6 +37,7 @@ function stripeFor(pk: string): Promise<Stripe | null> {
 function BankForm({
   clientSecret, creditorName, onCaptured, onCancel,
 }: Omit<Props, 'publishableKey'>) {
+  const { t } = useTranslation('checkout');
   const stripe = useStripe();
   const elements = useElements();
   const [name, setName] = useState('');
@@ -44,7 +46,8 @@ function BankForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const creditor = creditorName || 'DayStream';
+  // The creditor comes with the capture session (the Stripe account's business); the application's name otherwise.
+  const creditor = creditorName || t('common:app_name');
   const canConfirm = !!stripe && !!name.trim() && !!email.trim() && accepted;
 
   async function handleConfirm() {
@@ -59,13 +62,13 @@ function BankForm({
       },
     });
     if (result.error) {
-      setErr(result.error.message || 'Could not set up the direct debit mandate.');
+      setErr(result.error.message || t('stripe.mandateFailed'));
       setBusy(false);
       return;
     }
     const pmId = result.setupIntent?.payment_method;
     if (typeof pmId !== 'string') {
-      setErr('Mandate setup did not return a payment method.');
+      setErr(t('stripe.mandateNoMethod'));
       setBusy(false);
       return;
     }
@@ -75,15 +78,15 @@ function BankForm({
   return (
     <div style={styles.form}>
       <div style={styles.field}>
-        <label style={styles.label}>Account holder name</label>
-        <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name on the bank account" autoComplete="off" />
+        <label style={styles.label}>{t('stripe.holderName')}</label>
+        <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder={t('stripe.holderNamePlaceholder')} autoComplete="off" />
       </div>
       <div style={styles.field}>
-        <label style={styles.label}>Email</label>
-        <input style={styles.input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="For the mandate confirmation" autoComplete="off" />
+        <label style={styles.label}>{t('stripe.email')}</label>
+        <input style={styles.input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('stripe.emailPlaceholder')} autoComplete="off" />
       </div>
       <div style={styles.field}>
-        <label style={styles.label}>IBAN</label>
+        <label style={styles.label}>{t('stripe.iban')}</label>
         <div style={styles.ibanBox}>
           <IbanElement options={{ supportedCountries: ['SEPA'], placeholderCountry: 'DE' }} />
         </div>
@@ -92,20 +95,16 @@ function BankForm({
       <label style={styles.mandate}>
         <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} style={styles.checkbox} />
         <span style={styles.mandateText}>
-          By providing your IBAN and confirming this payment, you authorize {creditor} and Stripe,
-          our payment service provider, to send instructions to your bank to debit your account, and
-          your bank to debit your account in accordance with those instructions. You are entitled to a
-          refund from your bank under the terms and conditions of your agreement with your bank. A refund
-          must be claimed within 8 weeks starting from the date on which your account was debited.
+          {t('stripe.sepaMandate', { creditor })}
         </span>
       </label>
 
       {err && <p style={styles.err}>{err}</p>}
       <div style={styles.actions}>
         <Button size="sm" variant="primary" loading={busy} disabled={!canConfirm} onClick={handleConfirm}>
-          Set up direct debit
+          {t('stripe.setUpDirectDebit')}
         </Button>
-        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>{t('common:cancel')}</button>
       </div>
     </div>
   );

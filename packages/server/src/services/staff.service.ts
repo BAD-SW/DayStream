@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { hashPassword, revokeAllUserTokens } from './auth.service';
+import { msg } from '../i18n';
 
 interface CreateStaffInput {
   tenantId: string;
@@ -98,7 +99,7 @@ export async function createStaff(input: CreateStaffInput) {
   // Create or link user account
   if (!userId) {
     if (!input.email) {
-      throw new Error('Email is required to create a staff member');
+      throw new Error(msg('errors:staff.emailIsRequiredToCreateA'));
     }
 
     // Check if a user with this email already exists in this tenant
@@ -112,13 +113,13 @@ export async function createStaff(input: CreateStaffInput) {
       // profile for the same login would show them twice and split their bookings.
       const { rows: already } = await adminPool.query('SELECT id FROM stf_profiles WHERE user_id = $1 LIMIT 1', [existingUsers[0].id]);
       if (already.length > 0) {
-        throw Object.assign(new Error('A staff member with this email already exists'), { code: 'DUPLICATE_STAFF' });
+        throw Object.assign(new Error(msg('errors:staff.aStaffMemberWithThisEmail')), { code: 'DUPLICATE_STAFF' });
       }
       userId = existingUsers[0].id;
     } else {
       // Create a new user account
       if (!input.password) {
-        throw new Error('Password is required when creating a new staff member');
+        throw new Error(msg('errors:staff.passwordIsRequiredWhenCreatingA'));
       }
       const passwordHash = await hashPassword(input.password);
       const role = canonicalRole(input.role);
@@ -357,7 +358,7 @@ export async function changeStaffRole(staffId: string, tenantId: string, role: s
     'SELECT id FROM usr_roles WHERE name = $2 AND (tenant_id = $1 OR tenant_id IS NULL) ORDER BY (tenant_id IS NULL), created_at LIMIT 1',
     [tenantId, roleNameFor(role)],
   );
-  if (!target[0]) throw new Error(`Permission role ${roleNameFor(role)} not found`);
+  if (!target[0]) throw new Error(msg('errors:staff.permissionRoleNotFound', { value: roleNameFor(role) }));
 
   const client = await adminPool.connect();
   try {
@@ -433,10 +434,10 @@ export async function updateProfilePhoto(id: string, tenantId: string, photoPath
 export async function linkUserAccount(staffId: string, tenantId: string, email: string, roleInput: string, password: string, businessId?: string): Promise<any> {
   const role = canonicalRole(roleInput);
   const staff = await getStaffById(staffId, tenantId);
-  if (!staff) throw new Error('Staff not found');
-  if (staff.user_id) throw new Error('Staff already has a linked user account');
+  if (!staff) throw new Error(msg('errors:staff.staffNotFound'));
+  if (staff.user_id) throw new Error(msg('errors:staff.staffAlreadyHasALinkedUser'));
 
-  if (!password) throw new Error('Password is required');
+  if (!password) throw new Error(msg('errors:staff.passwordIsRequired2'));
 
   // Check email uniqueness within tenant
   const { rows: existing } = await adminPool.query(
@@ -444,7 +445,7 @@ export async function linkUserAccount(staffId: string, tenantId: string, email: 
     [email, tenantId],
   );
   if (existing.length > 0) {
-    throw new Error('A user with this email already exists');
+    throw new Error(msg('errors:staff.aUserWithThisEmailAlready'));
   }
 
   // Create user
@@ -472,7 +473,7 @@ export async function linkUserAccount(staffId: string, tenantId: string, email: 
  */
 export async function resetStaffPassword(staffId: string, tenantId: string, newPassword: string): Promise<boolean> {
   const staff = await getStaffById(staffId, tenantId);
-  if (!staff || !staff.user_id) throw new Error('Staff not found or has no user account');
+  if (!staff || !staff.user_id) throw new Error(msg('errors:staff.staffNotFoundOrHasNo'));
 
   const passwordHash = await hashPassword(newPassword);
   const { rowCount } = await adminPool.query(

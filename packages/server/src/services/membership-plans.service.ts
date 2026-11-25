@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface CreatePlanInput {
   businessId: string;
@@ -29,10 +30,10 @@ interface CreatePlanInput {
 export async function createPlan(input: CreatePlanInput) {
   // Validate type + billing consistency
   if (['punch_card', 'intro_package'].includes(input.planType) && input.billingCycle !== 'one_time') {
-    throw new Error('Punch cards and intro packages must have one_time billing cycle');
+    throw new Error(msg('errors:membershipPlans.punchCardsAndIntroPackagesMust'));
   }
   if (['unlimited', 'credit', 'hybrid'].includes(input.planType) && input.billingCycle === 'one_time') {
-    throw new Error('Recurring plan types require a recurring billing cycle');
+    throw new Error(msg('errors:membershipPlans.recurringPlanTypesRequireARecurring'));
   }
 
   const { rows } = await adminPool.query(

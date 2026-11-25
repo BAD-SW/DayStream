@@ -4,6 +4,7 @@ import {
   getProviderDefinition, secretKeysFor, requiredKeysFor, listProviders, ProviderDefinition,
 } from './payments/provider-registry';
 import { getConfiguredAdapter } from './payments';
+import { msg } from '../i18n';
 
 /**
  * Processor configuration service (spec phase 10, Phase 1 UI correction).
@@ -56,7 +57,7 @@ export async function saveProcessorConfig(
   owner: ConfigOwner, provider: string, submitted: Record<string, string>, userId: string,
 ): Promise<SavedConfigView> {
   const def = getProviderDefinition(provider);
-  if (!def) throw Object.assign(new Error(`Unknown provider: ${provider}`), { code: 'UNKNOWN_PROVIDER' });
+  if (!def) throw Object.assign(new Error(msg('errors:processorConfig.unknownProvider', { provider })), { code: 'UNKNOWN_PROVIDER' });
 
   const secretKeys = new Set(secretKeysFor(provider));
   const { clause, params } = ownerFilter(owner);
@@ -87,7 +88,7 @@ export async function saveProcessorConfig(
     secretKeys.has(k) ? !secrets[k] : !config[k],
   );
   if (missing.length > 0) {
-    throw Object.assign(new Error(`Missing required fields: ${missing.join(', ')}`), { code: 'VALIDATION_ERROR', missing });
+    throw Object.assign(new Error(msg('errors:processorConfig.missingRequiredFields', { missing: missing.join(', ') })), { code: 'VALIDATION_ERROR', missing });
   }
 
   const secretsEncrypted = Object.keys(secrets).length > 0 ? encrypt(JSON.stringify(secrets)) : null;

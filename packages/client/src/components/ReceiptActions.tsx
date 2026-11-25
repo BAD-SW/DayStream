@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import * as payApi from '../api/payments';
 
@@ -8,9 +9,10 @@ import * as payApi from '../api/payments';
  * payment recorded on a customer, a membership renewal, an invoice payment...). The receipt is
  * the business's own Receipt template, the same document everywhere.
  */
-export function ReceiptActions({ kind, id, businessId, label = 'Receipt' }: {
+export function ReceiptActions({ kind, id, businessId, label }: {
   kind: 'order' | 'transaction'; id: string; businessId: string; label?: string;
 }) {
+  const { t } = useTranslation('portal');
   const [busy, setBusy] = useState<null | 'print' | 'email'>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -22,7 +24,7 @@ export function ReceiptActions({ kind, id, businessId, label = 'Receipt' }: {
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch {
-      setNote({ ok: false, text: 'The receipt could not be produced.' });
+      setNote({ ok: false, text: t('receiptActions.printFailed') });
     } finally { setBusy(null); }
   };
 
@@ -31,23 +33,23 @@ export function ReceiptActions({ kind, id, businessId, label = 'Receipt' }: {
     try {
       if (kind === 'order') {
         const r = await payApi.emailOrderReceipt(id, businessId);
-        setNote({ ok: true, text: `Receipt emailed to ${r.recipient}.` });
+        setNote({ ok: true, text: t('receiptActions.emailed', { recipient: r.recipient }) });
       } else {
         const r = await payApi.emailTransaction(id, businessId);
-        setNote({ ok: true, text: `Receipt emailed to ${r.recipient}.` });
+        setNote({ ok: true, text: t('receiptActions.emailed', { recipient: r.recipient }) });
       }
     } catch (err) {
       const code = (err as { response?: { data?: { code?: string } } }).response?.data?.code;
-      setNote({ ok: false, text: code === 'NO_RECIPIENT' ? 'The customer has no email address on file.' : 'The receipt could not be emailed.' });
+      setNote({ ok: false, text: code === 'NO_RECIPIENT' ? t('receiptActions.noRecipient') : t('receiptActions.emailFailed') });
     } finally { setBusy(null); }
   };
 
   return (
     <div style={s.wrap}>
-      <span style={s.label}>{label}</span>
+      <span style={s.label}>{label ?? t('receiptActions.label')}</span>
       <div style={s.row}>
-        <Button variant="secondary" size="sm" onClick={print} loading={busy === 'print'} disabled={!!busy}>Print</Button>
-        <Button variant="secondary" size="sm" onClick={email} loading={busy === 'email'} disabled={!!busy}>Email</Button>
+        <Button variant="secondary" size="sm" onClick={print} loading={busy === 'print'} disabled={!!busy}>{t('receiptActions.print')}</Button>
+        <Button variant="secondary" size="sm" onClick={email} loading={busy === 'email'} disabled={!!busy}>{t('receiptActions.email')}</Button>
       </div>
       {note && <span role={note.ok ? 'status' : 'alert'} style={{ ...s.note, color: note.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{note.text}</span>}
     </div>

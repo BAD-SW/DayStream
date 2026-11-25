@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Service add-ons (spec 51, gap 15; design 15). An add-on belongs to its service, like an option:
@@ -45,15 +46,15 @@ export async function setServiceAddons(
 ): Promise<ServiceAddon[]> {
   const { rows: svc } = await adminPool.query(
     'SELECT b.tenant_id FROM svc_services s JOIN sys_businesses b ON b.id = s.business_id WHERE s.id = $1 AND s.business_id = $2', [serviceId, businessId]);
-  if (!svc[0]) throw new AddonError('Service not found', 'NOT_FOUND');
+  if (!svc[0]) throw new AddonError(msg('errors:addons.serviceNotFound'), 'NOT_FOUND');
   for (const i of items) {
-    if (!i.name || !i.name.trim()) throw new AddonError('Each add-on needs a name.', 'INVALID');
-    if (!Number.isInteger(i.price) || i.price < 0) throw new AddonError('A price must be zero or more.', 'INVALID');
+    if (!i.name || !i.name.trim()) throw new AddonError(msg('errors:addons.eachAddOnNeedsAName'), 'INVALID');
+    if (!Number.isInteger(i.price) || i.price < 0) throw new AddonError(msg('errors:addons.aPriceMustBeZeroOr'), 'INVALID');
   }
   const keptIds = items.map((i) => i.addon_id).filter((id): id is string => !!id);
   if (keptIds.length > 0) {
     const { rows: own } = await adminPool.query('SELECT id FROM svc_addons WHERE service_id = $1 AND id = ANY($2::uuid[])', [serviceId, keptIds]);
-    if (own.length !== new Set(keptIds).size) throw new AddonError('One or more add-ons are not this service\'s.', 'INVALID');
+    if (own.length !== new Set(keptIds).size) throw new AddonError(msg('errors:addons.oneOrMoreAddOnsAre'), 'INVALID');
   }
   const client = await adminPool.connect();
   try {
@@ -127,19 +128,19 @@ export async function setBookingAddons(bookingId: string, businessId: string, ad
   const { rows: bk } = await adminPool.query(
     `SELECT b.service_id, biz.tenant_id FROM apt_bookings b JOIN sys_businesses biz ON biz.id = b.business_id
       WHERE b.id = $1 AND b.business_id = $2`, [bookingId, businessId]);
-  if (!bk[0]) throw new AddonError('Booking not found', 'NOT_FOUND');
+  if (!bk[0]) throw new AddonError(msg('errors:addons.bookingNotFound'), 'NOT_FOUND');
   const current = await bookingAddons(bookingId);
   const keep = new Set(ids);
   const toRemove = current.filter((c) => !keep.has(c.addon_id));
   const paid = toRemove.filter((c) => c.paid);
   if (paid.length > 0) {
-    throw new AddonError(`${paid.map((p) => p.name).join(', ')} ${paid.length === 1 ? 'is' : 'are'} already paid: remove it on its own, choosing how it is refunded.`, 'INVALID');
+    throw new AddonError(msg('errors:addons.alreadyPaidRemoveItOnIts', { value: paid.map((p) => p.name).join(', '), value2: paid.length === 1 ? 'is' : 'are' }), 'INVALID');
   }
   const newIds = ids.filter((id) => !current.some((c) => c.addon_id === id));
   const offered = newIds.length > 0 ? await serviceAddons(bk[0].service_id, businessId) : [];
   const toAdd = newIds.map((id) => {
     const o = offered.find((x) => x.id === id);
-    if (!o) throw new AddonError('An add-on chosen is not one of this service\'s.', 'INVALID');
+    if (!o) throw new AddonError(msg('errors:addons.anAddOnChosenIsNot'), 'INVALID');
     return o;
   });
   const client = await adminPool.connect();
@@ -183,6 +184,6 @@ export async function assertOffered(serviceId: string, businessId: string, addon
   if (addonIds.length === 0) return;
   const offered = await serviceAddons(serviceId, businessId);
   if (addonIds.some((id) => !offered.some((o) => o.id === id))) {
-    throw new AddonError('An add-on chosen is not one of this service\'s.', 'INVALID');
+    throw new AddonError(msg('errors:addons.anAddOnChosenIsNot'), 'INVALID');
   }
 }

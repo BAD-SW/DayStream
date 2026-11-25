@@ -1,3 +1,4 @@
+import { currentLocale } from '../i18n';
 /** Wall-clock helpers in the business's time zone (calendar and New Appointment). */
 
 export const toMin = (hm: string) => { const [h, m] = hm.split(':').map(Number); return h * 60 + (m || 0); };
@@ -19,5 +20,6 @@ export function zonedToIso(date: string, time: string, timezone: string): string
 }
 
 export const addDays = (date: string, n: number) => { const d = new Date(date + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-export const dayLabel = (date: string, o: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) => new Intl.DateTimeFormat('en-GB', { ...o, timeZone: 'UTC' }).format(new Date(date + 'T12:00:00Z'));
+/** A calendar day ("2026-11-24") as words, in the machine's format for the language shown (Phase 44). */
+export const dayLabel = (date: string, o: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) => new Intl.DateTimeFormat(currentLocale(), { ...o, timeZone: 'UTC' }).format(new Date(date + 'T12:00:00Z'));
 export const initials = (name: string) => name.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';

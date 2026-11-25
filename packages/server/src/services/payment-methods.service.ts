@@ -5,6 +5,7 @@ import {
 } from './payments';
 import { getDecryptedSecrets } from './processor-config.service';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 /**
  * Resolve the billing currency that governs an owner's bank-draw scheme.
@@ -237,10 +238,10 @@ export async function getCustomerRef(owner: MethodOwner, provider: string): Prom
  */
 export async function beginCaptureSession(
   owner: MethodOwner, methodType: MethodType,
-): Promise<{ provider: string; ownerLevel: OwnerLevel; sessionRef: string; clientSecret?: string; publishableKey?: string; debitScheme?: BankDebitSchemeId; currency?: string }> {
+): Promise<{ provider: string; ownerLevel: OwnerLevel; sessionRef: string; clientSecret?: string; publishableKey?: string; debitScheme?: BankDebitSchemeId; currency?: string; creditorName?: string | null }> {
   const account = await resolveConnectedAccount(owner);
   if (!account) {
-    throw Object.assign(new Error('No active payment processor connection for this owner'), { code: 'NO_CONNECTION' });
+    throw Object.assign(new Error(msg('errors:paymentMethods.noActivePaymentProcessorConnectionFor')), { code: 'NO_CONNECTION' });
   }
   const cfgOwner = chargingConfigOwnerFor(owner);
   const secrets = await getDecryptedSecrets(cfgOwner);
@@ -259,13 +260,13 @@ export async function beginCaptureSession(
       const matched = Object.values(BANK_DEBIT_SCHEMES).find((s) => s.currencies.includes(currency.toLowerCase()));
       if (!matched) {
         throw Object.assign(
-          new Error(`No bank-draw scheme supports ${currency.toUpperCase()} payments.`),
+          new Error(msg('errors:paymentMethods.noBankDrawSchemeSupportsPayments', { currency: currency.toUpperCase() })),
           { code: 'SCHEME_UNSUPPORTED' },
         );
       }
       if (!matched.implemented) {
         throw Object.assign(
-          new Error(`${matched.label} (${currency.toUpperCase()}) is not available yet.`),
+          new Error(msg('errors:paymentMethods.isNotAvailableYet', { label: matched.label, currency: currency.toUpperCase() })),
           { code: 'SCHEME_NOT_IMPLEMENTED' },
         );
       }
@@ -298,6 +299,8 @@ export async function beginCaptureSession(
     const { clientSecret, setupIntentId } = intent;
     const config = await getConfigForOwner(cfgOwner);
     const currency = isWallet ? await resolveOwnerCurrency(owner) : undefined;
+    // A bank debit's mandate names the creditor: whoever the Stripe account collecting the money belongs to.
+    const creditorName = scheme ? await creditorNameFor(adapter, cfgOwner, `${cfgOwner.ownerLevel}:${cfgOwner.businessId ?? cfgOwner.tenantId ?? 'platform'}`) : undefined;
     return {
       provider: account.provider,
       ownerLevel: owner.ownerLevel,
@@ -306,11 +309,37 @@ export async function beginCaptureSession(
       publishableKey: config?.publishable_key,
       ...(scheme ? { debitScheme: scheme.id } : {}),
       ...(currency ? { currency: currency.toLowerCase() } : {}),
+      ...(scheme ? { creditorName } : {}),
     };
   }
 
   // Mock fallback.
   return { provider: account.provider, ownerLevel: owner.ownerLevel, sessionRef: `sess_${account.provider}_${Date.now()}` };
+}
+
+/** The creditor's name per Stripe account, kept for an hour so Stripe is not asked on every capture. */
+const creditorNames = new Map<string, { name: string | null; at: number }>();
+
+/**
+ * Who a direct-debit mandate authorises (the creditor): the Stripe account's public business name;
+ * else the name of the connection's owner (the business, or the tenant); null for the platform's own
+ * account without a name in Stripe (the screen then shows the application's name).
+ */
+async function creditorNameFor(
+  adapter: StripeAdapter, cfgOwner: { ownerLevel: string; tenantId?: string | null; businessId?: string | null }, cacheKey: string,
+): Promise<string | null> {
+  const cached = creditorNames.get(cacheKey);
+  if (cached && Date.now() - cached.at < 60 * 60 * 1000) return cached.name;
+  let name = await adapter.accountName();
+  if (!name && cfgOwner.ownerLevel === 'business' && cfgOwner.businessId) {
+    const { rows } = await adminPool.query('SELECT name FROM sys_businesses WHERE id = $1', [cfgOwner.businessId]);
+    name = rows[0]?.name ?? null;
+  } else if (!name && cfgOwner.ownerLevel === 'tenant' && cfgOwner.tenantId) {
+    const { rows } = await adminPool.query('SELECT name FROM sys_tenants WHERE id = $1', [cfgOwner.tenantId]);
+    name = rows[0]?.name ?? null;
+  }
+  creditorNames.set(cacheKey, { name, at: Date.now() });
+  return name;
 }
 
 /** Read the non-secret config (e.g. publishable_key) for a connection owner. */
@@ -333,7 +362,7 @@ export async function storePaymentMethod(
 ): Promise<StoredPaymentMethod> {
   const account = await resolveConnectedAccount(owner);
   if (!account) {
-    throw Object.assign(new Error('No active payment processor connection for this owner'), { code: 'NO_CONNECTION' });
+    throw Object.assign(new Error(msg('errors:paymentMethods.noActivePaymentProcessorConnectionFor')), { code: 'NO_CONNECTION' });
   }
 
   const adapter = await adapterForOwner(owner, account);

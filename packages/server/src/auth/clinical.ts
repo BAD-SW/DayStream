@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { adminPool } from '../db/pool';
 import { AuthenticatedRequest, JwtPayload } from './middleware';
+import { msg } from '../i18n';
 
 /**
  * Who may see and write treatment charts (spec 51, gap 2).
@@ -25,16 +26,16 @@ export function requireClinical() {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.user) {
-      res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+      res.status(401).json({ error: msg('errors:clinical.notAuthenticated'), code: 'NOT_AUTHENTICATED' });
       return;
     }
     try {
       if (await hasClinicalAccess(authReq.user)) { next(); return; }
     } catch (e) {
       console.error('Clinical access check failed', (e as Error).message);
-      res.status(500).json({ error: 'Failed to check access', code: 'INTERNAL_ERROR' });
+      res.status(500).json({ error: msg('errors:clinical.failedToCheckAccess'), code: 'INTERNAL_ERROR' });
       return;
     }
-    res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+    res.status(403).json({ error: msg('errors:clinical.insufficientPermissions'), code: 'FORBIDDEN' });
   };
 }

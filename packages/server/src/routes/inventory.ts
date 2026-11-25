@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as inventory from '../services/inventory.service';
+import { msg } from '../i18n';
 
 /**
  * Retail inventory (spec 51, gap 7). Every route is for one business (business_id), and the
@@ -48,22 +49,22 @@ const bizOf = (req: Request) => String(req.query.business_id || req.body?.busine
 inventoryRouter.get('/products/:id/stock', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = bizOf(req);
-    if (!(await ownsBusiness(req, businessId))) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownsBusiness(req, businessId))) { error(res, msg('errors:inventory.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const p = await productOf(businessId, req.params.id);
-    if (!p) { error(res, 'Product not found', 'NOT_FOUND', 404); return; }
+    if (!p) { error(res, msg('errors:inventory.productNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { track_stock: p.track_stock, lines: await inventory.productStock(p.id, businessId) });
-  } catch (err) { console.error('Failed to load stock', (err as Error).message); error(res, 'Failed to load stock', 'INTERNAL_ERROR', 500); }
+  } catch (err) { console.error('Failed to load stock', (err as Error).message); error(res, msg('errors:inventory.failedToLoadStock'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /v1/inventory/products/:id/history?business_id= — stock changes, newest first
 inventoryRouter.get('/products/:id/history', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = bizOf(req);
-    if (!(await ownsBusiness(req, businessId))) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownsBusiness(req, businessId))) { error(res, msg('errors:inventory.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const p = await productOf(businessId, req.params.id);
-    if (!p) { error(res, 'Product not found', 'NOT_FOUND', 404); return; }
+    if (!p) { error(res, msg('errors:inventory.productNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await inventory.history(p.id, businessId, Number(req.query.limit) || 100));
-  } catch (err) { console.error('Failed to load stock history', (err as Error).message); error(res, 'Failed to load stock history', 'INTERNAL_ERROR', 500); }
+  } catch (err) { console.error('Failed to load stock history', (err as Error).message); error(res, msg('errors:inventory.failedToLoadStockHistory'), 'INTERNAL_ERROR', 500); }
 });
 
 const changeSchema = Joi.object({
@@ -81,11 +82,11 @@ const changeSchema = Joi.object({
 inventoryRouter.post('/products/:id/stock', requirePermission('services:*'), validate(changeSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:inventory.businessNotFound'), 'NOT_FOUND', 404); return; }
     const p = await productOf(b.business_id, req.params.id);
-    if (!p) { error(res, 'Product not found', 'NOT_FOUND', 404); return; }
-    if (!(await locationOf(b.business_id, b.location_id))) { error(res, 'Choose a location of this business.', 'VALIDATION_ERROR', 400); return; }
-    if (!(await variantOf(p.id, b.variant_id || null))) { error(res, 'Choose one of the product\'s options.', 'VALIDATION_ERROR', 400); return; }
+    if (!p) { error(res, msg('errors:inventory.productNotFound'), 'NOT_FOUND', 404); return; }
+    if (!(await locationOf(b.business_id, b.location_id))) { error(res, msg('errors:inventory.chooseALocationOfThisBusiness'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await variantOf(p.id, b.variant_id || null))) { error(res, msg('errors:inventory.chooseOneOfTheProductS'), 'VALIDATION_ERROR', 400); return; }
     const out = await inventory.changeStock({
       businessId: b.business_id, locationId: b.location_id, merchandiseId: p.id, variantId: b.variant_id || null,
       mode: b.mode, qty: b.qty, reason: b.reason, unitCostCents: b.unit_cost_cents ?? null, note: b.note || null,
@@ -94,7 +95,7 @@ inventoryRouter.post('/products/:id/stock', requirePermission('services:*'), val
     success(res, { on_hand: out.onHand, avg_cost_cents: out.avgCostCents });
   } catch (err) {
     if (err instanceof inventory.StockError) { error(res, err.message, err.code, err.code === 'NOT_TRACKED' || err.code === 'INVALID' ? 400 : 409); return; }
-    console.error('Failed to change stock', (err as Error).message); error(res, 'Failed to change stock', 'INTERNAL_ERROR', 500);
+    console.error('Failed to change stock', (err as Error).message); error(res, msg('errors:inventory.failedToChangeStock'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -110,25 +111,25 @@ const reorderSchema = Joi.object({
 inventoryRouter.put('/products/:id/reorder', requirePermission('services:*'), validate(reorderSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:inventory.businessNotFound'), 'NOT_FOUND', 404); return; }
     const p = await productOf(b.business_id, req.params.id);
-    if (!p) { error(res, 'Product not found', 'NOT_FOUND', 404); return; }
-    if (!(await locationOf(b.business_id, b.location_id))) { error(res, 'Choose a location of this business.', 'VALIDATION_ERROR', 400); return; }
-    if (!(await variantOf(p.id, b.variant_id || null))) { error(res, 'Choose one of the product\'s options.', 'VALIDATION_ERROR', 400); return; }
+    if (!p) { error(res, msg('errors:inventory.productNotFound'), 'NOT_FOUND', 404); return; }
+    if (!(await locationOf(b.business_id, b.location_id))) { error(res, msg('errors:inventory.chooseALocationOfThisBusiness'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await variantOf(p.id, b.variant_id || null))) { error(res, msg('errors:inventory.chooseOneOfTheProductS'), 'VALIDATION_ERROR', 400); return; }
     await inventory.setReorder({ businessId: b.business_id, locationId: b.location_id, merchandiseId: p.id, variantId: b.variant_id || null, reorderLevel: b.reorder_level, reorderQty: b.reorder_qty });
     success(res, { saved: true });
-  } catch (err) { console.error('Failed to save reorder level', (err as Error).message); error(res, 'Failed to save reorder level', 'INTERNAL_ERROR', 500); }
+  } catch (err) { console.error('Failed to save reorder level', (err as Error).message); error(res, msg('errors:inventory.failedToSaveReorderLevel'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /v1/inventory/locations/:locationId/stock?business_id= — on hand of every tracked item there (Checkout)
 inventoryRouter.get('/locations/:locationId/stock', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = bizOf(req);
-    if (!(await ownsBusiness(req, businessId))) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await locationOf(businessId, req.params.locationId))) { error(res, 'Location not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, businessId))) { error(res, msg('errors:inventory.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await locationOf(businessId, req.params.locationId))) { error(res, msg('errors:inventory.locationNotFound'), 'NOT_FOUND', 404); return; }
     const { rows: tracked } = await adminPool.query('SELECT id FROM prd_merchandise WHERE business_id = $1 AND track_stock = true', [businessId]);
     success(res, { tracked_ids: tracked.map((r: any) => r.id), stock: await inventory.stockAtLocation(businessId, req.params.locationId) });
-  } catch (err) { console.error('Failed to load stock', (err as Error).message); error(res, 'Failed to load stock', 'INTERNAL_ERROR', 500); }
+  } catch (err) { console.error('Failed to load stock', (err as Error).message); error(res, msg('errors:inventory.failedToLoadStock'), 'INTERNAL_ERROR', 500); }
 });
 
 const stockErrorStatus = (e: inventory.StockError) => (e.code === 'NOT_TRACKED' || e.code === 'INVALID' ? 400 : 409);
@@ -149,9 +150,9 @@ const transferSchema = Joi.object({
 inventoryRouter.post('/transfers', requirePermission('services:*'), validate(transferSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:inventory.businessNotFound'), 'NOT_FOUND', 404); return; }
     if (!(await locationOf(b.business_id, b.from_location_id)) || !(await locationOf(b.business_id, b.to_location_id))) {
-      error(res, 'Choose locations of this business.', 'VALIDATION_ERROR', 400); return;
+      error(res, msg('errors:inventory.chooseLocationsOfThisBusiness'), 'VALIDATION_ERROR', 400); return;
     }
     const out = await inventory.transfer({
       businessId: b.business_id, fromLocationId: b.from_location_id, toLocationId: b.to_location_id, note: b.note || null,
@@ -161,6 +162,6 @@ inventoryRouter.post('/transfers', requirePermission('services:*'), validate(tra
     success(res, out, undefined, 201);
   } catch (err) {
     if (err instanceof inventory.StockError) { error(res, err.message, err.code, stockErrorStatus(err)); return; }
-    console.error('Failed to move stock', (err as Error).message); error(res, 'Failed to move stock', 'INTERNAL_ERROR', 500);
+    console.error('Failed to move stock', (err as Error).message); error(res, msg('errors:inventory.failedToMoveStock'), 'INTERNAL_ERROR', 500);
   }
 });

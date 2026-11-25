@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface HeaderProps {
   logo?: ReactNode;
@@ -9,15 +10,16 @@ interface HeaderProps {
 }
 
 export function Header({ logo, businessLogoUrl, persona, children, actions }: HeaderProps) {
+  const { t } = useTranslation('nav');
   const showBusinessLogo = (persona === 'business' || persona === 'customer') && businessLogoUrl;
 
   return (
     <header style={styles.header}>
       <div style={styles.left}>
         {showBusinessLogo ? (
-          <img src={businessLogoUrl!} alt="Business logo" style={styles.businessLogo} />
+          <img src={businessLogoUrl!} alt={t('header.business_logo')} style={styles.businessLogo} />
         ) : (
-          logo || <span style={styles.defaultLogo}>DayStream</span>
+          logo || <span style={styles.defaultLogo}>{t('common:app_name')}</span>
         )}
       </div>
       {children && <div style={styles.center}>{children}</div>}

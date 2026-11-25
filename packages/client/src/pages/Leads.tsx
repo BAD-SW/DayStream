@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { LEAD_SOURCE_LABELS } from '@daystream/shared';
 import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
@@ -14,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { getPermissionsFromRole } from '../context/ContextManager';
 import type { Lead, LeadStage } from '../api/leads';
 import { useColumnOrder, orderColumns } from '../utils/peopleColumns';
+import { formatDate, formatNumber } from '../utils/format';
 
 // Leads' columns in the business column order (Settings → People lists, THE-18).
 const LEADS_CANONICAL: Record<string, string> = { email: 'email', phone: 'phone', owner_name: 'owner', created_at: 'created_at', lead_source: 'source', messages_sent: 'messages_sent', stage: 'stage', tags: 'tags' };
@@ -25,6 +27,7 @@ const LEADS_CANONICAL: Record<string, string> = { email: 'email', phone: 'phone'
  * Lead stages are set up under Settings → Leads.
  */
 export function Leads() {
+  const { t } = useTranslation('customers');
   const navigate = useGuardedNavigate();
   const { user } = useAuth();
   const perms = getPermissionsFromRole(user?.role || '');
@@ -55,8 +58,8 @@ export function Leads() {
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const load = useCallback(async () => {
@@ -71,9 +74,9 @@ export function Leads() {
       setStages(res.meta.stages);
       setTimezone(res.meta.timezone || 'UTC');
       setTotal(res.meta.total);
-    } catch { setMessage('Could not load the leads'); }
+    } catch { setMessage(t('leads.loadFailed')); }
     finally { setLoading(false); }
-  }, [businessId, debouncedSearch, tableFilters, archived, sort, order]);
+  }, [businessId, debouncedSearch, tableFilters, archived, sort, order, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -95,11 +98,11 @@ export function Leads() {
     const values = await leadsApi.getLeadColumnValues(businessId, key, { search: debouncedSearch || undefined, columns: tableFilters, archived });
     return values.map((v) => ({
       value: v.value, count: v.count,
-      label: key === 'lead_source' ? (v.value ? LEAD_SOURCE_LABELS[v.value] || v.value : 'No source')
-        : key === 'owner_name' ? (v.label || 'Unassigned')
+      label: key === 'lead_source' ? (v.value ? t('leadSource.' + v.value, { defaultValue: LEAD_SOURCE_LABELS[v.value] || v.value }) : t('leads.noSource'))
+        : key === 'owner_name' ? (v.label || t('leads.unassigned'))
         : v.label || v.value,
     }));
-  }, [businessId, debouncedSearch, tableFilters, archived]);
+  }, [businessId, debouncedSearch, tableFilters, archived, t]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -112,15 +115,15 @@ export function Leads() {
   // Changes made in the rows, per lead, until Save changes stores them (stage changes then go on the Timeline).
   type Fields = { lead_stage_id?: string; owner_user_id?: string | null; lead_source?: string | null };
   type Pending = Record<string, Fields & { addTags?: string[]; removeTags?: string[] }>;
-  const draft = useDraft<Pending>('leads-rows', 'Leads', {}, async (all) => {
+  const draft = useDraft<Pending>('leads-rows', t('leads.draftLabel'), {}, async (all) => {
     const left: Pending = { ...all };
     try {
       for (const [id, p] of Object.entries(all)) {
         const { addTags = [], removeTags = [], ...fields } = p;
         let row = leads.find((l) => l.id === id);
         if (Object.keys(fields).length) { const updated = await leadsApi.updateLead(businessId, id, fields); replaceRow(updated); row = row && { ...row, ...updated }; }
-        for (const t of addTags) await customersApi.assignTag(id, businessId, t);
-        for (const t of removeTags) await customersApi.removeTag(id, t);
+        for (const tagId of addTags) await customersApi.assignTag(id, businessId, tagId);
+        for (const tagId of removeTags) await customersApi.removeTag(id, tagId);
         delete left[id];
       }
     } catch (err) { draft.rebase({}, left); load(); throw err; }
@@ -171,25 +174,25 @@ export function Leads() {
   async function deleteLead(lead: Lead) {
     try {
       await customersApi.archiveCustomer(lead.id, businessId);
-      setMessage(`${fullName(lead)} was deleted. You can restore them from "Show deleted leads".`);
+      setMessage(t('leads.deleted', { name: fullName(lead) }));
       load();
-    } catch { setMessage('The lead could not be deleted'); }
+    } catch { setMessage(t('leads.deleteFailed')); }
   }
 
   async function restore(lead: Lead) {
     try {
       await leadsApi.restoreLead(businessId, lead.id);
-      setMessage(`${fullName(lead)} was restored.`);
+      setMessage(t('leads.restored', { name: fullName(lead) }));
       load();
-    } catch { setMessage('The lead could not be restored'); }
+    } catch { setMessage(t('leads.restoreFailed')); }
   }
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  const createdAt = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric', year: 'numeric' });
+  const createdAt = (iso: string) => formatDate(iso, { timeZone: timezone, month: 'short', day: 'numeric', year: 'numeric' });
 
   const allColumns = [
     {
-      key: 'first_name', header: 'Name', sortable: true,
+      key: 'first_name', header: t('leads.col.name'), sortable: true,
       render: (_: string, row: Lead) => (
         <span>
           <span style={styles.name}>{fullName(row)}</span>
@@ -198,55 +201,55 @@ export function Leads() {
       ),
     },
     {
-      key: 'owner_name', header: 'Assigned staff', sortable: true,
+      key: 'owner_name', header: t('leads.col.assignedStaff'), sortable: true,
       render: (val: string | null, row: Lead) => canEdit && !archived ? (
-        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'owner_user_id')) }} aria-label={`Assigned staff for ${fullName(row)}`} value={value(row, 'owner_user_id') || ''}
+        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'owner_user_id')) }} aria-label={t('leads.assignedStaffFor', { name: fullName(row) })} value={value(row, 'owner_user_id') || ''}
           onClick={stop} onChange={(e) => change(row, { owner_user_id: e.target.value || null })}>
-          <option value="">Unassigned</option>
+          <option value="">{t('leads.unassigned')}</option>
           {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
           {row.owner_user_id && !owners.some((o) => o.id === row.owner_user_id) && <option value={row.owner_user_id}>{val}</option>}
         </select>
-      ) : (val || 'Unassigned'),
+      ) : (val || t('leads.unassigned')),
     },
-    { key: 'created_at', header: 'Created at', sortable: true, filter: 'date' as const, render: (val: string) => createdAt(val) },
+    { key: 'created_at', header: t('leads.col.createdAt'), sortable: true, filter: 'date' as const, render: (val: string) => createdAt(val) },
     {
       // Editable in the row, like stage and staff (David, 2026-10-29: a wrong source can be corrected).
-      key: 'lead_source', header: 'Source', sortable: true,
+      key: 'lead_source', header: t('leads.col.source'), sortable: true,
       render: (val: string | null, row: Lead) => canEdit && !archived ? (
-        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'lead_source')) }} aria-label={`Source for ${fullName(row)}`} value={value(row, 'lead_source') || ''}
+        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'lead_source')) }} aria-label={t('leads.sourceFor', { name: fullName(row) })} value={value(row, 'lead_source') || ''}
           onClick={stop} onChange={(e) => change(row, { lead_source: e.target.value || null })}>
           <option value="">—</option>
-          {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{t('leadSource.' + v, { defaultValue: l })}</option>)}
         </select>
-      ) : (val ? LEAD_SOURCE_LABELS[val] || val : '—'),
+      ) : (val ? t('leadSource.' + val, { defaultValue: LEAD_SOURCE_LABELS[val] || val }) : '—'),
     },
-    { key: 'messages_sent', header: 'Messages sent', sortable: true, align: 'right' as const, render: (val: number) => <span style={styles.num}>{val}</span> },
+    { key: 'messages_sent', header: t('leads.col.messagesSent'), sortable: true, align: 'right' as const, render: (val: number) => <span style={styles.num}>{formatNumber(val)}</span> },
     {
-      key: 'stage', header: 'Lead stage', sortable: true,
+      key: 'stage', header: t('leads.col.leadStage'), sortable: true,
       render: (_: unknown, row: Lead) => canEdit && !archived ? (
-        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'lead_stage_id')) }} aria-label={`Lead stage for ${fullName(row)}`} value={value(row, 'lead_stage_id') || ''}
+        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'lead_stage_id')) }} aria-label={t('leads.leadStageFor', { name: fullName(row) })} value={value(row, 'lead_stage_id') || ''}
           onClick={stop} onChange={(e) => change(row, { lead_stage_id: e.target.value })}>
           {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       ) : (row.lead_stage_name || '—'),
     },
     {
-      key: 'tags', header: 'Tags', filter: false as const,
+      key: 'tags', header: t('leads.col.tags'), filter: false as const,
       render: (_: unknown, row: Lead) => (
         <span style={styles.tags} onClick={stop}>
-          {shownTags(row).length === 0 && <span style={styles.sub}>No tags assigned</span>}
-          {shownTags(row).map((t) => (
-            <span key={t.id} style={{ ...styles.tag, ...(t.state ? fieldMark(true) : {}), ...(t.state === 'removed' ? { textDecoration: 'line-through', opacity: 0.7 } : {}) }}
-              title={t.state === 'added' ? 'Added when you save' : t.state === 'removed' ? 'Removed when you save' : undefined}>
-              {t.name}
-              {canEdit && !archived && (t.state === 'removed'
-                ? <button style={styles.tagRemove} aria-label={`Keep tag ${t.name} on ${fullName(row)}`} title="Undo" onClick={() => addTag(row, t.id)}>↺</button>
-                : <button style={styles.tagRemove} aria-label={`Remove tag ${t.name} from ${fullName(row)}`} onClick={() => removeTag(row, t.id)}>×</button>)}
+          {shownTags(row).length === 0 && <span style={styles.sub}>{t('leads.noTags')}</span>}
+          {shownTags(row).map((tg) => (
+            <span key={tg.id} style={{ ...styles.tag, ...(tg.state ? fieldMark(true) : {}), ...(tg.state === 'removed' ? { textDecoration: 'line-through', opacity: 0.7 } : {}) }}
+              title={tg.state === 'added' ? t('leads.tagAddedOnSave') : tg.state === 'removed' ? t('leads.tagRemovedOnSave') : undefined}>
+              {tg.name}
+              {canEdit && !archived && (tg.state === 'removed'
+                ? <button style={styles.tagRemove} aria-label={t('leads.keepTag', { tag: tg.name, name: fullName(row) })} title={t('leads.undo')} onClick={() => addTag(row, tg.id)}>↺</button>
+                : <button style={styles.tagRemove} aria-label={t('leads.removeTag', { tag: tg.name, name: fullName(row) })} onClick={() => removeTag(row, tg.id)}>×</button>)}
             </span>
           ))}
           {canEdit && !archived && tags.some((t) => !shownTags(row).some((x) => x.id === t.id)) && (
-            <select style={styles.tagAdd} aria-label={`Add a tag to ${fullName(row)}`} value="" onChange={(e) => addTag(row, e.target.value)}>
-              <option value="">+ Tag</option>
+            <select style={styles.tagAdd} aria-label={t('leads.addTagTo', { name: fullName(row) })} value="" onChange={(e) => addTag(row, e.target.value)}>
+              <option value="">{t('leads.addTag')}</option>
               {tags.filter((t) => !shownTags(row).some((x) => x.id === t.id)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           )}
@@ -258,8 +261,8 @@ export function Leads() {
       render: (_: unknown, row: Lead) => (
         <span onClick={stop}>
           {archived
-            ? <Button size="sm" variant="secondary" onClick={() => restore(row)}>Restore</Button>
-            : <Button size="sm" variant="ghost" onClick={() => setToDelete(row)}>Delete lead</Button>}
+            ? <Button size="sm" variant="secondary" onClick={() => restore(row)}>{t('leads.restore')}</Button>
+            : <Button size="sm" variant="ghost" onClick={() => setToDelete(row)}>{t('leads.deleteLead')}</Button>}
         </span>
       ),
     }] : []),
@@ -269,17 +272,17 @@ export function Leads() {
   return (
     <div>
       <div style={styles.toolbar}>
-        <input style={styles.search} placeholder="Search name, email or phone" aria-label="Search leads" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input style={styles.search} placeholder={t('leads.searchPlaceholder')} aria-label={t('leads.searchLabel')} value={search} onChange={(e) => setSearch(e.target.value)} />
         <label style={styles.check}>
           <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />
-          Show deleted leads
+          {t('leads.showDeleted')}
         </label>
         <span style={styles.spacer} />
-        {canSetUp && <Link to="/settings?tab=leads" style={styles.link}>Lead stages (Settings)</Link>}
-        {canEdit && <Button onClick={() => setAdding(true)}>Add lead</Button>}
+        {canSetUp && <Link to="/settings?tab=leads" style={styles.link}>{t('leads.stagesLink')}</Link>}
+        {canEdit && <Button onClick={() => setAdding(true)}>{t('leads.addLead')}</Button>}
       </div>
 
-      <p style={styles.count} aria-live="polite">{loading ? ' ' : `${total} ${archived ? 'deleted ' : ''}${total === 1 ? 'lead' : 'leads'}`}<UnsavedTag dirty={draft.dirty} /></p>
+      <p style={styles.count} aria-live="polite">{loading ? ' ' : t(archived ? 'leads.deletedCount' : 'leads.count', { count: total })}<UnsavedTag dirty={draft.dirty} /></p>
       {message && <p style={styles.message} role="status">{message}</p>}
 
       <Table
@@ -294,7 +297,7 @@ export function Leads() {
         onLoadMore={loadMore}
         hasMore={leads.length < total}
         loadingMore={loadingMore}
-        emptyMessage={archived ? 'No deleted leads' : 'No leads'}
+        emptyMessage={archived ? t('leads.noDeleted') : t('leads.none')}
         mobileCardMode
       />
 
@@ -302,9 +305,9 @@ export function Leads() {
         open={!!toDelete}
         onClose={() => setToDelete(null)}
         onConfirm={() => { if (toDelete) deleteLead(toDelete); }}
-        title="Delete lead"
-        message={toDelete ? `Delete ${fullName(toDelete)}? They leave the Leads list and can be restored later from "Show deleted leads".` : ''}
-        confirmLabel="Delete lead"
+        title={t('leads.deleteLead')}
+        message={toDelete ? t('leads.deleteConfirm', { name: fullName(toDelete) }) : ''}
+        confirmLabel={t('leads.deleteLead')}
       />
 
       {adding && (
@@ -314,7 +317,7 @@ export function Leads() {
           owners={owners}
           tags={tags}
           onClose={() => setAdding(false)}
-          onAdded={(lead) => { setAdding(false); setMessage(`${fullName(lead)} was added.`); load(); }}
+          onAdded={(lead) => { setAdding(false); setMessage(t('leads.added', { name: fullName(lead) })); load(); }}
         />
       )}
     </div>
@@ -334,6 +337,7 @@ function AddLeadModal({ businessId, stages, owners, tags, onClose, onAdded }: {
   onClose: () => void;
   onAdded: (lead: Lead) => void;
 }) {
+  const { t } = useTranslation('customers');
   const [form, setForm] = useState({
     first_name: '', last_name: '', email: '', phone: '', lead_source: '', lead_stage_id: stages[0]?.id || '', owner_user_id: '',
   });
@@ -344,8 +348,8 @@ function AddLeadModal({ businessId, stages, owners, tags, onClose, onAdded }: {
 
   async function save() {
     setError('');
-    if (!form.first_name.trim()) { setError('First name is required'); return; }
-    if (!form.email.trim() && !form.phone.trim()) { setError('An email address or a phone number is required'); return; }
+    if (!form.first_name.trim()) { setError(t('leads.form.firstNameRequired')); return; }
+    if (!form.email.trim() && !form.phone.trim()) { setError(t('leads.form.contactRequired')); return; }
     setSaving(true);
     try {
       const lead = await leadsApi.createLead(businessId, {
@@ -356,7 +360,7 @@ function AddLeadModal({ businessId, stages, owners, tags, onClose, onAdded }: {
       });
       onAdded(lead);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'The lead could not be added');
+      setError(err.response?.data?.error || t('leads.form.addFailed'));
     } finally { setSaving(false); }
   }
 
@@ -364,44 +368,44 @@ function AddLeadModal({ businessId, stages, owners, tags, onClose, onAdded }: {
     <Modal
       open
       onClose={onClose}
-      title="Add lead"
+      title={t('leads.addLead')}
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={saving} onClick={save}>Add lead</Button>
+        <Button variant="ghost" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button loading={saving} onClick={save}>{t('leads.addLead')}</Button>
       </>}
     >
       <div style={styles.form}>
         <div style={styles.formRow}>
-          <label style={styles.field}>First name *<input style={styles.input} value={form.first_name} onChange={set('first_name')} /></label>
-          <label style={styles.field}>Last name<input style={styles.input} value={form.last_name} onChange={set('last_name')} /></label>
+          <label style={styles.field}>{t('leads.form.firstName')}<input style={styles.input} value={form.first_name} onChange={set('first_name')} /></label>
+          <label style={styles.field}>{t('leads.form.lastName')}<input style={styles.input} value={form.last_name} onChange={set('last_name')} /></label>
         </div>
         <div style={styles.formRow}>
-          <label style={styles.field}>Email<input style={styles.input} type="email" value={form.email} onChange={set('email')} /></label>
-          <label style={styles.field}>Phone<input style={styles.input} type="tel" value={form.phone} onChange={set('phone')} /></label>
+          <label style={styles.field}>{t('leads.form.email')}<input style={styles.input} type="email" value={form.email} onChange={set('email')} /></label>
+          <label style={styles.field}>{t('leads.form.phone')}<input style={styles.input} type="tel" value={form.phone} onChange={set('phone')} /></label>
         </div>
-        <p style={styles.hint}>An email address or a phone number is required.</p>
+        <p style={styles.hint}>{t('leads.form.contactHint')}</p>
         <div style={styles.formRow}>
-          <label style={styles.field}>Lead source
+          <label style={styles.field}>{t('leads.form.leadSource')}
             <select style={styles.input} value={form.lead_source} onChange={set('lead_source')}>
               <option value="">—</option>
-              {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{t('leadSource.' + v, { defaultValue: l })}</option>)}
             </select>
           </label>
-          <label style={styles.field}>Lead stage
+          <label style={styles.field}>{t('leads.col.leadStage')}
             <select style={styles.input} value={form.lead_stage_id} onChange={set('lead_stage_id')}>
               {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
         </div>
-        <label style={styles.field}>Assigned staff
+        <label style={styles.field}>{t('leads.col.assignedStaff')}
           <select style={styles.input} value={form.owner_user_id} onChange={set('owner_user_id')}>
-            <option value="">Unassigned</option>
+            <option value="">{t('leads.unassigned')}</option>
             {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
           </select>
         </label>
         <fieldset style={styles.fieldset}>
-          <legend style={styles.legend}>Tags</legend>
-          {tags.length === 0 && <span style={styles.hint}>No tags defined yet</span>}
+          <legend style={styles.legend}>{t('leads.col.tags')}</legend>
+          {tags.length === 0 && <span style={styles.hint}>{t('leads.form.noTagsDefined')}</span>}
           {tags.map((t) => (
             <label key={t.id} style={styles.check}>
               <input type="checkbox" checked={tagIds.includes(t.id)}

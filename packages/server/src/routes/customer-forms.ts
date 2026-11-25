@@ -8,6 +8,7 @@ import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as completion from '../services/form-completion.service';
 import { getCustomerFormStatus } from '../services/form-status.service';
+import { msg } from '../i18n';
 
 /**
  * A customer's forms, for staff (spec 51, gap 1): see what they completed, start a device session
@@ -42,14 +43,14 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 async function guard(req: Request, res: Response, businessId: unknown): Promise<string | null> {
   const customerId = req.params.id;
   if (typeof businessId !== 'string' || !UUID_RE.test(businessId) || !UUID_RE.test(customerId)) {
-    error(res, 'business_id required', 'VALIDATION_ERROR', 400); return null;
+    error(res, msg('errors:customerForms.businessIdRequired'), 'VALIDATION_ERROR', 400); return null;
   }
   const { rows } = await adminPool.query(
     `SELECT 1 FROM cus_customers c JOIN sys_businesses b ON b.id = c.business_id
       WHERE c.id = $1 AND c.business_id = $2 AND b.tenant_id = $3`,
     [customerId, businessId, (req as AuthenticatedRequest).tenantId],
   );
-  if (rows.length === 0) { error(res, 'Customer not found', 'NOT_FOUND', 404); return null; }
+  if (rows.length === 0) { error(res, msg('errors:customerForms.customerNotFound'), 'NOT_FOUND', 404); return null; }
   return businessId;
 }
 
@@ -115,7 +116,7 @@ customerFormsRouter.get('/submissions/:sid/file', requirePermission('customers:r
   try {
     const businessId = await guard(req, res, req.query.business_id);
     if (!businessId) return;
-    if (!UUID_RE.test(req.params.sid)) { error(res, 'Form not found', 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.sid)) { error(res, msg('errors:customerForms.formNotFound'), 'NOT_FOUND', 404); return; }
     const file = await completion.getSubmissionFile(businessId, req.params.id, req.params.sid);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${file.filename.replace(/"/g, '')}"`);
@@ -131,7 +132,7 @@ customerFormsRouter.post('/submissions/:sid/email', requirePermission('customers
   try {
     const businessId = await guard(req, res, req.body.business_id);
     if (!businessId) return;
-    if (!UUID_RE.test(req.params.sid)) { error(res, 'Form not found', 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.sid)) { error(res, msg('errors:customerForms.formNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await completion.emailSubmissionCopy(
       businessId, req.params.id, req.params.sid, (req as AuthenticatedRequest).user.sub,
     ));

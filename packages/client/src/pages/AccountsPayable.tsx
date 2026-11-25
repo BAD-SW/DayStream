@@ -1,4 +1,6 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/TableFilters';
 import { Badge } from '../design-system/components/data/Badge';
@@ -10,9 +12,16 @@ import { TableActionButton } from '../design-system/components/actions/TableActi
 import * as apApi from '../api/accounts-payable';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly, toISODateOnly } from '../utils/date';
+import { formatDate } from '../utils/format';
 import { PayrollTab } from './PayrollTab';
 import { PurchaseOrdersTab } from './purchase-orders/PurchaseOrdersTab';
 import { useSearchParams } from 'react-router-dom';
+
+// Stored bill statuses, shown through payments:ap.bill.status.<value>.
+const BILL_STATUS_KEYS = ['draft', 'pending', 'approved', 'paid', 'overdue', 'void'];
+const ACCOUNT_TYPES = ['asset', 'liability', 'equity', 'revenue', 'expense'];
+const EXPENSE_METHODS = ['cash', 'card', 'transfer', 'other'];
+const BILL_PAY_METHODS = ['transfer', 'cash', 'card', 'check', 'other'];
 
 const BILL_STATUS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = { draft: 'neutral', pending: 'neutral', approved: 'info' as any, paid: 'success', overdue: 'error', void: 'error' };
 
@@ -32,9 +41,10 @@ export function AccountsPayable() {
 }
 
 type ApTab = 'vendors' | 'purchase_orders' | 'bills' | 'expenses' | 'accounts' | 'journal' | 'payroll';
-const AP_TABS: { key: ApTab; label: string }[] = [
-  { key: 'vendors', label: 'Vendors' }, { key: 'purchase_orders', label: 'Purchase Orders' }, { key: 'bills', label: 'Bills' }, { key: 'expenses', label: 'Expenses' },
-  { key: 'accounts', label: 'Chart of Accounts' }, { key: 'journal', label: 'Journal' }, { key: 'payroll', label: 'Payroll' },
+// Each tab's label is payments:ap.tab.<key>.
+const AP_TABS: { key: ApTab }[] = [
+  { key: 'vendors' }, { key: 'purchase_orders' }, { key: 'bills' }, { key: 'expenses' },
+  { key: 'accounts' }, { key: 'journal' }, { key: 'payroll' },
 ];
 const EMPTY_VENDOR = { name: '', contact_name: '', email: '', phone: '', category: '', payment_terms: 30, address: '', tax_id: '', notes: '', default_account_id: '' };
 const EMPTY_BILL = { vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '', account_id: '' };
@@ -43,6 +53,7 @@ const EMPTY_PAYMENT = { bill_id: '', amount: '', payment_date: '', payment_metho
 const EMPTY_ACCOUNT = { code: '', name: '', account_type: 'expense', description: '' };
 
 function AccountsPage() {
+  const { t } = useTranslation('payments');
   const { dirtySections } = useDraftSections();
   // ?tab= opens a tab directly (e.g. back from a purchase order).
   const [searchParams] = useSearchParams();
@@ -52,7 +63,7 @@ function AccountsPage() {
   const [formError, setFormError] = useState<Record<string, string>>({});
   async function saveOne(key: string, save: () => Promise<void>) {
     setFormError((e) => ({ ...e, [key]: '' }));
-    try { await save(); } catch (err: any) { setFormError((e) => ({ ...e, [key]: err?.response?.data?.error || err?.message || 'Not saved' })); }
+    try { await save(); } catch (err: any) { setFormError((e) => ({ ...e, [key]: err?.response?.data?.error || err?.message || t('ap.notSaved') })); }
   }
   // A form's error hangs just under its buttons, so the fields and buttons keep their places.
   const errorFor = (key: string) => formError[key] ? <span role="alert" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 'var(--space-xs)', whiteSpace: 'nowrap', color: 'var(--color-error)', fontSize: 'var(--font-size-sm)' }}>{formError[key]}</span> : null;
@@ -64,23 +75,23 @@ function AccountsPage() {
   const [vendorSearch, setVendorSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [editingVendor, setEditingVendor] = useState<any | null>(null);
-  const vendorDraft = useDraft<any>('ap-vendor', 'Vendor', EMPTY_VENDOR, async (f) => { await persistVendor(f); return EMPTY_VENDOR; }, { tab: 'vendors' });
+  const vendorDraft = useDraft<any>('ap-vendor', t('ap.draft.vendor'), EMPTY_VENDOR, async (f) => { await persistVendor(f); return EMPTY_VENDOR; }, { tab: 'vendors' });
   const editVendorForm = vendorDraft.value;
   const setEditVendorForm = vendorDraft.setValue;
   const markVendor = (k: string) => fieldMark(vendorDraft.changed((v: any) => v[k]));
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [showBillForm, setShowBillForm] = useState(false);
-  const billDraft = useDraft<any>('ap-bill', 'Bill', EMPTY_BILL, async (f) => { await persistBill(f); return EMPTY_BILL; }, { tab: 'bills' });
+  const billDraft = useDraft<any>('ap-bill', t('ap.draft.bill'), EMPTY_BILL, async (f) => { await persistBill(f); return EMPTY_BILL; }, { tab: 'bills' });
   const billForm = billDraft.value;
   const setBillForm = billDraft.setValue;
   const markBill = (k: string) => fieldMark(billDraft.changed((v: any) => v[k]));
   const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const expenseDraft = useDraft<any>('ap-expense', 'Expense', EMPTY_EXPENSE, async (f) => { await persistExpense(f); return EMPTY_EXPENSE; }, { tab: 'expenses' });
+  const expenseDraft = useDraft<any>('ap-expense', t('ap.draft.expense'), EMPTY_EXPENSE, async (f) => { await persistExpense(f); return EMPTY_EXPENSE; }, { tab: 'expenses' });
   const expenseForm = expenseDraft.value;
   const setExpenseForm = expenseDraft.setValue;
   const markExpense = (k: string) => fieldMark(expenseDraft.changed((v: any) => v[k]));
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const paymentDraft = useDraft<any>('ap-payment', 'Bill payment', EMPTY_PAYMENT, async (f) => { await persistPayment(f); return EMPTY_PAYMENT; }, { tab: 'bills' });
+  const paymentDraft = useDraft<any>('ap-payment', t('ap.draft.payment'), EMPTY_PAYMENT, async (f) => { await persistPayment(f); return EMPTY_PAYMENT; }, { tab: 'bills' });
   const paymentForm = paymentDraft.value;
   const setPaymentForm = paymentDraft.setValue;
   // The payment form is filled in and recorded in one go: no changed-field or changed-form highlight
@@ -88,7 +99,7 @@ function AccountsPage() {
   const markPayment = (_k: string): React.CSSProperties => ({});
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
-  const accountDraft = useDraft<any>('ap-account', 'Account', EMPTY_ACCOUNT, async (f) => { await persistAccount(f); return EMPTY_ACCOUNT; }, { tab: 'accounts' });
+  const accountDraft = useDraft<any>('ap-account', t('ap.draft.account'), EMPTY_ACCOUNT, async (f) => { await persistAccount(f); return EMPTY_ACCOUNT; }, { tab: 'accounts' });
   const accountForm = accountDraft.value;
   const setAccountForm = accountDraft.setValue;
   const markAccount = (k: string) => fieldMark(accountDraft.changed((v: any) => v[k]));
@@ -166,7 +177,7 @@ function AccountsPage() {
 
   // --- Archive Account ---
   async function handleArchiveAccount(id: string) {
-    if (!confirm('Archive this account? It will no longer appear in active lists.')) return;
+    if (!(await askConfirm({ message: t('ap.account.archiveConfirm'), confirmLabel: t('common:action.archive'), destructive: true }))) return;
     await apApi.archiveAccount(id, businessId);
     setAccounts((prev) => prev.map((a) => a.id === id ? { ...a, status: 'archived' } : a));
   }
@@ -191,7 +202,7 @@ function AccountsPage() {
   }
 
   async function persistBill(billForm: any) {
-    if (!billForm.vendor_id || !billForm.amount || !billForm.due_date) throw new Error('Vendor, Amount and Due Date are required');
+    if (!billForm.vendor_id || !billForm.amount || !billForm.due_date) throw new Error(t('ap.bill.required'));
     {
       if ((billForm as any)._editId) {
         await apApi.updateBill((billForm as any)._editId, businessId, {
@@ -213,7 +224,7 @@ function AccountsPage() {
 
   async function handleApproveBill(id: string) {
     try { await apApi.approveBill(id, businessId); loadTab('bills'); }
-    catch (err: any) { alert(err?.response?.data?.error || 'Could not approve the bill'); }
+    catch (err: any) { void showMessage({ message: err?.response?.data?.error || t('ap.bill.approveFailed'), tone: 'error' }); }
   }
 
   async function handlePayBill(id: string) {
@@ -225,7 +236,7 @@ function AccountsPage() {
   }
 
   async function persistPayment(paymentForm: any) {
-    if (!paymentForm.amount || !paymentForm.bill_id) throw new Error('Give the amount paid');
+    if (!paymentForm.amount || !paymentForm.bill_id) throw new Error(t('ap.payment.amountRequired'));
     {
       await apApi.payBill(paymentForm.bill_id, businessId, {
         amount: Math.round(parseFloat(paymentForm.amount) * 100),
@@ -245,7 +256,7 @@ function AccountsPage() {
   }
 
   async function persistExpense(expenseForm: any) {
-    if (!expenseForm.amount || !expenseForm.date) throw new Error('Date and Amount are required');
+    if (!expenseForm.amount || !expenseForm.date) throw new Error(t('ap.expense.required'));
     {
       if ((expenseForm as any)._editId) {
         const updated = await apApi.updateExpense((expenseForm as any)._editId, businessId, {
@@ -284,16 +295,16 @@ function AccountsPage() {
   }
 
   async function handleDeleteExpense(id: string) {
-    if (!confirm('Delete this expense? The associated journal entry will also be removed.')) return;
+    if (!(await askConfirm({ message: t('ap.expense.deleteConfirm'), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     try {
       await apApi.deleteExpense(id, businessId);
       setExpenses((prev: any[]) => prev.filter((e) => e.id !== id));
-    } catch { alert('Failed to delete expense'); }
+    } catch { void showMessage({ message: t('ap.expense.deleteFailed'), tone: 'error' }); }
   }
 
   // --- Void Journal Entry ---
   async function handleVoidEntry(id: string) {
-    if (!confirm('Void this journal entry? A reversing entry will be created.')) return;
+    if (!(await askConfirm({ message: t('ap.journal.voidConfirm'), confirmLabel: t('common:action.void'), destructive: true }))) return;
     await apApi.voidJournalEntry(id, businessId);
     loadTab('journal');
   }
@@ -312,7 +323,7 @@ function AccountsPage() {
   }
 
   async function persistVendor(editVendorForm: any) {
-    if (!editVendorForm.name) throw new Error('Give the vendor a name');
+    if (!editVendorForm.name) throw new Error(t('ap.vendor.nameRequired'));
     if (editingVendor) {
       const updated = await apApi.updateVendor(editingVendor.id, businessId, editVendorForm);
       setVendors((prev) => prev.map((v) => (v.id === editingVendor.id ? { ...v, ...updated } : v)));
@@ -326,64 +337,64 @@ function AccountsPage() {
 
   // --- Column definitions ---
   const vendorCols = [
-    { key: 'name', header: 'Vendor', sortable: true },
-    { key: 'contact_name', header: 'Contact' },
-    { key: 'email', header: 'Email' },
-    { key: 'phone', header: 'Phone' },
-    { key: 'payment_terms', header: 'Terms', filter: 'number' as const, filterUnit: 'days', filterLabel: (v: any) => (v ? `Net ${v}` : '—'), render: (v: number) => v ? `Net ${v}` : '—' },
+    { key: 'name', header: t('ap.vendor.col'), sortable: true },
+    { key: 'contact_name', header: t('ap.vendor.contact') },
+    { key: 'email', header: t('ap.vendor.email') },
+    { key: 'phone', header: t('ap.vendor.phone') },
+    { key: 'payment_terms', header: t('ap.vendor.terms'), filter: 'number' as const, filterUnit: t('ap.vendor.days'), filterLabel: (v: any) => (v ? t('ap.vendor.net', { days: v }) : '—'), render: (v: number) => v ? t('ap.vendor.net', { days: v }) : '—' },
     { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
-        <TableActionButton label="Edit" variant="edit" onClick={() => startEditVendor(row)} />
-        <TableActionButton label="Archive" variant="archive" onClick={() => handleArchiveVendor(row.id)} />
+        <TableActionButton label={t('common:edit')} variant="edit" onClick={() => startEditVendor(row)} />
+        <TableActionButton label={t('ap.archive')} variant="archive" onClick={() => handleArchiveVendor(row.id)} />
       </div>
     )},
   ];
 
   const billCols = [
-    { key: 'vendor_name', header: 'Vendor', sortable: true },
-    { key: 'invoice_number', header: 'Invoice #' },
-    { key: 'amount', header: 'Amount', filter: 'amount' as const, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
-    { key: 'amount_paid', header: 'Paid', filter: 'amount' as const, filterLabel: (v: any) => (Number(v) > 0 ? formatCurrency(Number(v)) : '—'), render: (v: number) => v > 0 ? formatCurrency(v) : '—' },
-    { key: 'balance', header: 'Balance', filter: 'amount' as const, filterValue: (row: any) => row.amount - row.amount_paid, filterLabel: (v: any) => formatCurrency(Number(v)), render: (_: any, row: any) => formatCurrency(row.amount - row.amount_paid) },
-    { key: 'due_date', header: 'Due', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'status', header: 'Status', sortable: true, render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{v}</Badge> },
+    { key: 'vendor_name', header: t('ap.vendor.col'), sortable: true },
+    { key: 'invoice_number', header: t('ap.bill.invoice') },
+    { key: 'amount', header: t('ap.amount'), filter: 'amount' as const, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
+    { key: 'amount_paid', header: t('ap.bill.paid'), filter: 'amount' as const, filterLabel: (v: any) => (Number(v) > 0 ? formatCurrency(Number(v)) : '—'), render: (v: number) => v > 0 ? formatCurrency(v) : '—' },
+    { key: 'balance', header: t('ap.bill.balance'), filter: 'amount' as const, filterValue: (row: any) => row.amount - row.amount_paid, filterLabel: (v: any) => formatCurrency(Number(v)), render: (_: any, row: any) => formatCurrency(row.amount - row.amount_paid) },
+    { key: 'due_date', header: t('ap.bill.due'), sortable: true, filter: 'date' as const, render: (v: string) => formatDate(v) },
+    { key: 'status', header: t('ap.bill.statusCol'), sortable: true, render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{BILL_STATUS_KEYS.includes(v) ? t(`ap.bill.status.${v}`) : v}</Badge> },
     { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
-        <TableActionButton label="Edit" variant="edit" onClick={() => openEditBill(row)} />
+        <TableActionButton label={t('common:edit')} variant="edit" onClick={() => openEditBill(row)} />
         {/* A bill is paid once approved; draft and pending bills are approved first. */}
-        {(row.status === 'draft' || row.status === 'pending' || (row.status === 'overdue' && !row.approved_at)) && <TableActionButton label="Approve" variant="activate" onClick={() => handleApproveBill(row.id)} />}
-        {(row.status === 'approved' || (row.status === 'overdue' && row.approved_at)) && <TableActionButton label="Record Payment" variant="activate" onClick={() => handlePayBill(row.id)} />}
+        {(row.status === 'draft' || row.status === 'pending' || (row.status === 'overdue' && !row.approved_at)) && <TableActionButton label={t('ap.bill.approve')} variant="activate" onClick={() => handleApproveBill(row.id)} />}
+        {(row.status === 'approved' || (row.status === 'overdue' && row.approved_at)) && <TableActionButton label={t('ap.payment.record')} variant="activate" onClick={() => handlePayBill(row.id)} />}
       </div>
     )},
   ];
 
   const expenseCols = [
-    { key: 'date', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'amount', header: 'Amount', sortable: true, filter: 'amount' as const, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
-    { key: 'account_name', header: 'Account' },
-    { key: 'description', header: 'Description' },
-    { key: 'payment_method', header: 'Paid via' },
+    { key: 'date', header: t('ap.date'), sortable: true, filter: 'date' as const, render: (v: string) => formatDate(v) },
+    { key: 'amount', header: t('ap.amount'), sortable: true, filter: 'amount' as const, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
+    { key: 'account_name', header: t('ap.account.col') },
+    { key: 'description', header: t('ap.description') },
+    { key: 'payment_method', header: t('ap.expense.paidVia'), render: (v: string) => (EXPENSE_METHODS.includes(v) ? t(`ap.expense.via.${v}`) : v) },
     { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
-        <TableActionButton label="Edit" variant="edit" onClick={() => openEditExpense(row)} />
-        <TableActionButton label="Delete" variant="delete" onClick={() => handleDeleteExpense(row.id)} />
+        <TableActionButton label={t('common:edit')} variant="edit" onClick={() => openEditExpense(row)} />
+        <TableActionButton label={t('common:delete')} variant="delete" onClick={() => handleDeleteExpense(row.id)} />
       </div>
     )},
   ];
 
   const accountCols = [
-    { key: 'code', header: 'Code', sortable: true },
-    { key: 'account_type', header: 'Type', sortable: true },
-    { key: 'name', header: 'Name', sortable: true },
-    { key: 'description', header: 'Description' },
+    { key: 'code', header: t('ap.account.code'), sortable: true },
+    { key: 'account_type', header: t('ap.account.type'), sortable: true, render: (v: string) => (ACCOUNT_TYPES.includes(v) ? t(`ap.account.typeCell.${v}`) : v) },
+    { key: 'name', header: t('ap.account.name'), sortable: true },
+    { key: 'description', header: t('ap.description') },
     { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-        <TableActionButton label="Edit" variant="edit" onClick={() => openEditAccount(row)} />
+        <TableActionButton label={t('common:edit')} variant="edit" onClick={() => openEditAccount(row)} />
         {row.status === 'active' && (
-          <TableActionButton label="Archive" variant="archive" onClick={() => handleArchiveAccount(row.id)} />
+          <TableActionButton label={t('ap.archive')} variant="archive" onClick={() => handleArchiveAccount(row.id)} />
         )}
         {row.status === 'archived' && (
-          <TableActionButton label="Restore" variant="restore" onClick={() => handleUnarchiveAccount(row.id)} />
+          <TableActionButton label={t('ap.account.restore')} variant="restore" onClick={() => handleUnarchiveAccount(row.id)} />
         )}
       </div>
     )},
@@ -402,7 +413,7 @@ function AccountsPage() {
   }
 
   async function persistAccount(accountForm: any) {
-    if (!accountForm.code || !accountForm.name) throw new Error('Code and Name are required');
+    if (!accountForm.code || !accountForm.name) throw new Error(t('ap.account.required'));
     {
       if (editingAccount) {
         await apApi.updateAccount(editingAccount.id, businessId, { code: accountForm.code, name: accountForm.name, description: accountForm.description });
@@ -419,13 +430,13 @@ function AccountsPage() {
       await apApi.unarchiveAccount(id, businessId);
       loadTab('accounts');
     } catch (err: any) {
-      alert(err?.response?.data?.error || 'Failed to unarchive');
+      void showMessage({ message: err?.response?.data?.error || t('ap.account.unarchiveFailed'), tone: 'error' });
     }
   }
 
   // --- Archive Vendor ---
   async function handleArchiveVendor(id: string) {
-    if (!confirm('Archive this vendor? It will no longer appear in active lists.')) return;
+    if (!(await askConfirm({ message: t('ap.vendor.archiveConfirm'), confirmLabel: t('common:action.archive'), destructive: true }))) return;
     await apApi.updateVendor(id, businessId, { status: 'archived' });
     setVendors((prev) => prev.filter((v) => v.id !== id));
   }
@@ -437,29 +448,29 @@ function AccountsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: '16px' }}>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> {t('ap.account.showArchived')}
           </label>
         </div>
-        <button style={styles.primaryBtn} onClick={openAddAccount}>Add Account</button>
+        <button style={styles.primaryBtn} onClick={openAddAccount}>{t('ap.account.add')}</button>
       </div>
       {showAddAccount && (
         <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(accountDraft.dirty) }}>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-            <div><label style={styles.fieldLabel}>Code</label><input style={{ ...({ ...styles.input, width: '80px' }), ...markAccount('code') }} value={accountForm.code} onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })} placeholder="e.g. 4600" /></div>
-            <div><label style={styles.fieldLabel}>Type</label><select style={{ ...({ ...styles.input, width: '120px' }), ...markAccount('account_type') }} value={accountForm.account_type} onChange={(e) => setAccountForm({ ...accountForm, account_type: e.target.value })} disabled={!!editingAccount}>
-              <option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option><option value="revenue">Revenue</option><option value="expense">Expense</option>
+            <div><label style={styles.fieldLabel}>{t('ap.account.code')}</label><input style={{ ...({ ...styles.input, width: '80px' }), ...markAccount('code') }} value={accountForm.code} onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })} placeholder={t('ap.account.codePlaceholder')} /></div>
+            <div><label style={styles.fieldLabel}>{t('ap.account.type')}</label><select style={{ ...({ ...styles.input, width: '120px' }), ...markAccount('account_type') }} value={accountForm.account_type} onChange={(e) => setAccountForm({ ...accountForm, account_type: e.target.value })} disabled={!!editingAccount}>
+              {ACCOUNT_TYPES.map((v) => <option key={v} value={v}>{t(`ap.account.typeOption.${v}`)}</option>)}
             </select></div>
-            <div><label style={styles.fieldLabel}>Name</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('name') }} value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="Account name" /></div>
-            <div><label style={styles.fieldLabel}>Description</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('description') }} value={accountForm.description} onChange={(e) => setAccountForm({ ...accountForm, description: e.target.value })} placeholder="Optional" /></div>
+            <div><label style={styles.fieldLabel}>{t('ap.account.name')}</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('name') }} value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder={t('ap.account.namePlaceholder')} /></div>
+            <div><label style={styles.fieldLabel}>{t('ap.description')}</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('description') }} value={accountForm.description} onChange={(e) => setAccountForm({ ...accountForm, description: e.target.value })} placeholder={t('ap.optional')} /></div>
             <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
-              <button style={styles.primaryBtn} onClick={() => saveOne('account', accountDraft.save)}>{editingAccount ? 'Save' : 'Create'}</button>
-              <button style={styles.secondaryBtn} onClick={() => { setShowAddAccount(false); accountDraft.load(EMPTY_ACCOUNT); }}>Cancel</button>
+              <button style={styles.primaryBtn} onClick={() => saveOne('account', accountDraft.save)}>{editingAccount ? t('common:save') : t('common:create')}</button>
+              <button style={styles.secondaryBtn} onClick={() => { setShowAddAccount(false); accountDraft.load(EMPTY_ACCOUNT); }}>{t('common:cancel')}</button>
               {errorFor('account')}
             </div>
           </div>
         </div>
       )}
-      <Table columns={accountCols} data={filteredAccounts} loading={loading} emptyMessage="No accounts" clientSort />
+      <Table columns={accountCols} data={filteredAccounts} loading={loading} emptyMessage={t('ap.account.empty')} clientSort />
     </div>
   );
 
@@ -474,7 +485,7 @@ function AccountsPage() {
 
     function handleExportCsv() {
       if (filteredEntries.length === 0) return;
-      const rows: string[] = ['Date,Entry Description,Reference Type,Account Code,Account Name,Debit,Credit'];
+      const rows: string[] = [[t('ap.csv.date'), t('ap.csv.entryDescription'), t('ap.csv.referenceType'), t('ap.csv.accountCode'), t('ap.csv.accountName'), t('ap.csv.debit'), t('ap.csv.credit')].join(',')];
       for (const entry of filteredEntries) {
         const date = toISODateOnly(entry.entry_date);
         for (const line of (entry.lines || [])) {
@@ -542,9 +553,9 @@ function AccountsPage() {
     }).filter((r) => r.count > 0);
 
     const dayCols = [
-      { key: 'date', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => formatDateOnly(v) },
-      { key: 'count', header: viewMode === 'orders' ? 'Orders' : 'Accounts', filter: false as const },
-      { key: 'total', header: 'Total', filter: false as const, render: (v: number) => formatCurrency(v) },
+      { key: 'date', header: t('ap.date'), sortable: true, filter: 'date' as const, render: (v: string) => formatDateOnly(v) },
+      { key: 'count', header: viewMode === 'orders' ? t('ap.journal.orders') : t('ap.journal.accounts'), filter: false as const },
+      { key: 'total', header: t('ap.journal.total'), filter: false as const, render: (v: number) => formatCurrency(v) },
     ];
 
     function renderDay(row: any) {
@@ -559,18 +570,18 @@ function AccountsPage() {
                 >
                   <span style={{ fontSize: 'var(--font-size-sm)' }}>
                     <strong>{entry.description}</strong>
-                    {entry.is_void && <Badge variant="error">voided</Badge>}
+                    {entry.is_void && <Badge variant="error">{t('ap.journal.voided')}</Badge>}
                   </span>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{formatCurrency(entry.lines?.reduce((s: number, l: any) => s + l.debit, 0) || 0)}</span>
-                    {!entry.is_void && <TableActionButton label="Void" variant="delete" onClick={() => onVoid(entry.id)} />}
+                    {!entry.is_void && <TableActionButton label={t('ap.journal.void')} variant="delete" onClick={() => onVoid(entry.id)} />}
                   </div>
                 </div>
                 {expandedEntry === entry.id && entry.lines && (
                   <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
                     {(journalAccountFilter === 'all' ? entry.lines : entry.lines.filter((l: any) => l.account_id === journalAccountFilter)).map((line: any) => (
                       <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                        <span>{line.debit > 0 ? 'Debit' : 'Credit'}: {line.account_code} — {line.account_name}</span>
+                        <span>{t('ap.journal.line', { side: line.debit > 0 ? t('ap.journal.debit') : t('ap.journal.credit'), code: line.account_code, name: line.account_name })}</span>
                         <span>{formatCurrency(line.debit || line.credit)}</span>
                       </div>
                     ))}
@@ -591,8 +602,8 @@ function AccountsPage() {
               >
                 <span style={{ fontSize: 'var(--font-size-sm)' }}><strong>{acct.code} — {acct.name}</strong></span>
                 <span style={{ fontSize: 'var(--font-size-sm)' }}>
-                  {acct.totalDebit > 0 && <span style={{ marginRight: '16px' }}>Debit {formatCurrency(acct.totalDebit)}</span>}
-                  {acct.totalCredit > 0 && <span>Credit {formatCurrency(acct.totalCredit)}</span>}
+                  {acct.totalDebit > 0 && <span style={{ marginRight: '16px' }}>{t('ap.journal.debitAmount', { amount: formatCurrency(acct.totalDebit) })}</span>}
+                  {acct.totalCredit > 0 && <span>{t('ap.journal.creditAmount', { amount: formatCurrency(acct.totalCredit) })}</span>}
                 </span>
               </div>
               {expandedEntry === acct.code + row.date && (
@@ -614,19 +625,19 @@ function AccountsPage() {
     return (
       <div>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-          <label style={styles.fieldLabel}>Account <select style={styles.input} value={journalAccountFilter} onChange={(e) => setJournalAccountFilter(e.target.value)}>
-            <option value="all">All Accounts</option>
+          <label style={styles.fieldLabel}>{t('ap.account.col')} <select style={styles.input} value={journalAccountFilter} onChange={(e) => setJournalAccountFilter(e.target.value)}>
+            <option value="all">{t('ap.journal.allAccounts')}</option>
             {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
           </select></label>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
-            <button style={styles.secondaryBtn} onClick={handleExportCsv}>Export CSV</button>
-            <button style={{ ...styles.secondaryBtn, fontWeight: viewMode === 'orders' ? 700 : 400 }} onClick={() => setViewMode('orders')}>By Order</button>
-            <button style={{ ...styles.secondaryBtn, fontWeight: viewMode === 'accounts' ? 700 : 400 }} onClick={() => setViewMode('accounts')}>By Account</button>
+            <button style={styles.secondaryBtn} onClick={handleExportCsv}>{t('ap.journal.exportCsv')}</button>
+            <button style={{ ...styles.secondaryBtn, fontWeight: viewMode === 'orders' ? 700 : 400 }} onClick={() => setViewMode('orders')}>{t('ap.journal.byOrder')}</button>
+            <button style={{ ...styles.secondaryBtn, fontWeight: viewMode === 'accounts' ? 700 : 400 }} onClick={() => setViewMode('accounts')}>{t('ap.journal.byAccount')}</button>
           </div>
         </div>
 
         <Table columns={dayCols} data={dayRows} loading={ld} clientSort
-          emptyMessage={journalDateFrom ? 'No journal entries for this period' : 'No journal entries'}
+          emptyMessage={journalDateFrom ? t('ap.journal.emptyPeriod') : t('ap.journal.empty')}
           filters={journalFilters} onFiltersChange={setJournalFilters} initialSort={{ key: 'date', order: 'desc' }}
           onLoadMore={loadMoreJournal} hasMore={entries.length < journalTotal} loadingMore={journalLoadingMore}
           // The days load from the server for the chosen range, so the filter can't count rows it doesn't hold.
@@ -644,65 +655,65 @@ function AccountsPage() {
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: 'var(--space-md)' }}>
-          <h1 style={{ ...styles.title, marginBottom: 0 }}>Accounting</h1>
+          <h1 style={{ ...styles.title, marginBottom: 0 }}>{t('ap.title')}</h1>
         </div>
-        <TabBar aria-label="Accounting sections" active={activeTab} onChange={(t) => { setActiveTab(t); loadTab(t); }}
-          tabs={AP_TABS.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} />
+        <TabBar aria-label={t('ap.tabsLabel')} active={activeTab} onChange={(tab) => { setActiveTab(tab); loadTab(tab); }}
+          tabs={AP_TABS.map((tab) => ({ ...tab, label: t(`ap.tab.${tab.key}`), changed: dirtySections.some((s) => s.tab === tab.key) }))} />
       </StickyPageTop>
       <div style={{ marginTop: 'var(--space-md)' }}>
       {[
-        { id: 'vendors', label: 'Vendors', content: (
+        { id: 'vendors', content: (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-              <label style={styles.fieldLabel}>Search <input style={{ ...styles.input, width: '200px' }} type="text" placeholder="Filter by name..." value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} /></label>
-              <button style={styles.primaryBtn} onClick={openAddVendor}>Add Vendor</button>
+              <label style={styles.fieldLabel}>{t('common:search')} <input style={{ ...styles.input, width: '200px' }} type="text" placeholder={t('ap.vendor.filterPlaceholder')} value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} /></label>
+              <button style={styles.primaryBtn} onClick={openAddVendor}>{t('ap.vendor.add')}</button>
             </div>
             {showVendorForm && (
               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(vendorDraft.dirty) }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Name *</label><input style={{ ...({ ...styles.input, width: '150px' }), ...markVendor('name') }} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} placeholder="Vendor name" /></div>
-                  <div><label style={styles.fieldLabel}>Contact</label><input style={{ ...({ ...styles.input, width: '130px' }), ...markVendor('contact_name') }} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} placeholder="Contact person" /></div>
-                  <div><label style={styles.fieldLabel}>Email</label><input style={{ ...({ ...styles.input, width: '160px' }), ...markVendor('email') }} value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} placeholder="Email" /></div>
-                  <div><label style={styles.fieldLabel}>Phone</label><input style={{ ...({ ...styles.input, width: '120px' }), ...markVendor('phone') }} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} placeholder="Phone" /></div>
-                  <div><label style={styles.fieldLabel}>Terms</label><input style={{ ...({ ...styles.input, width: '50px' }), ...markVendor('payment_terms') }} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value) || 0 })} /></div>
-                  <div><label style={styles.fieldLabel}>Default Account</label><select style={{ ...({ ...styles.input, width: '180px' }), ...markVendor('default_account_id') }} value={editVendorForm.default_account_id} onChange={(e) => setEditVendorForm({ ...editVendorForm, default_account_id: e.target.value })}>
-                    <option value="">— None —</option>
+                  <div><label style={styles.fieldLabel}>{t('ap.vendor.nameLabel')}</label><input style={{ ...({ ...styles.input, width: '150px' }), ...markVendor('name') }} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} placeholder={t('ap.vendor.namePlaceholder')} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.vendor.contact')}</label><input style={{ ...({ ...styles.input, width: '130px' }), ...markVendor('contact_name') }} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} placeholder={t('ap.vendor.contactPlaceholder')} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.vendor.email')}</label><input style={{ ...({ ...styles.input, width: '160px' }), ...markVendor('email') }} value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} placeholder={t('ap.vendor.email')} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.vendor.phone')}</label><input style={{ ...({ ...styles.input, width: '120px' }), ...markVendor('phone') }} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} placeholder={t('ap.vendor.phone')} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.vendor.terms')}</label><input style={{ ...({ ...styles.input, width: '50px' }), ...markVendor('payment_terms') }} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value) || 0 })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.vendor.defaultAccount')}</label><select style={{ ...({ ...styles.input, width: '180px' }), ...markVendor('default_account_id') }} value={editVendorForm.default_account_id} onChange={(e) => setEditVendorForm({ ...editVendorForm, default_account_id: e.target.value })}>
+                    <option value="">{t('ap.none')}</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
-                    <button style={styles.primaryBtn} onClick={() => saveOne('vendor', vendorDraft.save)}>{editingVendor ? 'Save' : 'Create'}</button>
-                    <button style={styles.secondaryBtn} onClick={() => { setShowVendorForm(false); vendorDraft.load(EMPTY_VENDOR); }}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('vendor', vendorDraft.save)}>{editingVendor ? t('common:save') : t('common:create')}</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowVendorForm(false); vendorDraft.load(EMPTY_VENDOR); }}>{t('common:cancel')}</button>
                     {errorFor('vendor')}
                   </div>
                 </div>
               </div>
             )}
-            <Table columns={vendorCols} data={vendors.filter((v: any) => !vendorSearch || v.name?.toLowerCase().includes(vendorSearch.toLowerCase()))} loading={loading} emptyMessage="No vendors" clientSort />
+            <Table columns={vendorCols} data={vendors.filter((v: any) => !vendorSearch || v.name?.toLowerCase().includes(vendorSearch.toLowerCase()))} loading={loading} emptyMessage={t('ap.vendor.empty')} clientSort />
           </div>
         ) },
-        { id: 'bills', label: 'Bills', content: (
+        { id: 'bills', content: (
           <div>
             <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-              <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddBill}>Add Bill</button>
+              <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddBill}>{t('ap.bill.add')}</button>
             </div>
             {showBillForm && (
               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(billDraft.dirty) }}>
                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Vendor *</label><select style={{ ...(styles.input), ...markBill('vendor_id') }} value={billForm.vendor_id} onChange={(e) => handleVendorChange(e.target.value)}>
-                    <option value="">— Select —</option>
+                  <div><label style={styles.fieldLabel}>{t('ap.bill.vendorLabel')}</label><select style={{ ...(styles.input), ...markBill('vendor_id') }} value={billForm.vendor_id} onChange={(e) => handleVendorChange(e.target.value)}>
+                    <option value="">{t('ap.select')}</option>
                     {vendors.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={{ ...(styles.input), ...markBill('account_id') }} value={billForm.account_id} onChange={(e) => setBillForm({ ...billForm, account_id: e.target.value })}>
-                    <option value="">— Select —</option>
+                  <div><label style={styles.fieldLabel}>{t('ap.expense.account')}</label><select style={{ ...(styles.input), ...markBill('account_id') }} value={billForm.account_id} onChange={(e) => setBillForm({ ...billForm, account_id: e.target.value })}>
+                    <option value="">{t('ap.select')}</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Invoice #</label><input style={{ ...(styles.input), ...markBill('invoice_number') }} value={billForm.invoice_number} onChange={(e) => setBillForm({ ...billForm, invoice_number: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markBill('amount') }} type="number" step="0.01" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Due Date *</label><input style={{ ...(styles.input), ...markBill('due_date') }} type="date" value={billForm.due_date} onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Description</label><input style={{ ...(styles.input), ...markBill('description') }} value={billForm.description} onChange={(e) => setBillForm({ ...billForm, description: e.target.value })} placeholder="What for" /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.bill.invoice')}</label><input style={{ ...(styles.input), ...markBill('invoice_number') }} value={billForm.invoice_number} onChange={(e) => setBillForm({ ...billForm, invoice_number: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.amountLabel')}</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markBill('amount') }} type="number" step="0.01" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.bill.dueDateLabel')}</label><input style={{ ...(styles.input), ...markBill('due_date') }} type="date" value={billForm.due_date} onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.description')}</label><input style={{ ...(styles.input), ...markBill('description') }} value={billForm.description} onChange={(e) => setBillForm({ ...billForm, description: e.target.value })} placeholder={t('ap.bill.descriptionPlaceholder')} /></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
-                    <button style={styles.primaryBtn} onClick={() => saveOne('bill', billDraft.save)}>{(billForm as any)._editId ? 'Save' : 'Create'}</button>
-                    <button style={styles.secondaryBtn} onClick={() => { setShowBillForm(false); billDraft.load(EMPTY_BILL); }}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('bill', billDraft.save)}>{(billForm as any)._editId ? t('common:save') : t('common:create')}</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowBillForm(false); billDraft.load(EMPTY_BILL); }}>{t('common:cancel')}</button>
                     {errorFor('bill')}
                   </div>
                 </div>
@@ -711,62 +722,55 @@ function AccountsPage() {
             {showPaymentForm && (
               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markPayment('amount') }} type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Payment Date</label><input style={{ ...(styles.input), ...markPayment('payment_date') }} type="date" value={paymentForm.payment_date} onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Method</label><select style={{ ...({ ...styles.input, width: '120px' }), ...markPayment('payment_method') }} value={paymentForm.payment_method} onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
-                    <option value="transfer">Transfer</option>
-                    <option value="cash">Cash</option>
-                    <option value="card">Card</option>
-                    <option value="check">Check</option>
-                    <option value="other">Other</option>
+                  <div><label style={styles.fieldLabel}>{t('ap.amountLabel')}</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markPayment('amount') }} type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.payment.date')}</label><input style={{ ...(styles.input), ...markPayment('payment_date') }} type="date" value={paymentForm.payment_date} onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.payment.method')}</label><select style={{ ...({ ...styles.input, width: '120px' }), ...markPayment('payment_method') }} value={paymentForm.payment_method} onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
+                    {BILL_PAY_METHODS.map((v) => <option key={v} value={v}>{t(`ap.method.${v}`)}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Reference</label><input style={{ ...({ ...styles.input, width: '150px' }), ...markPayment('reference') }} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} placeholder="Check #, transfer ref" /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.payment.reference')}</label><input style={{ ...({ ...styles.input, width: '150px' }), ...markPayment('reference') }} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} placeholder={t('ap.payment.referencePlaceholder')} /></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
-                    <button style={styles.primaryBtn} onClick={() => saveOne('payment', paymentDraft.save)}>Record Payment</button>
-                    <button style={styles.secondaryBtn} onClick={() => { setShowPaymentForm(false); paymentDraft.load(EMPTY_PAYMENT); }}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('payment', paymentDraft.save)}>{t('ap.payment.record')}</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowPaymentForm(false); paymentDraft.load(EMPTY_PAYMENT); }}>{t('common:cancel')}</button>
                     {errorFor('payment')}
                   </div>
                 </div>
               </div>
             )}
-            <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" clientSort initialSort={{ key: 'due_date', order: 'desc' }} />
+            <Table columns={billCols} data={bills} loading={loading} emptyMessage={t('ap.bill.empty')} clientSort initialSort={{ key: 'due_date', order: 'desc' }} />
           </div>
         ) },
-        { id: 'expenses', label: 'Expenses', content: (
+        { id: 'expenses', content: (
           <div>
             <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-              <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddExpense}>Add Expense</button>
+              <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddExpense}>{t('ap.expense.add')}</button>
             </div>
             {showExpenseForm && (
               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(expenseDraft.dirty) }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Date *</label><input style={{ ...(styles.input), ...markExpense('date') }} type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markExpense('amount') }} type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={{ ...({ ...styles.input, width: '180px' }), ...markExpense('account_id') }} value={expenseForm.account_id} onChange={(e) => setExpenseForm({ ...expenseForm, account_id: e.target.value })}>
-                    <option value="">— Select —</option>
+                  <div><label style={styles.fieldLabel}>{t('ap.dateLabel')}</label><input style={{ ...(styles.input), ...markExpense('date') }} type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.amountLabel')}</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markExpense('amount') }} type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.expense.account')}</label><select style={{ ...({ ...styles.input, width: '180px' }), ...markExpense('account_id') }} value={expenseForm.account_id} onChange={(e) => setExpenseForm({ ...expenseForm, account_id: e.target.value })}>
+                    <option value="">{t('ap.select')}</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Description</label><input style={{ ...({ ...styles.input, width: '200px' }), ...markExpense('description') }} value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder="What was purchased" /></div>
-                  <div><label style={styles.fieldLabel}>Paid via</label><select style={{ ...({ ...styles.input, width: '100px' }), ...markExpense('payment_method') }} value={expenseForm.payment_method} onChange={(e) => setExpenseForm({ ...expenseForm, payment_method: e.target.value })}>
-                    <option value="cash">Cash</option>
-                    <option value="card">Card</option>
-                    <option value="transfer">Transfer</option>
-                    <option value="other">Other</option>
+                  <div><label style={styles.fieldLabel}>{t('ap.description')}</label><input style={{ ...({ ...styles.input, width: '200px' }), ...markExpense('description') }} value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder={t('ap.expense.descriptionPlaceholder')} /></div>
+                  <div><label style={styles.fieldLabel}>{t('ap.expense.paidVia')}</label><select style={{ ...({ ...styles.input, width: '100px' }), ...markExpense('payment_method') }} value={expenseForm.payment_method} onChange={(e) => setExpenseForm({ ...expenseForm, payment_method: e.target.value })}>
+                    {EXPENSE_METHODS.map((v) => <option key={v} value={v}>{t(`ap.method.${v}`)}</option>)}
                   </select></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
-                    <button style={styles.primaryBtn} onClick={() => saveOne('expense', expenseDraft.save)}>{(expenseForm as any)._editId ? 'Save' : 'Create'}</button>
-                    <button style={styles.secondaryBtn} onClick={() => { setShowExpenseForm(false); expenseDraft.load(EMPTY_EXPENSE); }}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('expense', expenseDraft.save)}>{(expenseForm as any)._editId ? t('common:save') : t('common:create')}</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowExpenseForm(false); expenseDraft.load(EMPTY_EXPENSE); }}>{t('common:cancel')}</button>
                     {errorFor('expense')}
                   </div>
                 </div>
               </div>
             )}
-            <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" clientSort initialSort={{ key: 'date', order: 'desc' }} />
+            <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage={t('ap.expense.empty')} clientSort initialSort={{ key: 'date', order: 'desc' }} />
           </div>
         ) },
-        { id: 'purchase_orders', label: 'Purchase Orders', content: <PurchaseOrdersTab businessId={businessId} /> },
-        { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
-        { id: 'journal', label: 'Journal', content: renderJournal(journalEntries, loading, handleVoidEntry) },
+        { id: 'purchase_orders', content: <PurchaseOrdersTab businessId={businessId} /> },
+        { id: 'accounts', content: accountsContent },
+        { id: 'journal', content: renderJournal(journalEntries, loading, handleVoidEntry) },
       ].filter((t) => t.id === activeTab).map((t) => <div key={t.id}>{t.content}</div>)}
       <div hidden={activeTab !== 'payroll'}><DraftTab tab="payroll"><PayrollTab /></DraftTab></div>
       </div>

@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../auth/middleware';
 import { adminPool } from '../db/pool';
 import { getCallerScope } from '../services/theme.service';
 import { error } from '../utils/response';
+import { msg } from '../i18n';
 
 /**
  * Write-permission guard for theme routes (create/update/delete/apply). Looks up the
@@ -26,7 +27,7 @@ export function requireThemeWritePermission() {
 
       if (caller.persona === 'tenant') {
         if (targetScope === 'system') {
-          error(res, 'Insufficient permissions to manage themes at scope \'system\'', 'FORBIDDEN', 403);
+          error(res, msg('errors:themePermission.insufficientPermissionsToManageThemesAt'), 'FORBIDDEN', 403);
           return;
         }
         next();
@@ -35,16 +36,16 @@ export function requireThemeWritePermission() {
 
       if (caller.persona === 'business') {
         if (targetScope !== 'business' || targetScopeId !== caller.businessId) {
-          error(res, 'Business personas can only manage their own business theme', 'FORBIDDEN', 403);
+          error(res, msg('errors:themePermission.businessPersonasCanOnlyManageTheir'), 'FORBIDDEN', 403);
           return;
         }
         next();
         return;
       }
 
-      error(res, 'Insufficient permissions', 'FORBIDDEN', 403);
+      error(res, msg('errors:themePermission.insufficientPermissions'), 'FORBIDDEN', 403);
     } catch (err: any) {
-      error(res, 'Failed to verify theme permissions', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:themePermission.failedToVerifyThemePermissions'), 'INTERNAL_ERROR', 500);
     }
   };
 }
@@ -72,7 +73,7 @@ export function requireThemeRowWritePermission() {
 
       if (caller.persona === 'tenant') {
         if (theme.scope === 'system') {
-          error(res, 'Insufficient permissions to manage themes at scope \'system\'', 'FORBIDDEN', 403);
+          error(res, msg('errors:themePermission.insufficientPermissionsToManageThemesAt'), 'FORBIDDEN', 403);
           return;
         }
         next();
@@ -81,16 +82,16 @@ export function requireThemeRowWritePermission() {
 
       if (caller.persona === 'business') {
         if (theme.scope !== 'business' || theme.scope_id !== caller.businessId) {
-          error(res, 'Business personas can only manage their own business theme', 'FORBIDDEN', 403);
+          error(res, msg('errors:themePermission.businessPersonasCanOnlyManageTheir'), 'FORBIDDEN', 403);
           return;
         }
         next();
         return;
       }
 
-      error(res, 'Insufficient permissions', 'FORBIDDEN', 403);
+      error(res, msg('errors:themePermission.insufficientPermissions'), 'FORBIDDEN', 403);
     } catch (err: any) {
-      error(res, 'Failed to verify theme permissions', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:themePermission.failedToVerifyThemePermissions'), 'INTERNAL_ERROR', 500);
     }
   };
 }

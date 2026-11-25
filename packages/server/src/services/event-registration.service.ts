@@ -2,6 +2,7 @@ import { adminPool } from '../db/pool';
 import { promoteFromWaitlist } from './event-waitlist.service';
 import { logAudit } from './audit.service';
 import crypto from 'crypto';
+import { msg } from '../i18n';
 
 interface RegisterInput {
   customerId: string;
@@ -53,7 +54,7 @@ export async function registerForEvent(
       `SELECT e.*, e.tenant_id FROM evt_events e WHERE e.id = $1 AND e.status = 'published' AND e.deleted_at IS NULL FOR UPDATE`,
       [eventId],
     );
-    if (eventRows.length === 0) throw new Error('Event not found or not open for registration');
+    if (eventRows.length === 0) throw new Error(msg('errors:eventRegistration.eventNotFoundOrNotOpen'));
 
     const event = eventRows[0];
     const groupSize = input.groupSize || 1;
@@ -67,7 +68,7 @@ export async function registerForEvent(
     );
     if (countRows[0].count + groupSize > event.capacity) {
       await client.query('ROLLBACK');
-      throw new Error('Event is at capacity');
+      throw new Error(msg('errors:eventRegistration.eventIsAtCapacity'));
     }
 
     // Check ticket tier availability if specified
@@ -79,7 +80,7 @@ export async function registerForEvent(
       );
       if (tierRows.length === 0) {
         await client.query('ROLLBACK');
-        throw new Error('Ticket tier not found');
+        throw new Error(msg('errors:eventRegistration.ticketTierNotFound'));
       }
 
       const tier = tierRows[0];
@@ -92,7 +93,7 @@ export async function registerForEvent(
       );
       if (tier.quantity_available && soldRows[0].sold + groupSize > tier.quantity_available) {
         await client.query('ROLLBACK');
-        throw new Error('Ticket tier sold out');
+        throw new Error(msg('errors:eventRegistration.ticketTierSoldOut'));
       }
     }
 
@@ -151,7 +152,7 @@ export async function confirmRegistration(id: string) {
      WHERE id = $1 AND status = 'pending' RETURNING *`,
     [id],
   );
-  if (!rows[0]) throw new Error('Registration not found or not in pending status');
+  if (!rows[0]) throw new Error(msg('errors:eventRegistration.registrationNotFoundOrNotIn'));
   return rows[0];
 }
 
@@ -168,7 +169,7 @@ export async function cancelRegistration(id: string, tenantId: string) {
      RETURNING er.*`,
     [id, tenantId],
   );
-  if (!rows[0]) throw new Error('Registration not found or cannot be cancelled');
+  if (!rows[0]) throw new Error(msg('errors:eventRegistration.registrationNotFoundOrCannotBe'));
   await promoteFromWaitlist(rows[0].event_id).catch(() => undefined);
 
   await logAudit({
@@ -194,7 +195,7 @@ export async function transferRegistration(id: string, newCustomerId: string, te
      RETURNING er.*`,
     [id, newCustomerId, tenantId],
   );
-  if (!rows[0]) throw new Error('Registration not found or not confirmed');
+  if (!rows[0]) throw new Error(msg('errors:eventRegistration.registrationNotFoundOrNotConfirmed'));
 
   await logAudit({
     tenantId,

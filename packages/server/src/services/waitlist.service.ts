@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 const DEFAULT_MAX_WAITLIST = 5;
 const DEFAULT_CONFIRM_HOURS = 2;
@@ -21,7 +22,7 @@ export async function joinWaitlist(
     [serviceId, slotStartTime, customerId],
   );
   if (existing.length > 0) {
-    throw new Error('Already on the waitlist for this session');
+    throw new Error(msg('errors:waitlist.alreadyOnTheWaitlistForThis'));
   }
 
   // Check waitlist size
@@ -33,7 +34,7 @@ export async function joinWaitlist(
 
   const maxSize = DEFAULT_MAX_WAITLIST;
   if (countRows[0].count >= maxSize) {
-    throw new Error('Waitlist is full for this session');
+    throw new Error(msg('errors:waitlist.waitlistIsFullForThisSession'));
   }
 
   // Assign position

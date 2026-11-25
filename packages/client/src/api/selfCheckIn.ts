@@ -31,6 +31,8 @@ export interface SelfVisit {
   /** The language of the screen, and its wording (the business's own over the built-in wording). */
   language: string;
   texts: CheckInText;
+  /** The business's languages, for the language menu. */
+  languages?: string[];
   checked_in_now?: boolean;
   forms: SelfForm[];
   /** Kiosk only: what the screen sends back to list or start a form. */
@@ -57,7 +59,7 @@ export function selfCheckInError(err: unknown, fallback: string): {
 const kioskHeaders = (token: string) => ({ headers: { 'X-Kiosk-Token': token } });
 
 /** Whether the kiosk's key is still good. Rejects with KIOSK_OFF (switched off) or KIOSK_UNKNOWN (deleted). */
-export async function kioskStatus(token: string): Promise<{ device_name: string; texts?: CheckInText; business_name?: string }> {
+export async function kioskStatus(token: string): Promise<{ device_name: string; texts?: CheckInText; business_name?: string; languages?: string[] }> {
   const res = await axios.get(`${API}/check-in/kiosk/status`, kioskHeaders(token));
   return res.data.data;
 }

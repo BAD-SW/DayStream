@@ -1,0 +1,43 @@
+/* Translations dialog (Phase 44, requirement 9): a table on wide screens, one card per language below md (768px). */
+.tr-save-bar { display: flex; justify-content: flex-end; margin-bottom: var(--space-md); }
+.tr-table { width: 100%; border-collapse: collapse; }
+.tr-table th {
+  text-align: left; padding: var(--space-sm); font-size: var(--font-size-sm); font-weight: 600;
+  color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border);
+}
+.tr-table td { padding: var(--space-sm); vertical-align: top; border-bottom: 1px solid var(--color-border); color: var(--color-text); }
+.tr-lang { font-weight: 600; min-width: 120px; }
+.tr-default-tag { display: block; font-size: var(--font-size-xs); font-weight: 400; color: var(--color-text-secondary); }
+.tr-original { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--control-font-size); }
+.tr-input {
+  background: var(--control-bg); border: 1px solid var(--color-border); border-radius: var(--control-radius);
+  padding: 10px var(--control-padding-x); font-size: var(--control-font-size); min-height: var(--control-height);
+  color: var(--color-text); font-family: var(--font-family); width: 100%; box-sizing: border-box;
+}
+textarea.tr-input { resize: vertical; min-height: 100px; }
+.tr-input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.tr-action { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xs); min-width: 140px; }
+.tr-action button { min-height: 44px; min-width: 44px; }
+.tr-error { color: var(--color-error); font-size: var(--font-size-sm); margin: 0 0 var(--space-sm); }
+.tr-muted { color: var(--color-text-secondary); }
+
+/* Field names: read by screen readers on wide screens (the column header names them), shown above the text on cards. */
+.tr-field-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .tr-table, .tr-table tbody, .tr-table tr, .tr-table td { display: block; width: 100%; box-sizing: border-box; }
+  .tr-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tr-table tr {
+    border: 1px solid var(--color-border); border-radius: var(--radius-md);
+    margin-bottom: var(--space-md); padding: var(--space-sm); background: var(--color-surface);
+  }
+  .tr-table td { border-bottom: none; padding: var(--space-xs) var(--space-sm); }
+  .tr-field-label {
+    position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal;
+    display: block; margin-bottom: var(--space-xs); font-size: var(--font-size-sm); font-weight: 500; color: var(--color-text-secondary);
+  }
+}
+.tr-trigger { display: inline-flex; }
+.tr-trigger button { min-height: 44px; min-width: 44px; }

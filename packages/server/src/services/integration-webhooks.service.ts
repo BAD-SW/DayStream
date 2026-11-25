@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import crypto from 'crypto';
+import { msg } from '../i18n';
 
 /**
  * Get all webhook subscriptions for a tenant.
@@ -104,13 +105,13 @@ export function emitEvent(tenantId: string, eventType: string, data: any): void 
 /** A webhook goes to a public http(s) address, never into the server's own network. */
 export function assertDeliverableUrl(url: string): void {
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw Object.assign(new Error('Enter a full address starting with https://'), { code: 'INVALID_WEBHOOK_URL' }); }
-  if (!['http:', 'https:'].includes(parsed.protocol)) throw Object.assign(new Error('A webhook address starts with http:// or https://'), { code: 'INVALID_WEBHOOK_URL' });
+  try { parsed = new URL(url); } catch { throw Object.assign(new Error(msg('errors:integrationWebhooks.enterAFullAddressStartingWith')), { code: 'INVALID_WEBHOOK_URL' }); }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw Object.assign(new Error(msg('errors:integrationWebhooks.aWebhookAddressStartsWithHttp')), { code: 'INVALID_WEBHOOK_URL' });
   const host = parsed.hostname.toLowerCase();
   const linkLocal = /^169\.254\./.test(host) || host === 'metadata.google.internal';
   const privateNet = host === 'localhost' || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host === '::1' || host === '[::1]' || host.endsWith('.internal') || host.endsWith('.local');
   if (linkLocal || (privateNet && process.env.NODE_ENV === 'production')) {
-    throw Object.assign(new Error('This address is inside a private network and cannot receive webhooks'), { code: 'INVALID_WEBHOOK_URL' });
+    throw Object.assign(new Error(msg('errors:integrationWebhooks.thisAddressIsInsideAPrivate')), { code: 'INVALID_WEBHOOK_URL' });
   }
 }
 

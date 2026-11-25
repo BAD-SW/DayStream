@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * The card held for a reservation (spec 51, gap 5). A service's Reservation Payment Rule decides
@@ -36,7 +37,7 @@ export async function assertCustomerCard(paymentMethodId: string, businessId: st
         AND status = 'active' AND method_type IN ('card', 'bank_draw')`,
     [paymentMethodId, businessId, customerId],
   );
-  if (rows.length === 0) throw new ReservationCardError('Choose one of this customer\'s saved cards or bank accounts.', 'CARD_INVALID');
+  if (rows.length === 0) throw new ReservationCardError(msg('errors:reservationCard.chooseOneOfThisCustomerS'), 'CARD_INVALID');
 }
 
 /**
@@ -50,7 +51,7 @@ export async function cardForNewBooking(input: {
 }): Promise<string | null> {
   const required = !input.covered && await cardIsRequired(input.serviceId, input.businessId, input.customerId);
   if (!input.paymentMethodId) {
-    if (required) throw new ReservationCardError('This service needs a card for the reservation. Choose a saved card or add one.', 'CARD_REQUIRED');
+    if (required) throw new ReservationCardError(msg('errors:reservationCard.thisServiceNeedsACardFor'), 'CARD_REQUIRED');
     return null;
   }
   if (!input.customerId) return null; // a walk-in has no saved cards

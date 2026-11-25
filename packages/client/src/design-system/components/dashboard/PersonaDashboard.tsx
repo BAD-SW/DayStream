@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../context/AuthContext';
 import { useContextManager } from '../../../context/ContextManager';
 import { DashboardShell } from './DashboardShell';
@@ -9,17 +10,23 @@ import { getVisibleModules } from './moduleRegistry';
 import { Persona } from '@daystream/shared';
 import { apiClient } from '../../../api/client';
 import { useBusinessSettings } from '../../../context/BusinessSettingsContext';
+import { formatDate, formatNumber } from '../../../utils/format';
+
+/** Cents shown as an amount with two decimals, in the shown language's number format. */
+const money = (cents: number): string => formatNumber(cents / 100, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 interface DetailModal {
+  /** Key in the nav translation file. */
   title: string;
   rows: any[];
-  columns: { key: string; label: string; render?: (val: any) => string }[];
+  columns: { key: string; /** Key in the nav translation file. */ label: string; render?: (val: any) => string }[];
 }
 
 /**
  * Resolves persona from auth context and renders the appropriate dashboard.
  */
 export function PersonaDashboard() {
+  const { t } = useTranslation('nav');
   const { user, featureFlags } = useAuth();
   const { activeContext, persona: rawPersona } = useContextManager();
   const [tenantKpis, setTenantKpis] = useState<KpiData[] | null>(null);
@@ -53,10 +60,10 @@ export function PersonaDashboard() {
         apiClient.get('/v1/admin/my-billing').then(r => r.data.data).catch(() => null),
       ]).then(([biz, rev, billing]) => {
         setTenantKpis([
-          { icon: '🏪', label: 'Active Businesses', value: biz?.active_businesses ?? '—' },
-          { icon: '💰', label: 'Revenue YTD', value: rev?.total_revenue_ytd != null ? `${(rev.total_revenue_ytd / 100).toFixed(2)}` : '—' },
-          { icon: '💵', label: 'Revenue MTD', value: rev?.month_revenue != null ? `${(rev.month_revenue / 100).toFixed(2)}` : '—' },
-          { icon: '📈', label: 'Still Expected MTD', value: rev?.expected_remaining_mtd != null ? `${(rev.expected_remaining_mtd / 100).toFixed(2)}` : '—' },
+          { icon: '🏪', label: 'dashboard.kpi.active_businesses', value: biz?.active_businesses ?? '—' },
+          { icon: '💰', label: 'dashboard.kpi.revenue_ytd', value: rev?.total_revenue_ytd != null ? `${money(rev.total_revenue_ytd)}` : '—' },
+          { icon: '💵', label: 'dashboard.kpi.revenue_mtd', value: rev?.month_revenue != null ? `${money(rev.month_revenue)}` : '—' },
+          { icon: '📈', label: 'dashboard.kpi.still_expected_mtd', value: rev?.expected_remaining_mtd != null ? `${money(rev.expected_remaining_mtd)}` : '—' },
         ]);
       });
     }
@@ -64,17 +71,17 @@ export function PersonaDashboard() {
       apiClient.get('/v1/admin/reports/system-kpis').then(r => {
         const d = r.data.data;
         setSystemKpis([
-          { icon: '💰', label: 'Platform Revenue YTD', value: d?.platform_revenue_ytd != null ? `${(d.platform_revenue_ytd / 100).toFixed(2)}` : '0.00',
-            prior: `${((d?.platform_revenue_ytd_prior || 0) / 100).toFixed(2)}`,
-            onClick: () => openDetail('/v1/admin/reports/system-revenue/detail?type=ytd', 'Platform Revenue YTD by Tenant', [{ key: 'name', label: 'Tenant' }, { key: 'revenue', label: 'Revenue YTD', render: (v: number) => (v / 100).toFixed(2) }]) },
-          { icon: '💵', label: 'Platform Revenue MTD', value: d?.platform_revenue_mtd != null ? `${(d.platform_revenue_mtd / 100).toFixed(2)}` : '0.00',
-            prior: `${((d?.platform_revenue_mtd_prior || 0) / 100).toFixed(2)}`,
-            onClick: () => openDetail('/v1/admin/reports/system-revenue/detail?type=mtd', 'Platform Revenue MTD by Tenant', [{ key: 'name', label: 'Tenant' }, { key: 'revenue', label: 'Revenue MTD', render: (v: number) => (v / 100).toFixed(2) }]) },
-          { icon: '📈', label: 'Still Expected MTD', value: d?.expected_remaining_mtd != null ? `${(d.expected_remaining_mtd / 100).toFixed(2)}` : '0.00',
-            onClick: () => openDetail('/v1/admin/reports/system-revenue/detail?type=expected_mtd', 'Still Expected This Month', [{ key: 'name', label: 'Tenant' }, { key: 'billing_amount', label: 'Amount Due', render: (v: number) => (v / 100).toFixed(2) }, { key: 'next_billing_date', label: 'Due Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' }]) },
-          { icon: '🏢', label: 'Active Tenants', value: d?.total_tenants ?? '—' },
-          { icon: '🏪', label: 'Active Businesses', value: d?.total_businesses ?? '—' },
-          { icon: '✅', label: 'System Health', value: 'OK' },
+          { icon: '💰', label: 'dashboard.kpi.platform_revenue_ytd', value: d?.platform_revenue_ytd != null ? `${money(d.platform_revenue_ytd)}` : '0.00',
+            prior: `${money(d?.platform_revenue_ytd_prior || 0)}`,
+            onClick: () => openDetail('/v1/admin/reports/system-revenue/detail?type=ytd', 'dashboard.detail.platform_revenue_ytd', [{ key: 'name', label: 'dashboard.detail.tenant' }, { key: 'revenue', label: 'dashboard.kpi.revenue_ytd', render: (v: number) => money(v) }]) },
+          { icon: '💵', label: 'dashboard.kpi.platform_revenue_mtd', value: d?.platform_revenue_mtd != null ? `${money(d.platform_revenue_mtd)}` : '0.00',
+            prior: `${money(d?.platform_revenue_mtd_prior || 0)}`,
+            onClick: () => openDetail('/v1/admin/reports/system-revenue/detail?type=mtd', 'dashboard.detail.platform_revenue_mtd', [{ key: 'name', label: 'dashboard.detail.tenant' }, { key: 'revenue', label: 'dashboard.kpi.revenue_mtd', render: (v: number) => money(v) }]) },
+          { icon: '📈', label: 'dashboard.kpi.still_expected_mtd', value: d?.expected_remaining_mtd != null ? `${money(d.expected_remaining_mtd)}` : '0.00',
+            onClick: () => openDetail('/v1/admin/reports/system-revenue/detail?type=expected_mtd', 'dashboard.detail.still_expected', [{ key: 'name', label: 'dashboard.detail.tenant' }, { key: 'billing_amount', label: 'dashboard.detail.amount_due', render: (v: number) => money(v) }, { key: 'next_billing_date', label: 'dashboard.detail.due_date', render: (v: string) => v ? formatDate(v) : '—' }]) },
+          { icon: '🏢', label: 'dashboard.kpi.active_tenants', value: d?.total_tenants ?? '—' },
+          { icon: '🏪', label: 'dashboard.kpi.active_businesses', value: d?.total_businesses ?? '—' },
+          { icon: '✅', label: 'dashboard.kpi.system_health', value: '', valueKey: 'dashboard.kpi.system_health_ok' },
         ]);
       }).catch(() => {});
     }
@@ -85,19 +92,19 @@ export function PersonaDashboard() {
       apiClient.get(endpoint, { headers: { 'x-business-id': bizId } }).then(r => {
         const d = r.data.data;
         if (isOwnerOrManager) {
-          const ytd = d?.revenue_ytd != null ? (d.revenue_ytd / 100).toFixed(2) : '0.00';
-          const mtd = d?.revenue_mtd != null ? (d.revenue_mtd / 100).toFixed(2) : '0.00';
+          const ytd = d?.revenue_ytd != null ? money(d.revenue_ytd) : '0.00';
+          const mtd = d?.revenue_mtd != null ? money(d.revenue_mtd) : '0.00';
           setBusinessKpis([
-            { icon: '💰', label: 'Revenue — YTD / MTD', value: `$${ytd} / $${mtd}` },
-            { icon: '📅', label: 'Bookings — Week / Today', value: `${d?.week_bookings ?? '0'} / ${d?.todays_bookings ?? '0'}` },
-            { icon: '👥', label: 'Customers — Active / New MTD', value: `${d?.active_customers ?? '0'} / ${d?.new_customers_month ?? '0'}` },
+            { icon: '💰', label: 'dashboard.kpi.revenue_ytd_mtd', value: `$${ytd} / $${mtd}` },
+            { icon: '📅', label: 'dashboard.kpi.bookings_week_today', value: `${d?.week_bookings ?? '0'} / ${d?.todays_bookings ?? '0'}` },
+            { icon: '👥', label: 'dashboard.kpi.customers_active_new', value: `${d?.active_customers ?? '0'} / ${d?.new_customers_month ?? '0'}` },
           ]);
         } else {
           setBusinessKpis([
-            { icon: '📅', label: 'My Bookings Today', value: d?.my_bookings_today ?? '0' },
-            { icon: '📆', label: 'My Bookings This Week', value: d?.my_bookings_week ?? '0' },
-            { icon: '👥', label: 'My Customers', value: d?.my_customers ?? '0' },
-            { icon: '⏰', label: 'Next Appointment', value: d?.next_appointment || '—' },
+            { icon: '📅', label: 'dashboard.kpi.my_bookings_today', value: d?.my_bookings_today ?? '0' },
+            { icon: '📆', label: 'dashboard.kpi.my_bookings_week', value: d?.my_bookings_week ?? '0' },
+            { icon: '👥', label: 'dashboard.kpi.my_customers', value: d?.my_customers ?? '0' },
+            { icon: '⏰', label: 'dashboard.kpi.next_appointment', value: d?.next_appointment || '—' },
           ]);
         }
       }).catch(() => {});
@@ -112,8 +119,8 @@ export function PersonaDashboard() {
   const { settings: businessSettings } = useBusinessSettings();
   const modules = baseModules.map((mod) => {
     if (mod.id === 'schedule') {
-      const status = businessSettings.schedulingMode === 'schedule' ? 'Enabled' : 'Disabled';
-      return { ...mod, titleKey: `Schedule (${status})`, descriptionKey: `Staff scheduling — ${status}` };
+      const state = businessSettings.schedulingMode === 'schedule' ? 'enabled' : 'disabled';
+      return { ...mod, titleKey: `modules.schedule.title_${state}`, descriptionKey: `modules.schedule.description_${state}` };
     }
     return mod;
   });
@@ -127,7 +134,7 @@ export function PersonaDashboard() {
         kpis={
           <>
             {kpis.map((kpi) => (
-              <KpiCard key={kpi.label} {...kpi} />
+              <KpiCard key={kpi.label} {...kpi} label={t(kpi.label)} value={kpi.valueKey ? t(kpi.valueKey) : kpi.value} />
             ))}
           </>
         }
@@ -139,17 +146,17 @@ export function PersonaDashboard() {
         <div style={modalStyles.overlay}>
           <div style={modalStyles.modal}>
             <div style={modalStyles.header}>
-              <h3 style={modalStyles.title}>{detail.title}</h3>
-              <button style={modalStyles.closeBtn} onClick={() => setDetail(null)}>&times;</button>
+              <h3 style={modalStyles.title}>{t(detail.title)}</h3>
+              <button style={modalStyles.closeBtn} onClick={() => setDetail(null)}>{'\u00d7'}</button>
             </div>
             {detailLoading ? (
-              <p style={modalStyles.muted}>Loading...</p>
+              <p style={modalStyles.muted}>{t('common:loading')}</p>
             ) : detail.rows.length === 0 ? (
-              <p style={modalStyles.muted}>No records found.</p>
+              <p style={modalStyles.muted}>{t('dashboard.no_records')}</p>
             ) : (
               <div style={modalStyles.table}>
                 <div style={modalStyles.tableHeader}>
-                  {detail.columns.map((col) => <span key={col.key} style={modalStyles.col}>{col.label}</span>)}
+                  {detail.columns.map((col) => <span key={col.key} style={modalStyles.col}>{t(col.label)}</span>)}
                 </div>
                 {detail.rows.map((row, i) => (
                   <div key={i} style={modalStyles.tableRow}>
@@ -182,8 +189,11 @@ function getPermissionsFromRole(role: string): string[] {
 
 interface KpiData {
   icon: string;
+  /** Key in the nav translation file. */
   label: string;
   value: string | number;
+  /** A translated value (key in the nav file), shown instead of `value`. */
+  valueKey?: string;
   subValue?: string;
   trend?: { direction: 'up' | 'down' | 'flat'; percentage: number; period: string };
   prior?: string;
@@ -194,31 +204,31 @@ function getKpisForPersona(persona: Persona): KpiData[] {
   switch (persona) {
     case 'system':
       return [
-        { icon: '🏢', label: 'Total Tenants', value: '—' },
-        { icon: '🏪', label: 'Total Businesses', value: '—' },
-        { icon: '💰', label: 'Platform Revenue', value: '—' },
-        { icon: '✅', label: 'System Health', value: 'OK' },
+        { icon: '🏢', label: 'dashboard.kpi.total_tenants', value: '—' },
+        { icon: '🏪', label: 'dashboard.kpi.total_businesses', value: '—' },
+        { icon: '💰', label: 'dashboard.kpi.platform_revenue', value: '—' },
+        { icon: '✅', label: 'dashboard.kpi.system_health', value: '', valueKey: 'dashboard.kpi.system_health_ok' },
       ];
     case 'tenant':
       return [
-        { icon: '🏪', label: 'Active Businesses', value: '—' },
-        { icon: '💰', label: 'Revenue YTD', value: '—' },
-        { icon: '📈', label: 'New This Month', value: '—' },
-        { icon: '📅', label: 'Next Billing', value: '—' },
+        { icon: '🏪', label: 'dashboard.kpi.active_businesses', value: '—' },
+        { icon: '💰', label: 'dashboard.kpi.revenue_ytd', value: '—' },
+        { icon: '📈', label: 'dashboard.kpi.new_this_month', value: '—' },
+        { icon: '📅', label: 'dashboard.kpi.next_billing', value: '—' },
       ];
     case 'business':
       return [
-        { icon: '💰', label: 'Revenue MTD', value: '—' },
-        { icon: '📅', label: "Today's Bookings", value: '—' },
-        { icon: '👥', label: 'Active Customers', value: '—' },
-        { icon: '🆕', label: 'New Customers', value: '—' },
+        { icon: '💰', label: 'dashboard.kpi.revenue_mtd', value: '—' },
+        { icon: '📅', label: 'dashboard.kpi.todays_bookings', value: '—' },
+        { icon: '👥', label: 'dashboard.kpi.active_customers', value: '—' },
+        { icon: '🆕', label: 'dashboard.kpi.new_customers', value: '—' },
       ];
     case 'customer':
       return [
-        { icon: '📅', label: 'Upcoming Bookings', value: '—' },
-        { icon: '🏷️', label: 'Membership', value: '—' },
-        { icon: '⭐', label: 'Loyalty Points', value: '—' },
-        { icon: '🕐', label: 'Last Visit', value: '—' },
+        { icon: '📅', label: 'dashboard.kpi.upcoming_bookings', value: '—' },
+        { icon: '🏷️', label: 'dashboard.kpi.membership', value: '—' },
+        { icon: '⭐', label: 'dashboard.kpi.loyalty_points', value: '—' },
+        { icon: '🕐', label: 'dashboard.kpi.last_visit', value: '—' },
       ];
     default:
       return [];

@@ -1,6 +1,9 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { lifecycleStageLabel, personSourceLabel, PEOPLE_VIEWS, LIFECYCLE_STAGES } from '@daystream/shared';
+import { useTranslation, Trans } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import { PEOPLE_VIEWS, LIFECYCLE_STAGES } from '@daystream/shared';
 import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
@@ -8,7 +11,8 @@ import { Button } from '../design-system/components/actions/Button';
 import * as customersApi from '../api/customers';
 import { useAuth } from '../context/AuthContext';
 import { getPermissionsFromRole } from '../context/ContextManager';
-import { useColumnOrder, orderColumns } from '../utils/peopleColumns';
+import { useColumnOrder, orderColumns, stageText, sourceText } from '../utils/peopleColumns';
+import { formatDate, formatDateTime, formatNumber } from '../utils/format';
 import type { Customer, ViewCounts, Segment } from '../api/customers';
 
 const STAGE_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -24,18 +28,11 @@ const VIEW_STORAGE_KEY = 'ds_people_view';
 const COLUMNS_STORAGE_KEY = 'ds_people_columns';
 
 // Columns the user may hide. Ref, name and surname always stay.
-const OPTIONAL_COLUMNS: Array<{ key: string; label: string }> = [
-  { key: 'email', label: 'Email' },
-  { key: 'phone', label: 'Phone' },
-  { key: 'lifecycle_stage', label: 'Stage' },
-  { key: 'source', label: 'Source' },
-  { key: 'owner_name', label: 'Staff member' },
-  { key: 'last_activity_at', label: 'Last activity' },
-  { key: 'created_at', label: 'Added' },
+// Their words are people.col.<key> in the translation file.
+const OPTIONAL_COLUMNS: string[] = [
+  'email', 'phone', 'lifecycle_stage', 'source', 'owner_name', 'last_activity_at', 'created_at',
   // THE-18, hidden until a user shows them.
-  { key: 'last_contacted_at', label: 'Last contacted' },
-  { key: 'next_booking_at', label: 'Next booking' },
-  { key: 'visits_count', label: 'Visits' },
+  'last_contacted_at', 'next_booking_at', 'visits_count',
 ];
 const OFF_BY_DEFAULT = ['last_contacted_at', 'next_booking_at', 'visits_count'];
 const SHOWN_STORAGE_KEY = 'ds_people_columns_shown';
@@ -45,26 +42,27 @@ const PEOPLE_CANONICAL: Record<string, string> = {
   last_activity_at: 'last_activity', created_at: 'created_at', last_contacted_at: 'last_contacted', next_booking_at: 'next_booking', visits_count: 'visits',
 };
 
-const BULK_ACTIONS: Array<{ id: customersApi.BulkAction; label: string }> = [
-  { id: 'add_tag', label: 'Add a tag' },
-  { id: 'remove_tag', label: 'Remove a tag' },
-  { id: 'assign_owner', label: 'Assign a staff member' },
-  { id: 'change_stage', label: 'Change stage' },
-  { id: 'add_to_list', label: 'Add to a fixed list' },
-  { id: 'archive', label: 'Archive' },
-  { id: 'delete', label: 'Delete permanently' }, // TEMPORARY: test-data cleanup; remove later
+// Their words are people.bulk.action.<id> in the translation file.
+const BULK_ACTIONS: Array<{ id: customersApi.BulkAction }> = [
+  { id: 'add_tag' },
+  { id: 'remove_tag' },
+  { id: 'assign_owner' },
+  { id: 'change_stage' },
+  { id: 'add_to_list' },
+  { id: 'archive' },
+  { id: 'delete' }, // TEMPORARY: test-data cleanup; remove later
 ];
 
 const PAGE_SIZE = 50;
 const readFilters = (raw: string | null): TableFilters => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
 
-function relativeDay(value?: string | null): string {
+function relativeDay(t: TFunction, value?: string | null): string {
   if (!value) return '—';
   const days = Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 30) return `${days} days ago`;
-  return new Date(value).toLocaleDateString();
+  if (days <= 0) return t('people.today');
+  if (days === 1) return t('people.yesterday');
+  if (days < 30) return t('people.daysAgo', { count: days });
+  return formatDate(value);
 }
 
 /**
@@ -72,6 +70,7 @@ function relativeDay(value?: string | null): string {
  * "Leads", "Customers", "At risk" and "Former" are views of this list, not separate lists.
  */
 export function Customers() {
+  const { t } = useTranslation('customers');
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -229,7 +228,7 @@ export function Customers() {
     setBulkBusy(true);
     setBulkMessage('');
     try { setBulkConfirm(await customersApi.previewBulk(businessId, bulkTarget())); }
-    catch (err: any) { setBulkMessage(err.response?.data?.error || 'Could not prepare this change'); }
+    catch (err: any) { setBulkMessage(err.response?.data?.error || t('people.bulk.prepareFailed')); }
     finally { setBulkBusy(false); }
   }
 
@@ -239,17 +238,18 @@ export function Customers() {
     setBulkBusy(true);
     try {
       const result = await customersApi.runBulk(businessId, bulkTarget(), bulkAction, bulkPayload());
-      const label = BULK_ACTIONS.find((a) => a.id === bulkAction)?.label || 'Change';
+      const found = BULK_ACTIONS.find((a) => a.id === bulkAction);
+      const label = found ? t('people.bulk.action.' + found.id) : t('people.bulk.change');
       setBulkAction('');
       setBulkValue('');
       await fetchCustomers();
       customersApi.getViewCounts(businessId).then(setViewCounts).catch(() => {});
       setBulkMessage(result.background
-        ? `${label}: ${result.count} people are being changed in the background. Reload the list in a minute to see the result.`
-        : `${label}: ${result.affected} ${result.affected === 1 ? 'person' : 'people'} changed.${result.skipped ? ` ${result.skipped} could not be deleted because they have bookings, payments or memberships.` : ''}`);
+        ? t('people.bulk.background', { label, n: result.count })
+        : `${t('people.bulk.changed', { label, count: result.affected })}${result.skipped ? ` ${t('people.bulk.skipped', { n: result.skipped })}` : ''}`);
     } catch (err: any) {
       setBulkConfirm(null);
-      setBulkMessage(err.response?.data?.error || 'The change could not be applied');
+      setBulkMessage(err.response?.data?.error || t('people.bulk.applyFailed'));
     } finally { setBulkBusy(false); }
   }
 
@@ -278,58 +278,58 @@ export function Customers() {
     const values = await customersApi.getColumnValues(businessId, key, currentFilters());
     return values.map((v) => ({
       value: v.value, count: v.count,
-      label: key === 'lifecycle_stage' ? lifecycleStageLabel(v.value)
-        : key === 'source' ? personSourceLabel(v.value)
-        : key === 'owner_name' ? (v.label || 'Unassigned')
+      label: key === 'lifecycle_stage' ? stageText(t, v.value)
+        : key === 'source' ? sourceText(t, v.value)
+        : key === 'owner_name' ? (v.label || t('people.unassigned'))
         : v.label || v.value,
     }));
-  }, [businessId, currentFilters]);
+  }, [businessId, currentFilters, t]);
 
   const allColumns = [
-    { key: 'reference_number', header: 'Ref', width: '110px', sortable: true },
+    { key: 'reference_number', header: t('people.col.reference_number'), width: '110px', sortable: true },
     {
-      key: 'first_name', header: 'Name', sortable: true,
+      key: 'first_name', header: t('people.col.first_name'), sortable: true,
       // With no name on record, show how the person can be reached instead of a blank cell.
       render: (val: string, row: Customer) => (
         <span style={styles.nameCell}>
           {val || (!row.last_name ? (row.email || row.phone || '—') : '')}
-          {row.incomplete && <Badge variant="warning">Incomplete</Badge>}
-          {row.status === 'archived' && <Badge variant="neutral">Archived</Badge>}
+          {row.incomplete && <Badge variant="warning">{t('people.incomplete')}</Badge>}
+          {row.status === 'archived' && <Badge variant="neutral">{t('people.archived')}</Badge>}
         </span>
       ),
     },
-    { key: 'last_name', header: 'Surname(s)', sortable: true },
-    { key: 'email', header: 'Email', sortable: true, render: (val: string | null) => val || '—' },
-    { key: 'phone', header: 'Phone', sortable: true, render: (val: string | null) => val || '—' },
+    { key: 'last_name', header: t('people.col.last_name'), sortable: true },
+    { key: 'email', header: t('people.col.email'), sortable: true, render: (val: string | null) => val || '—' },
+    { key: 'phone', header: t('people.col.phone'), sortable: true, render: (val: string | null) => val || '—' },
     {
-      key: 'lifecycle_stage', header: 'Stage', sortable: true,
+      key: 'lifecycle_stage', header: t('people.col.lifecycle_stage'), sortable: true,
       render: (val: string) => {
         const colors = STAGE_COLORS[val];
-        return <Badge bg={colors?.bg} fg={colors?.fg}>{lifecycleStageLabel(val)}</Badge>;
+        return <Badge bg={colors?.bg} fg={colors?.fg}>{stageText(t, val)}</Badge>;
       },
     },
     {
-      key: 'source', header: 'Source', sortable: true,
-      render: (val: string, row: Customer) => <span title={personSourceLabel(val, row.source_detail)}>{personSourceLabel(val)}</span>,
+      key: 'source', header: t('people.col.source'), sortable: true,
+      render: (val: string, row: Customer) => <span title={sourceText(t, val, row.source_detail)}>{sourceText(t, val)}</span>,
     },
-    { key: 'owner_name', header: 'Staff member', sortable: true, render: (val: string | null) => val || '—' },
+    { key: 'owner_name', header: t('people.col.owner_name'), sortable: true, render: (val: string | null) => val || '—' },
     {
-      key: 'last_activity_at', header: 'Last activity', sortable: true, filter: 'date' as const,
-      render: (val: string | null) => <span title={val ? new Date(val).toLocaleString() : undefined}>{relativeDay(val)}</span>,
-    },
-    {
-      key: 'created_at', header: 'Added', sortable: true, filter: 'date' as const,
-      render: (val: string) => new Date(val).toLocaleDateString(),
+      key: 'last_activity_at', header: t('people.col.last_activity_at'), sortable: true, filter: 'date' as const,
+      render: (val: string | null) => <span title={val ? formatDateTime(val) : undefined}>{relativeDay(t, val)}</span>,
     },
     {
-      key: 'last_contacted_at', header: 'Last contacted', sortable: true, filter: false as const,
-      render: (val: string | null) => <span title={val ? new Date(val).toLocaleString() : undefined}>{relativeDay(val)}</span>,
+      key: 'created_at', header: t('people.col.created_at'), sortable: true, filter: 'date' as const,
+      render: (val: string) => formatDate(val),
     },
     {
-      key: 'next_booking_at', header: 'Next booking', sortable: true, filter: false as const,
-      render: (val: string | null) => (val ? new Date(val).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'),
+      key: 'last_contacted_at', header: t('people.col.last_contacted_at'), sortable: true, filter: false as const,
+      render: (val: string | null) => <span title={val ? formatDateTime(val) : undefined}>{relativeDay(t, val)}</span>,
     },
-    { key: 'visits_count', header: 'Visits', sortable: true, filter: false as const, align: 'right' as const, render: (val: number | null) => val ?? 0 },
+    {
+      key: 'next_booking_at', header: t('people.col.next_booking_at'), sortable: true, filter: false as const,
+      render: (val: string | null) => (val ? formatDateTime(val, undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'),
+    },
+    { key: 'visits_count', header: t('people.col.visits_count'), sortable: true, filter: false as const, align: 'right' as const, render: (val: number | null) => formatNumber(val ?? 0) },
   ];
   const columns = orderColumns(allColumns.filter((c) => !hiddenColumns.includes(c.key)), columnOrder, PEOPLE_CANONICAL, ['first_name', 'last_name']);
 
@@ -337,9 +337,9 @@ export function Customers() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>People</h1>
+        <h1 style={styles.title}>{t('people.title')}</h1>
         <div style={styles.headerActions}>
-          <Button variant="outline" onClick={() => navigate('/customers/segments')}>Segments</Button>
+          <Button variant="outline" onClick={() => navigate('/customers/segments')}>{t('segments.title')}</Button>
           <Button variant="outline" onClick={async () => {
             try {
               const url = customersApi.getExportUrl(businessId, currentFilters());
@@ -351,14 +351,14 @@ export function Customers() {
               link.download = `people-${new Date().toISOString().split('T')[0]}.csv`;
               link.click();
               URL.revokeObjectURL(link.href);
-            } catch { alert('Export failed'); }
-          }}>Export CSV</Button>
-          <Button onClick={() => navigate('/customers/new')}>Add Person</Button>
+            } catch { void showMessage({ message: t('people.exportFailed'), tone: 'error' }); }
+          }}>{t('people.exportCsv')}</Button>
+          <Button onClick={() => navigate('/customers/new')}>{t('people.addPerson')}</Button>
         </div>
       </div>
 
       {/* System views: one list, seen through its stages */}
-      <div style={styles.viewRow} role="tablist" aria-label="People views">
+      <div style={styles.viewRow} role="tablist" aria-label={t('people.views')}>
         {PEOPLE_VIEWS.map((v) => (
           <button
             key={v.id}
@@ -367,37 +367,37 @@ export function Customers() {
             style={{ ...styles.viewTab, ...(view === v.id ? styles.viewTabActive : {}) }}
             onClick={() => chooseView(v.id)}
           >
-            <span>{v.label}</span>
-            <span style={styles.viewCount}>{viewCounts ? viewCounts[v.id] ?? 0 : '…'}</span>
+            <span>{t('people.view.' + v.id, { defaultValue: v.label })}</span>
+            <span style={styles.viewCount}>{viewCounts ? formatNumber(viewCounts[v.id] ?? 0) : '…'}</span>
           </button>
         ))}
         <select
           style={styles.segmentSelect}
-          aria-label="Show a segment"
+          aria-label={t('people.showSegment')}
           value={segmentId}
           onChange={(e) => { setSegmentId(e.target.value); setPage(1); }}
         >
-          <option value="">Segment: none</option>
+          <option value="">{t('people.segmentNone')}</option>
           {segments.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}{s.kind === 'static' ? ' (fixed list)' : ''}</option>
+            <option key={s.id} value={s.id}>{s.kind === 'static' ? t('people.segmentFixed', { name: s.name }) : s.name}</option>
           ))}
         </select>
       </div>
 
       <div style={styles.listToolbar}>
-        <p style={styles.resultCount} aria-live="polite">{loading ? ' ' : `${total} ${total === 1 ? 'person' : 'people'}`}</p>
+        <p style={styles.resultCount} aria-live="polite">{loading ? ' ' : t('people.count', { count: total })}</p>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--font-size-sm)' }}>
           <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }} />
-          Show archived
+          {t('people.showArchived')}
         </label>
         <div style={styles.columnsWrap}>
-          <button style={styles.columnsButton} aria-expanded={showColumns} onClick={() => setShowColumns((v) => !v)}>Columns</button>
+          <button style={styles.columnsButton} aria-expanded={showColumns} onClick={() => setShowColumns((v) => !v)}>{t('people.columns')}</button>
           {showColumns && (
-            <div style={styles.columnsMenu} role="group" aria-label="Columns shown">
+            <div style={styles.columnsMenu} role="group" aria-label={t('people.columnsShown')}>
               {OPTIONAL_COLUMNS.map((c) => (
-                <label key={c.key} style={styles.columnsOption}>
-                  <input type="checkbox" checked={!hiddenColumns.includes(c.key)} onChange={() => toggleColumn(c.key)} />
-                  {c.label}
+                <label key={c} style={styles.columnsOption}>
+                  <input type="checkbox" checked={!hiddenColumns.includes(c)} onChange={() => toggleColumn(c)} />
+                  {t('people.col.' + c)}
                 </label>
               ))}
             </div>
@@ -409,59 +409,59 @@ export function Customers() {
 
       {/* Bulk actions: shown once someone is ticked */}
       {selectedCount > 0 && (
-        <div style={styles.bulkBar} role="region" aria-label="Bulk actions">
+        <div style={styles.bulkBar} role="region" aria-label={t('people.bulk.title')}>
           <div style={styles.bulkLine}>
-            <strong>{selectedCount} selected</strong>
+            <strong>{t('people.bulk.selected', { count: selectedCount })}</strong>
             {!allMatching && selectedIds.length === customers.length && total > customers.length && (
               <button style={styles.linkButton} onClick={() => { setAllMatching(true); setBulkConfirm(null); }}>
-                Select all {total} matching these filters
+                {t('people.bulk.selectAll', { n: formatNumber(total) })}
               </button>
             )}
-            {allMatching && <span style={styles.bulkHint}>Everyone matching these filters, including those not loaded yet.</span>}
-            <button style={styles.linkButton} onClick={clearSelection}>Clear selection</button>
+            {allMatching && <span style={styles.bulkHint}>{t('people.bulk.everyone')}</span>}
+            <button style={styles.linkButton} onClick={clearSelection}>{t('people.bulk.clear')}</button>
           </div>
           {bulkConfirm === null ? (
             <div style={styles.bulkLine}>
-              <select style={styles.bulkSelect} aria-label="Bulk action" value={bulkAction} onChange={(e) => { setBulkAction(e.target.value as customersApi.BulkAction | ''); setBulkValue(''); }}>
-                <option value="">Choose an action…</option>
-                {BULK_ACTIONS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              <select style={styles.bulkSelect} aria-label={t('people.bulk.action.label')} value={bulkAction} onChange={(e) => { setBulkAction(e.target.value as customersApi.BulkAction | ''); setBulkValue(''); }}>
+                <option value="">{t('people.bulk.chooseAction')}</option>
+                {BULK_ACTIONS.map((a) => <option key={a.id} value={a.id}>{t('people.bulk.action.' + a.id)}</option>)}
               </select>
               {(bulkAction === 'add_tag' || bulkAction === 'remove_tag') && (
-                <select style={styles.bulkSelect} aria-label="Tag" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-                  <option value="">{tags.length ? 'Choose a tag…' : 'No tags defined yet'}</option>
-                  {tags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                <select style={styles.bulkSelect} aria-label={t('people.bulk.tag')} value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">{tags.length ? t('people.bulk.chooseTag') : t('people.bulk.noTags')}</option>
+                  {tags.map((tg) => <option key={tg.id} value={tg.id}>{tg.name}</option>)}
                 </select>
               )}
               {bulkAction === 'assign_owner' && (
-                <select style={styles.bulkSelect} aria-label="Staff member" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-                  <option value="">Choose a staff member…</option>
-                  <option value="none">Unassigned</option>
+                <select style={styles.bulkSelect} aria-label={t('people.bulk.staffMember')} value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">{t('people.bulk.chooseStaff')}</option>
+                  <option value="none">{t('people.unassigned')}</option>
                   {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
                 </select>
               )}
               {bulkAction === 'change_stage' && (
-                <select style={styles.bulkSelect} aria-label="Stage" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-                  <option value="">Choose a stage…</option>
-                  {LIFECYCLE_STAGES.map((st) => <option key={st} value={st}>{lifecycleStageLabel(st)}</option>)}
+                <select style={styles.bulkSelect} aria-label={t('people.bulk.stage')} value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">{t('people.bulk.chooseStage')}</option>
+                  {LIFECYCLE_STAGES.map((st) => <option key={st} value={st}>{stageText(t, st)}</option>)}
                 </select>
               )}
               {bulkAction === 'add_to_list' && (
-                <select style={styles.bulkSelect} aria-label="Fixed list" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-                  <option value="">{fixedLists.length ? 'Choose a list…' : 'No fixed lists yet (create one in Segments)'}</option>
+                <select style={styles.bulkSelect} aria-label={t('people.bulk.fixedList')} value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">{fixedLists.length ? t('people.bulk.chooseList') : t('people.bulk.noLists')}</option>
                   {fixedLists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
               )}
-              <Button size="sm" disabled={!bulkReady} loading={bulkBusy} onClick={previewBulk}>Continue</Button>
+              <Button size="sm" disabled={!bulkReady} loading={bulkBusy} onClick={previewBulk}>{t('people.bulk.continue')}</Button>
             </div>
           ) : (
             <div style={styles.bulkLine}>
               <span>
-                {BULK_ACTIONS.find((a) => a.id === bulkAction)?.label} for <strong>{bulkConfirm} {bulkConfirm === 1 ? 'person' : 'people'}</strong>?
-                {bulkAction === 'archive' ? ' They will be hidden from the list.' : ''}
-                {bulkAction === 'delete' ? ' This permanently deletes them and their tags and timeline. It cannot be undone.' : ''}
+                <Trans t={t} i18nKey="people.bulk.confirm" count={bulkConfirm} values={{ action: bulkAction ? t('people.bulk.action.' + bulkAction) : '', n: formatNumber(bulkConfirm) }} components={[<strong />]} />
+                {bulkAction === 'archive' ? ` ${t('people.bulk.archiveNote')}` : ''}
+                {bulkAction === 'delete' ? ` ${t('people.bulk.deleteNote')}` : ''}
               </span>
-              <Button size="sm" variant="secondary" onClick={() => setBulkConfirm(null)}>Back</Button>
-              <Button size="sm" loading={bulkBusy} onClick={applyBulk}>Confirm</Button>
+              <Button size="sm" variant="secondary" onClick={() => setBulkConfirm(null)}>{t('common:back')}</Button>
+              <Button size="sm" loading={bulkBusy} onClick={applyBulk}>{t('common:confirm')}</Button>
             </div>
           )}
           {bulkMessage && <p style={styles.bulkMessage} role="status">{bulkMessage}</p>}
@@ -471,7 +471,7 @@ export function Customers() {
       {/* Table */}
       {!businessId && !loading && (
         <div style={styles.noContext}>
-          <p>No business context found. Please log out and log back in to refresh your session.</p>
+          <p>{t('people.noContext')}</p>
         </div>
       )}
       <Table
@@ -489,7 +489,7 @@ export function Customers() {
         onLoadMore={loadMore}
         hasMore={customers.length < total}
         loadingMore={loadingMore}
-        emptyMessage="No people found"
+        emptyMessage={t('people.none')}
         mobileCardMode
       />
     </div>

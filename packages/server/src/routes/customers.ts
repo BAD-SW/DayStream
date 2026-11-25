@@ -66,7 +66,7 @@ customersRouter.post('/', requirePermission('customers:*'), validate(createCusto
   try {
     const authReq = req as AuthenticatedRequest;
     if (!(req.body.email || '').trim() && !(req.body.phone || '').trim()) {
-      error(res, 'An email address or a phone number is required', 'CONTACT_POINT_REQUIRED', 400);
+      error(res, msg('errors:customers.anEmailAddressOrAPhone'), 'CONTACT_POINT_REQUIRED', 400);
       return;
     }
     const result = await customerService.createCustomer({
@@ -102,7 +102,7 @@ customersRouter.post('/', requirePermission('customers:*'), validate(createCusto
   } catch (err: any) {
     if (err?.code === 'CONTACT_POINT_REQUIRED') { error(res, err.message, err.code, 400); return; }
     console.error('[customers] Create customer failed:', err.message, err.stack);
-    error(res, 'Failed to create customer', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToCreateCustomer'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -111,7 +111,7 @@ customersRouter.post('/', requirePermission('customers:*'), validate(createCusto
 customersRouter.get('/column-values', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400); return; }
     const values = await customerService.getColumnValues(businessId, String(req.query.column || ''), {
       search: req.query.search as string,
       ...peopleFilters(req),
@@ -119,7 +119,7 @@ customersRouter.get('/column-values', requirePermission('customers:read'), async
     success(res, values);
   } catch (err: any) {
     console.error('Failed to list column values', err?.message || err);
-    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToListColumnValues'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -127,7 +127,7 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) {
-      error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -157,7 +157,7 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
     });
   } catch (err: any) {
     console.error('Failed to list customers', err?.message || err);
-    error(res, 'Failed to list customers', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToListCustomers'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -182,11 +182,11 @@ function peopleFilters(req: Request) {
 customersRouter.get('/view-counts', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await customerService.getViewCounts(businessId));
   } catch (err: any) {
     console.error('Failed to get view counts', err?.message || err);
-    error(res, 'Failed to get view counts', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetViewCounts'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -195,7 +195,7 @@ customersRouter.get('/owners', requirePermission('customers:read'), async (req: 
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
       `SELECT id, first_name, last_name FROM usr_users
         WHERE tenant_id = $1 AND business_id = $2 AND status = 'active' AND persona = 'business'
@@ -205,7 +205,7 @@ customersRouter.get('/owners', requirePermission('customers:read'), async (req: 
     success(res, rows);
   } catch (err: any) {
     console.error('Failed to list owners', err?.message || err);
-    error(res, 'Failed to list owners', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToListOwners'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -251,7 +251,7 @@ customersRouter.post('/bulk/preview', requirePermission('customers:*'), validate
     success(res, { count: ids.length });
   } catch (err: any) {
     console.error('Failed to preview the bulk action', err?.message || err);
-    error(res, 'Failed to preview the bulk action', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToPreviewTheBulkAction'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -259,7 +259,7 @@ customersRouter.post('/bulk/preview', requirePermission('customers:*'), validate
 customersRouter.post('/bulk', requirePermission('customers:*'), validate(bulkSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    if (!req.body.action) { error(res, 'action is required', 'VALIDATION_ERROR', 400); return; }
+    if (!req.body.action) { error(res, msg('errors:customers.actionIsRequired'), 'VALIDATION_ERROR', 400); return; }
     // A very large change (only possible through "everyone matching the filters") is not made to
     // wait for: it runs in the background and is recorded in the audit log when it finishes.
     const target = bulkTarget(req);
@@ -286,13 +286,13 @@ customersRouter.post('/bulk', requirePermission('customers:*'), validate(bulkSch
 customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const summary = await lifecycleService.getLifecycleSummary(businessId);
     success(res, summary);
   } catch (err: any) {
     console.error('Failed to get lifecycle summary', err?.message || err);
-    error(res, 'Failed to get lifecycle summary', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetLifecycleSummary'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -302,28 +302,28 @@ customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), a
 customersRouter.get('/column-order', async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(`SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = 'people.column_order'`, [businessId]);
     let order: string[] = [];
     try { order = JSON.parse(rows[0]?.value || '[]'); } catch { order = []; }
     success(res, { order: Array.isArray(order) ? order : [] });
-  } catch (err: any) { console.error('Failed to get column order', err?.message || err); error(res, 'Failed to get column order', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get column order', err?.message || err); error(res, msg('errors:customers.failedToGetColumnOrder'), 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.put('/column-order', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const order = Array.isArray(req.body?.order) ? req.body.order.filter((k: any) => typeof k === 'string' && /^[a-z_]{1,40}$/.test(k)).slice(0, 50) : null;
-    if (!order) { error(res, 'order must be a list of column keys', 'VALIDATION_ERROR', 400); return; }
+    if (!order) { error(res, msg('errors:customers.orderMustBeAListOf'), 'VALIDATION_ERROR', 400); return; }
     await adminPool.query(
       `INSERT INTO sys_business_configurations (business_id, key, value, updated_by, updated_at) VALUES ($1, 'people.column_order', $2, $3, NOW())
        ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
       [businessId, JSON.stringify(order), authReq.user.sub],
     );
     success(res, { order });
-  } catch (err: any) { console.error('Failed to save column order', err?.message || err); error(res, 'Failed to save column order', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save column order', err?.message || err); error(res, msg('errors:customers.failedToSaveColumnOrder'), 'INTERNAL_ERROR', 500); }
 });
 
 // --- Lifecycle Config & Scheduled Jobs (must be before /:id) ---
@@ -333,7 +333,7 @@ import { computeNextRunUtc } from '../jobs/schedule-time';
 customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(`SELECT key, value FROM sys_business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`, [businessId]);
     const config: Record<string, any> = { enabled: true, at_risk_days: 30, churned_days: 60, run_time: '02:00' };
     for (const row of rows) {
@@ -343,14 +343,14 @@ customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async 
       if (row.key === 'lifecycle.run_time') config.run_time = row.value;
     }
     success(res, config);
-  } catch (err: any) { console.error('Failed to get lifecycle config', err?.message || err); error(res, 'Failed to get lifecycle config', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get lifecycle config', err?.message || err); error(res, msg('errors:customers.failedToGetLifecycleConfig'), 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { enabled, at_risk_days, churned_days, run_time } = req.body;
     const entries = [
       { key: 'lifecycle.enabled', value: String(enabled ?? true) },
@@ -365,7 +365,7 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
       );
     }
     success(res, { enabled, at_risk_days, churned_days, run_time });
-  } catch (err: any) { console.error('Failed to save lifecycle config', err?.message || err); error(res, 'Failed to save lifecycle config', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save lifecycle config', err?.message || err); error(res, msg('errors:customers.failedToSaveLifecycleConfig'), 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.get('/scheduled-jobs/types', requirePermission('settings:*'), async (_req: Request, res: Response) => {
@@ -375,22 +375,22 @@ customersRouter.get('/scheduled-jobs/types', requirePermission('settings:*'), as
 customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
       `SELECT id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at, last_run_at, last_run_status, last_run_duration_ms, last_error, consecutive_failures FROM sys_scheduled_jobs WHERE business_id = $1 ORDER BY job_type`,
       [businessId],
     );
     success(res, rows);
-  } catch (err: any) { console.error('Failed to get scheduled jobs', err?.message || err); error(res, 'Failed to get scheduled jobs', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get scheduled jobs', err?.message || err); error(res, msg('errors:customers.failedToGetScheduledJobs'), 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled } = req.body;
-    if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
+    if (!job_type) { error(res, msg('errors:customers.jobTypeRequired'), 'VALIDATION_ERROR', 400); return; }
     const time = schedule_time || '02:00';
     // Timezone-correct next run: "HH:MM" means that wall clock in schedule_timezone,
     // not the server's local zone. (Was: new Date().setHours — server-zone bug.)
@@ -409,23 +409,23 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
       [businessId, authReq.tenantId, job_type, time, schedule_timezone || 'UTC', frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { console.error('Failed to create scheduled job', err?.message || err); error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create scheduled job', err?.message || err); error(res, msg('errors:customers.failedToCreateScheduledJob'), 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(`UPDATE sys_scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`, [req.params.id]);
-    if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:customers.jobNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to toggle job', err?.message || err); error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to toggle job', err?.message || err); error(res, msg('errors:customers.failedToToggleJob'), 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const { rowCount } = await adminPool.query('DELETE FROM sys_scheduled_jobs WHERE id = $1', [req.params.id]);
-    if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    if (rowCount === 0) { error(res, msg('errors:customers.jobNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to delete job', err?.message || err); error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete job', err?.message || err); error(res, msg('errors:customers.failedToDeleteJob'), 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -435,20 +435,20 @@ customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*
       [req.params.id],
     );
     success(res, rows);
-  } catch (err: any) { console.error('Failed to get job history', err?.message || err); error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get job history', err?.message || err); error(res, msg('errors:customers.failedToGetJobHistory'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/customers/scheduled-jobs/run — Run a process by type (no DB record needed)
 customersRouter.post('/scheduled-jobs/run', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { job_type, date_from, date_to, posting_date } = req.body;
-    if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
+    if (!job_type) { error(res, msg('errors:customers.jobTypeRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const { jobRegistry } = await import('../jobs/job-registry');
     const handler = jobRegistry[job_type];
-    if (!handler) { error(res, `Unknown process type: ${job_type}`, 'VALIDATION_ERROR', 400); return; }
+    if (!handler) { error(res, msg('errors:customers.unknownProcessType', { job_type }), 'VALIDATION_ERROR', 400); return; }
 
     // Get tenant_id for context
     const authReq = req as AuthenticatedRequest;
@@ -472,7 +472,7 @@ customersRouter.post('/scheduled-jobs/run', requirePermission('settings:*'), asy
 
     const durationMs = Date.now() - startTime;
     success(res, { status: 'success', duration_ms: durationMs, result });
-  } catch (err: any) { error(res, `Process failed: ${err.message}`, 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { error(res, msg('errors:customers.processFailed', { message: err.message }), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/customers/scheduled-jobs/:id/run — Manual trigger with optional date range
@@ -483,7 +483,7 @@ customersRouter.post('/scheduled-jobs/:id/run', requirePermission('settings:*'),
       'SELECT id, scope_level, business_id, tenant_id, job_type, config FROM sys_scheduled_jobs WHERE id = $1',
       [req.params.id],
     );
-    if (jobRows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    if (jobRows.length === 0) { error(res, msg('errors:customers.jobNotFound'), 'NOT_FOUND', 404); return; }
     const job = jobRows[0];
 
     const { date_from, date_to } = req.body || {};
@@ -508,7 +508,7 @@ customersRouter.post('/scheduled-jobs/:id/run', requirePermission('settings:*'),
         // Default: run the registered handler
         const { jobRegistry } = await import('../jobs/job-registry');
         const handler = jobRegistry[job.job_type];
-        if (!handler) { throw new Error(`Unknown job type: ${job.job_type}`); }
+        if (!handler) { throw new Error(msg('errors:customers.unknownJobType', { job_type: job.job_type })); }
         result = await handler({ scopeLevel: job.scope_level || 'business', businessId: job.business_id, tenantId: job.tenant_id, config: job.config || {} });
       }
 
@@ -535,9 +535,9 @@ customersRouter.post('/scheduled-jobs/:id/run', requirePermission('settings:*'),
         `UPDATE sys_scheduled_jobs SET last_run_at = NOW(), last_run_status = 'failed', last_run_duration_ms = $1, last_error = $2, updated_at = NOW() WHERE id = $3`,
         [durationMs, err.message, job.id],
       ).catch(() => {});
-      error(res, `Job failed: ${err.message}`, 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:customers.jobFailed', { message: err.message }), 'INTERNAL_ERROR', 500);
     }
-  } catch (err: any) { console.error('Failed to run job', err?.message || err); error(res, 'Failed to run job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to run job', err?.message || err); error(res, msg('errors:customers.failedToRunJob'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/customers/export — Export to CSV (must be before /:id)
@@ -545,13 +545,13 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
   try {
     const { exportCustomers, exportGDPR } = await import('../services/customer-import.service');
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const format = req.query.format as string;
 
     if (format === 'gdpr' && req.query.customer_id) {
       const data = await exportGDPR(req.query.customer_id as string, businessId);
-      if (!data) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+      if (!data) { error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404); return; }
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', 'attachment; filename="gdpr-export.json"');
       res.json(data);
@@ -583,7 +583,7 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
     res.send(csv);
   } catch (err: any) {
     console.error('Failed to export customers', err?.message || err);
-    error(res, 'Failed to export customers', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToExportCustomers'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -591,13 +591,13 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
 customersRouter.get('/:id/financial-summary', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400); return; }
     const customer = await customerService.getCustomerById(req.params.id, businessId);
-    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await customerService.getFinancialSummary(req.params.id, businessId));
   } catch (err: any) {
     console.error('Failed to get the financial summary', err?.message || err);
-    error(res, 'Failed to get the financial summary', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetTheFinancialSummary'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -606,13 +606,13 @@ customersRouter.get('/:id', requirePermission('customers:read'), async (req: Req
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) {
-      error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400);
       return;
     }
 
     const customer = await customerService.getCustomerById(req.params.id, businessId);
     if (!customer) {
-      error(res, 'Customer not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404);
       return;
     }
 
@@ -625,7 +625,7 @@ customersRouter.get('/:id', requirePermission('customers:read'), async (req: Req
     success(res, customer);
   } catch (err: any) {
     console.error('Failed to get customer', err?.message || err);
-    error(res, 'Failed to get customer', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetCustomer'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -635,13 +635,13 @@ customersRouter.put('/:id', requirePermission('customers:*'), validate(updateCus
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) {
-      error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400);
       return;
     }
 
     const customer = await customerService.updateCustomer(req.params.id, businessId, req.body, authReq.user.sub);
     if (!customer) {
-      error(res, 'Customer not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404);
       return;
     }
 
@@ -654,7 +654,7 @@ customersRouter.put('/:id', requirePermission('customers:*'), validate(updateCus
     }
     if (/Owner must be/.test(err?.message || '')) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
     if (err?.code === 'INVALID_LOCATION') { error(res, err.message, err.code, 400); return; }
-    error(res, 'Failed to update customer', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToUpdateCustomer'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -664,20 +664,20 @@ customersRouter.put('/:id/archive', requirePermission('customers:*'), async (req
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) {
-      error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400);
       return;
     }
 
     const result = await customerService.archiveCustomer(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!result) {
-      error(res, 'Customer not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404);
       return;
     }
 
     success(res, result);
   } catch (err: any) {
     console.error('Failed to archive customer', err?.message || err);
-    error(res, 'Failed to archive customer', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToArchiveCustomer'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -687,7 +687,7 @@ customersRouter.put('/:id/reactivate', requirePermission('customers:*'), async (
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) {
-      error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -697,7 +697,7 @@ customersRouter.put('/:id/reactivate', requirePermission('customers:*'), async (
     );
 
     if (rows.length === 0) {
-      error(res, 'Customer not found or not archived', 'NOT_FOUND', 404);
+      error(res, msg('errors:customers.customerNotFoundOrNotArchived'), 'NOT_FOUND', 404);
       return;
     }
 
@@ -712,7 +712,7 @@ customersRouter.put('/:id/reactivate', requirePermission('customers:*'), async (
     success(res, rows[0]);
   } catch (err: any) {
     console.error('Failed to reactivate customer', err?.message || err);
-    error(res, 'Failed to reactivate customer', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToReactivateCustomer'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -722,20 +722,20 @@ customersRouter.post('/:id/anonymize', requirePermission('customers:*'), async (
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) {
-      error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:customers.businessIdQueryParameterIsRequired'), 'VALIDATION_ERROR', 400);
       return;
     }
 
     const result = await customerService.anonymizeCustomer(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!result) {
-      error(res, 'Customer not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404);
       return;
     }
 
     success(res, result);
   } catch (err: any) {
     console.error('Failed to anonymize customer', err?.message || err);
-    error(res, 'Failed to anonymize customer', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToAnonymizeCustomer'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -759,7 +759,7 @@ customersRouter.post('/:id/notes', requirePermission('customers:*'), validate(cr
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const note = await notesService.createNote({
       customerId: req.params.id,
@@ -773,10 +773,10 @@ customersRouter.post('/:id/notes', requirePermission('customers:*'), validate(cr
 
     success(res, note, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('does not exist')) {
+    if ((isMessage(err.message, 'errors:config.configurationKeyDoesNotExist', 'errors:customerNotes.noteCategoryDoesNotExistFor') || err.message.includes('does not exist'))) {
       error(res, err.message, 'INVALID_CATEGORY', 400);
     } else {
-      error(res, 'Failed to create note', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:customers.failedToCreateNote'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -786,7 +786,7 @@ customersRouter.get('/:id/notes', requirePermission('customers:read'), async (re
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await notesService.getNotes({
       customerId: req.params.id,
@@ -804,7 +804,7 @@ customersRouter.get('/:id/notes', requirePermission('customers:read'), async (re
     success(res, result.notes, { total: result.total, limit: result.limit, offset: result.offset });
   } catch (err: any) {
     console.error('Failed to get notes', err?.message || err);
-    error(res, 'Failed to get notes', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetNotes'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -812,14 +812,14 @@ customersRouter.get('/:id/notes', requirePermission('customers:read'), async (re
 customersRouter.delete('/:id/notes/:noteId', requirePermission('customers:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const deleted = await notesService.deleteNote(req.params.noteId, businessId);
-    if (!deleted) { error(res, 'Note not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:customers.noteNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete note', err?.message || err);
-    error(res, 'Failed to delete note', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToDeleteNote'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -827,13 +827,13 @@ customersRouter.delete('/:id/notes/:noteId', requirePermission('customers:*'), a
 customersRouter.get('/note-categories/list', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const categories = await notesService.getCategories(businessId);
     success(res, categories);
   } catch (err: any) {
     console.error('Failed to get categories', err?.message || err);
-    error(res, 'Failed to get categories', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetCategories'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -841,7 +841,7 @@ customersRouter.get('/note-categories/list', requirePermission('customers:read')
 customersRouter.post('/note-categories', requirePermission('settings:*'), validate(createCategorySchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const category = await notesService.createCategory(
       businessId, req.body.name, req.body.is_sensitive, req.body.customer_visible,
@@ -850,7 +850,7 @@ customersRouter.post('/note-categories', requirePermission('settings:*'), valida
     success(res, category, undefined, 201);
   } catch (err: any) {
     console.error('Failed to create category', err?.message || err);
-    error(res, 'Failed to create category', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToCreateCategory'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -858,14 +858,14 @@ customersRouter.post('/note-categories', requirePermission('settings:*'), valida
 customersRouter.delete('/note-categories/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const deleted = await notesService.deleteCategory(req.params.id, businessId);
-    if (!deleted) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:customers.categoryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete category', err?.message || err);
-    error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToDeleteCategory'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -890,12 +890,12 @@ const assignTagSchema = Joi.object({
 customersRouter.get('/tags/list', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const tags = await tagsService.getTags(businessId);
     success(res, tags);
   } catch (err: any) {
     console.error('Failed to get tags', err?.message || err);
-    error(res, 'Failed to get tags', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetTags'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -903,12 +903,12 @@ customersRouter.get('/tags/list', requirePermission('customers:read'), async (re
 customersRouter.post('/tags', requirePermission('customers:*'), validate(createTagSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const tag = await tagsService.createTag(businessId, req.body.name, req.body.color);
     success(res, tag, undefined, 201);
   } catch (err: any) {
     console.error('Failed to create tag', err?.message || err);
-    error(res, 'Failed to create tag', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToCreateTag'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -916,13 +916,13 @@ customersRouter.post('/tags', requirePermission('customers:*'), validate(createT
 customersRouter.put('/tags/:tagId', requirePermission('customers:*'), validate(updateTagSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const tag = await tagsService.updateTag(req.params.tagId, businessId, req.body);
-    if (!tag) { error(res, 'Tag not found', 'NOT_FOUND', 404); return; }
+    if (!tag) { error(res, msg('errors:customers.tagNotFound'), 'NOT_FOUND', 404); return; }
     success(res, tag);
   } catch (err: any) {
     console.error('Failed to update tag', err?.message || err);
-    error(res, 'Failed to update tag', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToUpdateTag'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -930,13 +930,13 @@ customersRouter.put('/tags/:tagId', requirePermission('customers:*'), validate(u
 customersRouter.delete('/tags/:tagId', requirePermission('customers:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const deleted = await tagsService.deleteTag(req.params.tagId, businessId);
-    if (!deleted) { error(res, 'Tag not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:customers.tagNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete tag', err?.message || err);
-    error(res, 'Failed to delete tag', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToDeleteTag'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -959,7 +959,7 @@ customersRouter.post('/:id/tags', requirePermission('customers:*'), validate(ass
     success(res, { assigned: true }, undefined, 201);
   } catch (err: any) {
     console.error('Failed to assign tag', err?.message || err);
-    error(res, 'Failed to assign tag', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToAssignTag'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -970,7 +970,7 @@ customersRouter.delete('/:id/tags/:tagId', requirePermission('customers:*'), asy
     success(res, { removed: true });
   } catch (err: any) {
     console.error('Failed to remove tag', err?.message || err);
-    error(res, 'Failed to remove tag', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToRemoveTag'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -985,15 +985,15 @@ customersRouter.put('/:id/lifecycle', requirePermission('customers:*'), validate
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await lifecycleService.manualOverride(
       req.params.id, businessId, req.body.lifecycle_stage, authReq.user.sub,
     );
 
     if (!result.success) {
-      if (result.error === 'Customer not found') {
-        error(res, 'Customer not found', 'NOT_FOUND', 404);
+      if (isMessage(result.error, 'errors:bookings.customerNotFound', 'errors:charts.customerNotFound', 'errors:checkIn.customerNotFound', 'errors:customerForms.customerNotFound', 'errors:customers.customerNotFound', 'errors:events.customerNotFound', 'errors:integrations.customerNotFound', 'errors:chart.customerNotFound', 'errors:customerEvents.customerNotFound', 'errors:formCompletion.customerNotFound')) {
+        error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404);
       } else {
         error(res, result.error || 'Failed to update lifecycle', 'VALIDATION_ERROR', 400);
       }
@@ -1003,7 +1003,7 @@ customersRouter.put('/:id/lifecycle', requirePermission('customers:*'), validate
     success(res, { from: result.from, to: result.to });
   } catch (err: any) {
     console.error('Failed to update lifecycle stage', err?.message || err);
-    error(res, 'Failed to update lifecycle stage', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToUpdateLifecycleStage'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1014,7 +1014,7 @@ import * as activityService from '../services/customer-activity.service';
 customersRouter.get('/:id/activities', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await activityService.getActivities({
       customerId: req.params.id,
@@ -1034,7 +1034,7 @@ customersRouter.get('/:id/activities', requirePermission('customers:read'), asyn
     });
   } catch (err: any) {
     console.error('Failed to get activities', err?.message || err);
-    error(res, 'Failed to get activities', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetActivities'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1060,7 +1060,7 @@ customersRouter.post('/import/validate', requirePermission('customers:*'), valid
     success(res, result);
   } catch (err: any) {
     console.error('Failed to validate import', err?.message || err);
-    error(res, 'Failed to validate import', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToValidateImport'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1078,7 +1078,7 @@ customersRouter.post('/import', requirePermission('customers:*'), validate(impor
     success(res, result);
   } catch (err: any) {
     console.error('Failed to execute import', err?.message || err);
-    error(res, 'Failed to execute import', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToExecuteImport'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1086,6 +1086,7 @@ customersRouter.post('/import', requirePermission('customers:*'), validate(impor
 
 // --- Duplicate Detection & Merge ---
 import * as duplicateService from '../services/customer-duplicates.service';
+import { msg, isMessage } from '../i18n';
 
 const mergeSchema = Joi.object({
   primary_id: Joi.string().uuid().required(),
@@ -1102,7 +1103,7 @@ customersRouter.post('/merge/preview', requirePermission('customers:*'), validat
     success(res, result.preview);
   } catch (err: any) {
     console.error('Failed to preview the merge', err?.message || err);
-    error(res, 'Failed to preview the merge', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToPreviewTheMerge'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1110,11 +1111,11 @@ customersRouter.post('/merge/preview', requirePermission('customers:*'), validat
 customersRouter.get('/:id/duplicates', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await identityService.getDuplicateFlags(req.params.id, businessId));
   } catch (err: any) {
     console.error('Failed to get possible duplicates', err?.message || err);
-    error(res, 'Failed to get possible duplicates', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetPossibleDuplicates'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1122,13 +1123,13 @@ customersRouter.get('/:id/duplicates', requirePermission('customers:read'), asyn
 customersRouter.post('/:id/duplicates/:flagId/dismiss', requirePermission('customers:*'), async (req: Request, res: Response) => {
   try {
     const businessId = (req.query.business_id || req.body.business_id) as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const done = await identityService.dismissDuplicateFlag(req.params.flagId, businessId);
-    if (!done) { error(res, 'Flag not found', 'NOT_FOUND', 404); return; }
+    if (!done) { error(res, msg('errors:customers.flagNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { dismissed: true });
   } catch (err: any) {
     console.error('Failed to dismiss', err?.message || err);
-    error(res, 'Failed to dismiss', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToDismiss'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1153,7 +1154,7 @@ customersRouter.post('/merge', requirePermission('customers:*'), validate(mergeS
     success(res, result.customer);
   } catch (err: any) {
     console.error('Failed to merge customers', err?.message || err);
-    error(res, 'Failed to merge customers', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToMergeCustomers'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1180,13 +1181,13 @@ const setConsentSchema = Joi.object({
 customersRouter.get('/:id/consent', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const customer = await customerService.getCustomerById(req.params.id, businessId);
-    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await consentService.getConsent(req.params.id));
   } catch (err: any) {
     console.error('Failed to get consent', err?.message || err);
-    error(res, 'Failed to get consent', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetConsent'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1194,13 +1195,13 @@ customersRouter.get('/:id/consent', requirePermission('customers:read'), async (
 customersRouter.get('/:id/consent/history', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const customer = await customerService.getCustomerById(req.params.id, businessId);
-    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await consentService.getConsentHistory(req.params.id));
   } catch (err: any) {
     console.error('Failed to get consent history', err?.message || err);
-    error(res, 'Failed to get consent history', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetConsentHistory'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1209,9 +1210,9 @@ customersRouter.put('/:id/consent', requirePermission('customers:*'), validate(s
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const customer = await customerService.getCustomerById(req.params.id, businessId);
-    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404); return; }
     await consentService.setConsent({
       customerId: req.params.id, channel: req.body.channel, category: req.body.category, given: req.body.given,
       method: 'staff_entry', evidence: req.body.evidence, actorUserId: authReq.user.sub, ipAddress: req.ip,
@@ -1219,7 +1220,7 @@ customersRouter.put('/:id/consent', requirePermission('customers:*'), validate(s
     success(res, await consentService.getConsent(req.params.id));
   } catch (err: any) {
     if (err instanceof consentService.ConsentEvidenceRequiredError) { error(res, err.message, err.code, 400); return; }
-    error(res, 'Failed to record consent', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToRecordConsent'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1227,16 +1228,16 @@ customersRouter.put('/:id/consent', requirePermission('customers:*'), validate(s
 customersRouter.get('/:id/preferences', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     // Verify customer belongs to business
     const customer = await customerService.getCustomerById(req.params.id, businessId);
-    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404); return; }
 
     success(res, await consentService.getLegacyPreferences(req.params.id));
   } catch (err: any) {
     console.error('Failed to get preferences', err?.message || err);
-    error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetPreferences'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1245,10 +1246,10 @@ customersRouter.put('/:id/preferences', requirePermission('customers:*'), valida
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const customer = await customerService.getCustomerById(req.params.id, businessId);
-    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404); return; }
 
     const { evidence, ...changes } = req.body;
     const updated = await consentService.setLegacyPreferences(req.params.id, changes, {
@@ -1268,7 +1269,7 @@ customersRouter.put('/:id/preferences', requirePermission('customers:*'), valida
     success(res, updated);
   } catch (err: any) {
     if (err instanceof consentService.ConsentEvidenceRequiredError) { error(res, err.message, err.code, 400); return; }
-    error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToUpdatePreferences'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1288,7 +1289,7 @@ customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), va
     // Verify customer exists
     const customer = await customerService.getCustomerById(customerId, business_id);
     if (!customer) {
-      error(res, 'Customer not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:customers.customerNotFound'), 'NOT_FOUND', 404);
       return;
     }
 
@@ -1313,7 +1314,7 @@ customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), va
     success(res, { ...customer, lifecycle_stage: stage });
   } catch (err: any) {
     console.error('Failed to update lifecycle stage', err?.message || err);
-    error(res, 'Failed to update lifecycle stage', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToUpdateLifecycleStage'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1324,7 +1325,7 @@ customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), va
 customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const { rows } = await adminPool.query(
       `SELECT key, value FROM sys_business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`,
@@ -1348,7 +1349,7 @@ customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async 
     success(res, config);
   } catch (err: any) {
     console.error('Failed to get lifecycle config', err?.message || err);
-    error(res, 'Failed to get lifecycle config', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetLifecycleConfig'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1357,7 +1358,7 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const { enabled, at_risk_days, churned_days, run_time } = req.body;
 
@@ -1380,7 +1381,7 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
     success(res, { enabled, at_risk_days, churned_days, run_time });
   } catch (err: any) {
     console.error('Failed to save lifecycle config', err?.message || err);
-    error(res, 'Failed to save lifecycle config', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToSaveLifecycleConfig'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1396,7 +1397,7 @@ customersRouter.get('/scheduled-jobs/types', requirePermission('settings:*'), as
 customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const { rows } = await adminPool.query(
       `SELECT id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month,
@@ -1407,7 +1408,7 @@ customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (r
     success(res, rows);
   } catch (err: any) {
     console.error('Failed to get scheduled jobs', err?.message || err);
-    error(res, 'Failed to get scheduled jobs', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetScheduledJobs'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1416,10 +1417,10 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:customers.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const { job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled } = req.body;
-    if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
+    if (!job_type) { error(res, msg('errors:customers.jobTypeRequired'), 'VALIDATION_ERROR', 400); return; }
 
     // Calculate initial next_run_at — timezone-correct (HH:MM in schedule_timezone).
     const tz = schedule_timezone || 'UTC';
@@ -1442,7 +1443,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     success(res, rows[0], undefined, 201);
   } catch (err: any) {
     console.error('Failed to create scheduled job', err?.message || err);
-    error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToCreateScheduledJob'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1453,11 +1454,11 @@ customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'
       `UPDATE sys_scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`,
       [req.params.id],
     );
-    if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:customers.jobNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
     console.error('Failed to toggle job', err?.message || err);
-    error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToToggleJob'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1465,11 +1466,11 @@ customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'
 customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const { rowCount } = await adminPool.query('DELETE FROM sys_scheduled_jobs WHERE id = $1', [req.params.id]);
-    if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    if (rowCount === 0) { error(res, msg('errors:customers.jobNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete job', err?.message || err);
-    error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToDeleteJob'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1484,6 +1485,6 @@ customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*
     success(res, rows);
   } catch (err: any) {
     console.error('Failed to get job history', err?.message || err);
-    error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customers.failedToGetJobHistory'), 'INTERNAL_ERROR', 500);
   }
 });

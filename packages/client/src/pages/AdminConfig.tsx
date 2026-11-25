@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
@@ -91,7 +92,7 @@ function SettingsPanel() {
       setConfig((prev) => ({ ...prev, [key]: editValue }));
       setEditKey(null);
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to save');
+      void showMessage({ message: err.response?.data?.error || 'Failed to save', tone: 'error' });
     } finally {
       setSaving(false);
     }
@@ -167,8 +168,8 @@ function ProspectSettingsPanel() {
     setSaving(true);
     try {
       await apiClient.put('/v1/admin/system-config/prospects', { h3_resolution: resolution });
-      alert('Prospect settings saved. Re-save territories to apply new resolution.');
-    } catch { alert('Failed to save'); }
+      void showMessage({ message: 'Prospect settings saved. Re-save territories to apply new resolution.', tone: 'success' });
+    } catch { void showMessage({ message: 'Failed to save', tone: 'error' }); }
     finally { setSaving(false); }
   };
 
@@ -225,7 +226,7 @@ function FeatureFlagsPanel() {
       await apiClient.put(`/v1/admin/feature-flags/${key}`, { enabled: !currentValue });
       setFlags((prev) => prev.map((f) => f.key === key ? { ...f, enabled: !currentValue } : f));
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to toggle flag');
+      void showMessage({ message: err.response?.data?.error || 'Failed to toggle flag', tone: 'error' });
     }
   };
 
@@ -348,7 +349,7 @@ function ApiKeysPanel() {
       };
       if (gcForm.free_threshold.trim()) body.free_threshold = gcForm.free_threshold.trim();
       await apiClient.put('/v1/admin/system-config/google-cloud', body);
-      alert('Google Cloud settings saved');
+      void showMessage({ message: 'Google Cloud settings saved', tone: 'success' });
       const res = await apiClient.get('/v1/admin/system-config/google-cloud');
       const d = res.data.data as GoogleCloudInfo;
       if (d) {
@@ -359,7 +360,7 @@ function ApiKeysPanel() {
           free_threshold: d.free_threshold != null ? String(d.free_threshold) : '',
         });
       }
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to save Google Cloud settings'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || 'Failed to save Google Cloud settings', tone: 'error' }); }
     finally { setGcSaving(false); }
   };
 
@@ -371,14 +372,14 @@ function ApiKeysPanel() {
       for (const [key, val] of Object.entries(keys)) {
         if (val && !val.includes('...')) body[key] = val;
       }
-      if (Object.keys(body).length === 0) { alert('No changes to save'); setSaving(false); return; }
+      if (Object.keys(body).length === 0) { void showMessage({ message: 'No changes to save', tone: 'info' }); setSaving(false); return; }
       await apiClient.put('/v1/admin/system-config/api-keys', body);
-      alert('API keys saved');
+      void showMessage({ message: 'API keys saved', tone: 'success' });
       setKeys({ google_places: '' });
       // Refresh masked display
       const res = await apiClient.get('/v1/admin/system-config/api-keys');
       setMasked(res.data.data?.keys || {});
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to save'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || 'Failed to save', tone: 'error' }); }
     finally { setSaving(false); }
   };
 

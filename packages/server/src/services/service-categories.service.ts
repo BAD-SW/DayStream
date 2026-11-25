@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 interface CreateCategoryInput {
   businessId: string;
@@ -30,11 +31,11 @@ export async function createCategory(input: CreateCategoryInput) {
       [input.parentId, input.businessId],
     );
     if (parentRows.length === 0) {
-      throw new Error('Parent category not found');
+      throw new Error(msg('errors:serviceCategories.parentCategoryNotFound'));
     }
     // Max 2 levels: parent cannot itself have a parent
     if (parentRows[0].parent_id) {
-      throw new Error('Maximum category depth is 2 levels');
+      throw new Error(msg('errors:serviceCategories.maximumCategoryDepthIs2Levels'));
     }
   }
 
@@ -47,7 +48,7 @@ export async function createCategory(input: CreateCategoryInput) {
     : [input.businessId, input.name];
   const { rows: dupRows } = await adminPool.query(dupQuery, dupParams);
   if (dupRows.length > 0) {
-    throw new Error('A category with this name already exists');
+    throw new Error(msg('errors:serviceCategories.aCategoryWithThisNameAlready'));
   }
 
   const { rows } = await adminPool.query(
@@ -107,14 +108,14 @@ export async function updateCategory(id: string, businessId: string, updates: Up
       [updates.parentId, businessId],
     );
     if (parentRows.length === 0) {
-      throw new Error('Parent category not found');
+      throw new Error(msg('errors:serviceCategories.parentCategoryNotFound'));
     }
     if (parentRows[0].parent_id) {
-      throw new Error('Maximum category depth is 2 levels');
+      throw new Error(msg('errors:serviceCategories.maximumCategoryDepthIs2Levels'));
     }
     // Cannot be its own parent
     if (updates.parentId === id) {
-      throw new Error('Category cannot be its own parent');
+      throw new Error(msg('errors:serviceCategories.categoryCannotBeItsOwnParent'));
     }
   }
 
@@ -154,7 +155,7 @@ export async function archiveCategory(id: string, businessId: string): Promise<b
     [id, businessId],
   );
   if (inUse[0].n > 0) {
-    throw Object.assign(new Error(`This category still has ${inUse[0].n} service(s). Move or archive them first.`), { code: 'CATEGORY_IN_USE' });
+    throw Object.assign(new Error(msg('errors:serviceCategories.thisCategoryStillHasServiceS', { n: inUse[0].n })), { code: 'CATEGORY_IN_USE' });
   }
   const { rowCount } = await adminPool.query(
     "UPDATE svc_categories SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",

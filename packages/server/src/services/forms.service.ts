@@ -3,6 +3,7 @@ import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { validateFormDefinition, isSignedForm, isSupportedLanguage, SUPPORTED_LANGUAGES } from '@daystream/shared';
 import type { FormDefinition, FormApplies } from '@daystream/shared';
+import { msg } from '../i18n';
 
 /**
  * Forms, waivers and e-signature (spec 51, gap 1): the forms a business builds.
@@ -84,14 +85,14 @@ const COLS = `id, tenant_id, business_id, group_id, kind, name, language, defini
 function cleanLanguage(language: string | null | undefined): string | null {
   const v = (language ?? '').trim();
   if (!v) return null;
-  if (!isSupportedLanguage(v)) throw new FormsError(`Language must be one of: ${SUPPORTED_LANGUAGES.join(', ')}.`, 'INVALID_LANGUAGE');
+  if (!isSupportedLanguage(v)) throw new FormsError(msg('errors:forms.languageMustBeOneOf', { SUPPORTED_LANGUAGES: SUPPORTED_LANGUAGES.join(', ') }), 'INVALID_LANGUAGE');
   return v;
 }
 
 function cleanName(name: string | undefined): string {
   const v = (name ?? '').trim();
-  if (!v) throw new FormsError('A form needs a name.', 'INVALID_NAME');
-  if (v.length > 200) throw new FormsError('The name is too long.', 'INVALID_NAME');
+  if (!v) throw new FormsError(msg('errors:forms.aFormNeedsAName'), 'INVALID_NAME');
+  if (v.length > 200) throw new FormsError(msg('errors:forms.theNameIsTooLong'), 'INVALID_NAME');
   return v;
 }
 
@@ -111,7 +112,7 @@ function cleanApplies(a: FormApplies | undefined): FormApplies {
 function cleanRenew(months: number | null | undefined): number | null {
   if (months === null || months === undefined) return null;
   if (!Number.isInteger(months) || months < 1 || months > 240) {
-    throw new FormsError('Renew after must be a whole number of months.', 'INVALID_RENEWAL');
+    throw new FormsError(msg('errors:forms.renewAfterMustBeAWhole'), 'INVALID_RENEWAL');
   }
   return months;
 }
@@ -166,7 +167,7 @@ export async function updateForm(
   businessId: string, id: string, input: FormInput, userId: string, tenantId: string,
 ): Promise<Form> {
   const existing = await getForm(businessId, id);
-  if (!existing || existing.status === 'archived') throw new FormsError('Form not found', 'NOT_FOUND');
+  if (!existing || existing.status === 'archived') throw new FormsError(msg('errors:forms.formNotFound'), 'NOT_FOUND');
 
   const sets: string[] = [];
   const params: unknown[] = [];
@@ -191,7 +192,7 @@ export async function updateForm(
         `SELECT 1 FROM frm_forms WHERE group_id = $1 AND COALESCE(language, '') = $2 AND id <> $3`,
         [existing.groupId, language ?? '', id],
       );
-      if (clash.length > 0) throw new FormsError('This form already has a version in that language.', 'LANGUAGE_EXISTS');
+      if (clash.length > 0) throw new FormsError(msg('errors:forms.thisFormAlreadyHasAVersion'), 'LANGUAGE_EXISTS');
       set('language', language);
     }
   }
@@ -234,14 +235,14 @@ export async function archiveForm(businessId: string, id: string, userId: string
       RETURNING ${COLS}`,
     [id, businessId],
   );
-  if (!rows[0]) throw new FormsError('Form not found', 'NOT_FOUND');
+  if (!rows[0]) throw new FormsError(msg('errors:forms.formNotFound'), 'NOT_FOUND');
   await audit(tenantId, userId, 'form.archive', mapRow(rows[0]));
 }
 
 /** Copy a form as a new form (its own group). */
 export async function duplicateForm(businessId: string, id: string, userId: string, tenantId: string): Promise<Form> {
   const src = await getForm(businessId, id);
-  if (!src || src.status === 'archived') throw new FormsError('Form not found', 'NOT_FOUND');
+  if (!src || src.status === 'archived') throw new FormsError(msg('errors:forms.formNotFound'), 'NOT_FOUND');
   return createForm({
     tenantId, businessId, createdBy: userId,
     kind: src.kind,
@@ -259,16 +260,16 @@ export async function addLanguageVersion(
   businessId: string, id: string, language: string, userId: string, tenantId: string,
 ): Promise<Form> {
   const src = await getForm(businessId, id);
-  if (!src || src.status === 'archived') throw new FormsError('Form not found', 'NOT_FOUND');
+  if (!src || src.status === 'archived') throw new FormsError(msg('errors:forms.formNotFound'), 'NOT_FOUND');
   const lang = cleanLanguage(language);
-  if (!lang) throw new FormsError('Choose a language for the new version.', 'INVALID_LANGUAGE');
+  if (!lang) throw new FormsError(msg('errors:forms.chooseALanguageForTheNew'), 'INVALID_LANGUAGE');
 
   const { rows: clash } = await adminPool.query(
     `SELECT id, status FROM frm_forms WHERE group_id = $1 AND language = $2`,
     [src.groupId, lang],
   );
   if (clash[0] && clash[0].status === 'active') {
-    throw new FormsError('This form already has a version in that language.', 'LANGUAGE_EXISTS');
+    throw new FormsError(msg('errors:forms.thisFormAlreadyHasAVersion'), 'LANGUAGE_EXISTS');
   }
 
   let row;

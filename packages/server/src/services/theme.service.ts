@@ -11,6 +11,7 @@ import {
   BUILT_IN_TOKENS, BUILT_IN_THEME_LIST_ITEMS,
   isBuiltInThemeId, stripDefaultTokens, validateTokenKeys,
 } from './themeTokens';
+import { msg } from '../i18n';
 
 export class ThemeServiceError extends Error {
   constructor(
@@ -194,13 +195,13 @@ export async function listForCaller(caller: CallerScope, pool: Queryable): Promi
 }
 
 export async function create(dto: CreateThemeDto, caller: CallerScope, pool: Queryable): Promise<CfgTheme> {
-  if (!dto.name?.trim()) throw new ThemeServiceError('Theme name is required', 'VALIDATION');
-  if (dto.name.length > 100) throw new ThemeServiceError('Theme name must be 100 characters or fewer', 'VALIDATION');
-  if (!isBuiltInThemeId(dto.base_theme)) throw new ThemeServiceError("base_theme must be 'bold-business', 'classic' or 'navy'", 'VALIDATION');
+  if (!dto.name?.trim()) throw new ThemeServiceError(msg('errors:theme.themeNameIsRequired'), 'VALIDATION');
+  if (dto.name.length > 100) throw new ThemeServiceError(msg('errors:theme.themeNameMustBe100Characters'), 'VALIDATION');
+  if (!isBuiltInThemeId(dto.base_theme)) throw new ThemeServiceError(msg('errors:theme.baseThemeMustBeBoldBusiness'), 'VALIDATION');
 
   const rawTokens = dto.tokens || {};
   const unknownKeys = validateTokenKeys(rawTokens);
-  if (unknownKeys.length > 0) throw new ThemeServiceError(`Unknown token key(s): ${unknownKeys.join(', ')}`, 'VALIDATION');
+  if (unknownKeys.length > 0) throw new ThemeServiceError(msg('errors:theme.unknownTokenKeyS', { unknownKeys: unknownKeys.join(', ') }), 'VALIDATION');
   const tokens = stripDefaultTokens(dto.base_theme, rawTokens);
 
   // A system-scope row is platform-wide, not owned by the creating admin's own tenant —
@@ -215,31 +216,31 @@ export async function create(dto: CreateThemeDto, caller: CallerScope, pool: Que
     );
     return rows[0];
   } catch (err: any) {
-    if (err.code === '23505') throw new ThemeServiceError(`A theme named '${dto.name}' already exists at this scope`, 'CONFLICT');
+    if (err.code === '23505') throw new ThemeServiceError(msg('errors:theme.aThemeNamedAlreadyExistsAt', { name: dto.name }), 'CONFLICT');
     throw err;
   }
 }
 
 export async function update(id: string, dto: UpdateThemeDto, caller: CallerScope, pool: Queryable): Promise<CfgTheme> {
-  if (isBuiltInThemeId(id)) throw new ThemeServiceError('Built-in themes cannot be modified', 'FORBIDDEN');
+  if (isBuiltInThemeId(id)) throw new ThemeServiceError(msg('errors:theme.builtInThemesCannotBeModified'), 'FORBIDDEN');
   const existing = await fetchThemeRow(id, caller.tenantId, pool);
-  if (!existing) throw new ThemeServiceError('Theme not found', 'NOT_FOUND');
+  if (!existing) throw new ThemeServiceError(msg('errors:theme.themeNotFound'), 'NOT_FOUND');
 
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
 
   if (dto.name !== undefined) {
-    if (!dto.name.trim()) throw new ThemeServiceError('Theme name is required', 'VALIDATION');
+    if (!dto.name.trim()) throw new ThemeServiceError(msg('errors:theme.themeNameIsRequired'), 'VALIDATION');
     fields.push(`name = $${idx++}`); values.push(dto.name.trim());
   }
   if (dto.tokens !== undefined) {
     const unknownKeys = validateTokenKeys(dto.tokens);
-    if (unknownKeys.length > 0) throw new ThemeServiceError(`Unknown token key(s): ${unknownKeys.join(', ')}`, 'VALIDATION');
+    if (unknownKeys.length > 0) throw new ThemeServiceError(msg('errors:theme.unknownTokenKeyS', { unknownKeys: unknownKeys.join(', ') }), 'VALIDATION');
     const tokens = stripDefaultTokens(existing.base_theme, dto.tokens);
     fields.push(`tokens = $${idx++}`); values.push(JSON.stringify(tokens));
   }
-  if (fields.length === 0) throw new ThemeServiceError('No fields to update', 'VALIDATION');
+  if (fields.length === 0) throw new ThemeServiceError(msg('errors:theme.noFieldsToUpdate'), 'VALIDATION');
 
   fields.push('updated_at = NOW()');
   values.push(id, caller.tenantId);
@@ -251,16 +252,16 @@ export async function update(id: string, dto: UpdateThemeDto, caller: CallerScop
     );
     return rows[0];
   } catch (err: any) {
-    if (err.code === '23505') throw new ThemeServiceError('A theme with this name already exists at this scope', 'CONFLICT');
+    if (err.code === '23505') throw new ThemeServiceError(msg('errors:theme.aThemeWithThisNameAlready'), 'CONFLICT');
     throw err;
   }
 }
 
 export async function softDelete(id: string, caller: CallerScope, pool: Queryable): Promise<void> {
-  if (isBuiltInThemeId(id)) throw new ThemeServiceError('Built-in themes cannot be deleted', 'FORBIDDEN');
+  if (isBuiltInThemeId(id)) throw new ThemeServiceError(msg('errors:theme.builtInThemesCannotBeDeleted'), 'FORBIDDEN');
   const existing = await fetchThemeRow(id, caller.tenantId, pool);
-  if (!existing) throw new ThemeServiceError('Theme not found', 'NOT_FOUND');
-  if (existing.is_active) throw new ThemeServiceError('Cannot delete the currently active theme; apply another theme first', 'ACTIVE_THEME');
+  if (!existing) throw new ThemeServiceError(msg('errors:theme.themeNotFound'), 'NOT_FOUND');
+  if (existing.is_active) throw new ThemeServiceError(msg('errors:theme.cannotDeleteTheCurrentlyActiveTheme'), 'ACTIVE_THEME');
 
   await pool.query('UPDATE cfg_themes SET deleted_at = NOW() WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)', [id, caller.tenantId]);
 }
@@ -280,7 +281,7 @@ export async function applyToScope(themeId: string, dto: ApplyThemeDto, caller: 
 
     if (!isBuiltInThemeId(themeId)) {
       const existing = await fetchThemeRow(themeId, caller.tenantId, client);
-      if (!existing) throw new ThemeServiceError('Theme not found', 'NOT_FOUND');
+      if (!existing) throw new ThemeServiceError(msg('errors:theme.themeNotFound'), 'NOT_FOUND');
       await client.query('UPDATE cfg_themes SET is_active = true, updated_at = NOW() WHERE id = $1', [themeId]);
     }
 

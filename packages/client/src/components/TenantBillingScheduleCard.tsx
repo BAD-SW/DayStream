@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatDateTime } from '../utils/format';
 import { Button } from '../design-system/components/actions/Button';
 import { TIMEZONES } from '../utils/timezones';
 import * as payApi from '../api/payments';
@@ -10,6 +12,7 @@ import * as payApi from '../api/payments';
  * it lives on the tenant Processes page, not under Settings.
  */
 export function TenantBillingScheduleCard() {
+  const { t } = useTranslation('tenantOps');
   const [time, setTime] = useState('02:00');
   const [tz, setTz] = useState('UTC');
   const [enabled, setEnabled] = useState(true);
@@ -33,8 +36,8 @@ export function TenantBillingScheduleCard() {
     try {
       const s = await payApi.saveTenantSchedule(time, tz, enabled);
       setSchedule(s);
-      setMessage('Billing run schedule saved.');
-    } catch (err: any) { setMessage(err.response?.data?.error || 'Failed to save schedule'); }
+      setMessage(t('schedule.saved'));
+    } catch (err: any) { setMessage(err.response?.data?.error || t('schedule.saveFailed')); }
     finally { setSaving(false); }
   };
 
@@ -42,10 +45,10 @@ export function TenantBillingScheduleCard() {
     setRunning(true); setMessage(null);
     try {
       const r = await payApi.runTenantBillingNow();
-      setMessage(`Run complete: ${r.newCharges} new, ${r.retries} retried, ${r.settled} settled, ${r.failed} failed, ${r.skippedSuspended} skipped.`);
+      setMessage(t('schedule.runComplete', { newCharges: r.newCharges, retries: r.retries, settled: r.settled, failed: r.failed, skipped: r.skippedSuspended }));
       const s = await payApi.getTenantSchedule();
       if (s) setSchedule(s);
-    } catch (err: any) { setMessage(err.response?.data?.error || 'Failed to run billing'); }
+    } catch (err: any) { setMessage(err.response?.data?.error || t('schedule.runFailed')); }
     finally { setRunning(false); }
   };
 
@@ -53,38 +56,38 @@ export function TenantBillingScheduleCard() {
 
   return (
     <div style={styles.panel}>
-      <h3 style={styles.title}>Business Billing Run</h3>
-      <p style={styles.subtext}>The daily run that charges every business due that day. One schedule for this tenant.</p>
+      <h3 style={styles.title}>{t('schedule.title')}</h3>
+      <p style={styles.subtext}>{t('schedule.subtitle')}</p>
       {message && <div style={styles.message}>{message}</div>}
       <div style={styles.section}>
         <div style={styles.row}>
           <div style={styles.group}>
-            <label style={styles.label}>Run time</label>
+            <label style={styles.label}>{t('schedule.runTime')}</label>
             <input style={styles.input} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
           <div style={styles.group}>
-            <label style={styles.label}>Timezone</label>
+            <label style={styles.label}>{t('schedule.timezone')}</label>
             <select style={styles.input} value={tz} onChange={(e) => setTz(e.target.value)}>
-              {TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              {TIMEZONES.map((zone) => <option key={zone.value} value={zone.value}>{zone.label}</option>)}
             </select>
           </div>
         </div>
         <div style={styles.group}>
           <label style={{ ...styles.label, display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            Enabled
+            {t('schedule.enabled')}
           </label>
         </div>
         {schedule && (
           <p style={styles.subtext}>
-            Next run: {schedule.nextRunAt ? new Date(schedule.nextRunAt).toLocaleString() : '—'}
-            {schedule.lastRunAt && ` · Last run: ${new Date(schedule.lastRunAt).toLocaleString()} (${schedule.lastRunStatus})`}
+            {t('schedule.nextRun', { date: schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : '—' })}
+            {schedule.lastRunAt && ` · ${t('schedule.lastRun', { date: formatDateTime(schedule.lastRunAt), status: schedule.lastRunStatus ? t(`schedule.runStatus.${schedule.lastRunStatus}`, { defaultValue: schedule.lastRunStatus }) : '' })}`}
           </p>
         )}
       </div>
       <div style={styles.actions}>
-        <Button onClick={handleSave} loading={saving}>Save Schedule</Button>
-        <Button variant="outline" onClick={handleRunNow} loading={running}>Run now</Button>
+        <Button onClick={handleSave} loading={saving}>{t('schedule.save')}</Button>
+        <Button variant="outline" onClick={handleRunNow} loading={running}>{t('schedule.runNow')}</Button>
       </div>
     </div>
   );

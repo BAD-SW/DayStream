@@ -7,6 +7,7 @@ import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as profile from '../services/customer-profile.service';
+import { msg } from '../i18n';
 
 /**
  * Customer profile (Linear THE-16): figures, Timeline, referrals, reviews, tasks, documents,
@@ -27,14 +28,14 @@ const STATUS: Record<string, number> = {
 
 function fail(res: Response, err: any, fallback: string) {
   if (err instanceof profile.ProfileError && STATUS[err.code]) { error(res, err.message, err.code, STATUS[err.code]); return; }
-  if (err?.code === 'LIMIT_FILE_SIZE') { error(res, 'The file is too large', 'FILE_TOO_LARGE', 400); return; }
+  if (err?.code === 'LIMIT_FILE_SIZE') { error(res, msg('errors:customerProfile.theFileIsTooLarge'), 'FILE_TOO_LARGE', 400); return; }
   console.error(fallback, err?.message || err);
   error(res, fallback, 'INTERNAL_ERROR', 500);
 }
 
 function biz(req: Request, res: Response): string | null {
   const businessId = req.query.business_id as string;
-  if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return null; }
+  if (!businessId) { error(res, msg('errors:customerProfile.businessIdRequired'), 'VALIDATION_ERROR', 400); return null; }
   return businessId;
 }
 
@@ -53,7 +54,7 @@ customerProfileRouter.get('/:id/figures', requirePermission('customers:read'), a
 customerProfileRouter.get('/:id/timeline', requirePermission('customers:read'), async (req, res) => {
   const businessId = biz(req, res); if (!businessId) return;
   const kind = (req.query.kind as string) || 'all';
-  if (kind !== 'all' && !(profile.TIMELINE_KINDS as readonly string[]).includes(kind)) { error(res, 'Unknown timeline filter', 'VALIDATION_ERROR', 400); return; }
+  if (kind !== 'all' && !(profile.TIMELINE_KINDS as readonly string[]).includes(kind)) { error(res, msg('errors:customerProfile.unknownTimelineFilter'), 'VALIDATION_ERROR', 400); return; }
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) || 100 : 100;
   try { success(res, await profile.getTimeline(req.params.id, businessId, kind, limit)); } catch (e) { fail(res, e, 'Failed to load the timeline'); }
 });
@@ -117,7 +118,7 @@ customerProfileRouter.get('/:id/documents', requirePermission('customers:read'),
 
 customerProfileRouter.post('/:id/documents', requirePermission('customers:*'), withUpload(documentUpload.single('file')), async (req, res) => {
   const businessId = biz(req, res); if (!businessId) return;
-  if (!req.file) { error(res, 'Choose a file to upload', 'VALIDATION_ERROR', 400); return; }
+  if (!req.file) { error(res, msg('errors:customerProfile.chooseAFileToUpload'), 'VALIDATION_ERROR', 400); return; }
   try { success(res, await profile.uploadDocument(req.params.id, businessId, req.file, (req as AuthenticatedRequest).user.sub), undefined, 201); }
   catch (e) { fail(res, e, 'Failed to upload the document'); }
 });
@@ -154,7 +155,7 @@ customerProfileRouter.get('/:id/photo', requirePermission('customers:read'), asy
 
 customerProfileRouter.post('/:id/photo', requirePermission('customers:*'), withUpload(photoUpload.single('photo')), async (req, res) => {
   const businessId = biz(req, res); if (!businessId) return;
-  if (!req.file) { error(res, 'Choose a photo', 'VALIDATION_ERROR', 400); return; }
+  if (!req.file) { error(res, msg('errors:customerProfile.chooseAPhoto'), 'VALIDATION_ERROR', 400); return; }
   try { await profile.savePhoto(req.params.id, businessId, req.file, (req as AuthenticatedRequest).user.sub); success(res, { has_photo: true }, undefined, 201); }
   catch (e) { fail(res, e, 'Failed to save the photo'); }
 });

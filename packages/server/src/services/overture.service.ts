@@ -2,6 +2,7 @@ import duckdb from 'duckdb';
 import * as h3 from 'h3-js';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 /**
  * Overture Maps Places query service (spec 31 redesign).
@@ -118,7 +119,7 @@ function runQuery(con: any, sql: string, timeoutMs = QUERY_TIMEOUT_MS): Promise<
   return new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
-      if (!settled) { settled = true; reject(new Error('Overture query timed out')); }
+      if (!settled) { settled = true; reject(new Error(msg('errors:overture.overtureQueryTimedOut'))); }
     }, timeoutMs);
     con.all(sql, (err: any, rows: any[]) => {
       if (settled) return;

@@ -1,27 +1,45 @@
 import { useEffect, useState } from 'react';
+import type { TFunction } from 'i18next';
+import { lifecycleStageLabel, personSourceLabel } from '@daystream/shared';
 import { getColumnOrder } from '../api/inbox';
+import i18n from '../i18n';
 
 /**
  * Column order (THE-18, David 2026-11-04: one order per business, set in Settings → People lists).
  * People and Leads show their own columns in this order; a column a list doesn't have is skipped.
  * Fixed, never ordered: the selection box (first), the name (first after it) and the actions (last).
  */
+/** A column's words come from the customers translation file, looked up when they are read (never at load). */
+function orderable(key: string, lists: string): { key: string; label: string; lists: string } {
+  return {
+    key,
+    get label() { return i18n.t('customers:peopleColumns.' + key); },
+    get lists() { return i18n.t('customers:peopleColumns.lists.' + lists); },
+  };
+}
 export const ORDERABLE_COLUMNS: { key: string; label: string; lists: string }[] = [
-  { key: 'reference_number', label: 'Ref', lists: 'People' },
-  { key: 'email', label: 'Email', lists: 'People, Leads' },
-  { key: 'phone', label: 'Phone', lists: 'People, Leads' },
-  { key: 'stage', label: 'Stage (lifecycle / lead stage)', lists: 'People, Leads' },
-  { key: 'source', label: 'Source', lists: 'People, Leads' },
-  { key: 'owner', label: 'Staff member / Assigned staff', lists: 'People, Leads' },
-  { key: 'tags', label: 'Tags', lists: 'Leads' },
-  { key: 'messages_sent', label: 'Messages sent', lists: 'Leads' },
-  { key: 'last_contacted', label: 'Last contacted', lists: 'People' },
-  { key: 'last_activity', label: 'Last activity', lists: 'People' },
-  { key: 'next_booking', label: 'Next booking', lists: 'People' },
-  { key: 'visits', label: 'Visits', lists: 'People' },
-  { key: 'created_at', label: 'Added / Created at', lists: 'People, Leads' },
+  orderable('reference_number', 'people'),
+  orderable('email', 'both'),
+  orderable('phone', 'both'),
+  orderable('stage', 'both'),
+  orderable('source', 'both'),
+  orderable('owner', 'both'),
+  orderable('tags', 'leads'),
+  orderable('messages_sent', 'leads'),
+  orderable('last_contacted', 'people'),
+  orderable('last_activity', 'people'),
+  orderable('next_booking', 'people'),
+  orderable('visits', 'people'),
+  orderable('created_at', 'both'),
 ];
-
+/** A person's lifecycle stage in the language shown. */
+export const stageText = (t: TFunction, stage: string | null | undefined): string =>
+  stage ? t('customers:stage.' + stage, { defaultValue: lifecycleStageLabel(stage) }) : '';
+/** A person's source in the language shown, with the detail in brackets when there is one. */
+export function sourceText(t: TFunction, source: string | null | undefined, detail?: string | null): string {
+  const label = t('customers:source.' + (source || 'unknown'), { defaultValue: personSourceLabel(source) });
+  return detail ? t('customers:sourceWithDetail', { label, detail }) : label;
+}
 export const DEFAULT_ORDER = ORDERABLE_COLUMNS.map((c) => c.key);
 
 /** The saved order completed with any column it doesn't name yet (in the default place). */

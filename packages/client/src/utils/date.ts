@@ -1,3 +1,5 @@
+import { currentLocale } from '../i18n';
+
 /**
  * Date helpers for DATE-only values coming from the API.
  *
@@ -27,7 +29,7 @@ export function parseDateOnly(value: string | Date | null | undefined): Date | n
 /** Locale date string for a DATE-only value, with no timezone day-shift. */
 export function formatDateOnly(value: string | Date | null | undefined, locale?: string): string {
   const d = parseDateOnly(value);
-  return d ? d.toLocaleDateString(locale) : '';
+  return d ? d.toLocaleDateString(locale ?? currentLocale()) : '';
 }
 
 /** ISO `YYYY-MM-DD` for a DATE-only value in LOCAL calendar terms (for CSV/export). */

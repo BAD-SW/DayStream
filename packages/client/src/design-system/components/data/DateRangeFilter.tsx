@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export interface DateRange {
   from: string; // ISO date (yyyy-mm-dd)
@@ -33,14 +34,15 @@ function presetRange(preset: string): DateRange {
   return { from: toIsoDate(from), to };
 }
 
-function formatLabel(value: DateRange | null): string {
-  if (!value) return 'Any date';
+function formatLabel(value: DateRange | null, anyDate: string): string {
+  if (!value) return anyDate;
   if (value.from === value.to) return value.from;
   return `${value.from} – ${value.to}`;
 }
 
 /** Date-range popover filter: quick presets plus a custom From/To range. */
 export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
+  const { t } = useTranslation('common');
   const [open, setOpen] = useState(false);
   const [customFrom, setCustomFrom] = useState(value?.from || '');
   const [customTo, setCustomTo] = useState(value?.to || '');
@@ -72,24 +74,24 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
   return (
     <div ref={rootRef} style={styles.root}>
       <button type="button" style={styles.trigger} onClick={() => setOpen((o) => !o)}>
-        {formatLabel(value)} <span aria-hidden="true">▾</span>
+        {formatLabel(value, t('dateRange.anyDate'))} <span aria-hidden="true">▾</span>
       </button>
       {open && (
         <div style={styles.panel}>
           <div style={styles.presetList}>
-            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('today')}>Today</button>
-            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('last7')}>Last 7 days</button>
-            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('last30')}>Last 30 days</button>
-            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('thisMonth')}>This month</button>
+            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('today')}>{t('dateRange.today')}</button>
+            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('last7')}>{t('dateRange.last7')}</button>
+            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('last30')}>{t('dateRange.last30')}</button>
+            <button type="button" style={styles.presetBtn} onClick={() => applyPreset('thisMonth')}>{t('dateRange.thisMonth')}</button>
           </div>
           <div style={styles.customRow}>
-            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} style={styles.dateInput} aria-label="From date" />
-            <span style={styles.toLabel}>to</span>
-            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={styles.dateInput} aria-label="To date" />
+            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} style={styles.dateInput} aria-label={t('dateRange.fromDate')} />
+            <span style={styles.toLabel}>{t('dateRange.to')}</span>
+            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={styles.dateInput} aria-label={t('dateRange.toDate')} />
           </div>
           <div style={styles.actionRow}>
-            <button type="button" style={styles.clearBtn} onClick={() => { onChange(null); setCustomFrom(''); setCustomTo(''); setOpen(false); }}>Clear</button>
-            <button type="button" style={styles.applyBtn} onClick={applyCustom}>Apply</button>
+            <button type="button" style={styles.clearBtn} onClick={() => { onChange(null); setCustomFrom(''); setCustomTo(''); setOpen(false); }}>{t('dateRange.clear')}</button>
+            <button type="button" style={styles.applyBtn} onClick={applyCustom}>{t('dateRange.apply')}</button>
           </div>
         </div>
       )}

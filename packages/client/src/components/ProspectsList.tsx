@@ -1,4 +1,6 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Table, applyTableFilters } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { apiClient } from '../api/client';
@@ -39,12 +41,12 @@ interface Prospect {
 
 
 const STATUS_OPTIONS = [
-  { value: 'new', label: 'New' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'demo_scheduled', label: 'Demo Scheduled' },
-  { value: 'signed', label: 'Signed' },
-  { value: 'declined', label: 'Declined' },
-  { value: 'dismissed', label: 'Dismissed' },
+  { value: 'new' },
+  { value: 'contacted' },
+  { value: 'demo_scheduled' },
+  { value: 'signed' },
+  { value: 'declined' },
+  { value: 'dismissed' },
 ];
 
 /** Fit-tier colors (semantic, from the design system). */
@@ -110,6 +112,10 @@ const FILTER_COLUMNS = (['name', 'address', 'city', 'category', 'fit_score', 'co
 }));
 
 export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChange }: Props) {
+  const { t } = useTranslation('prospects');
+  // Stored statuses and fit tiers are shown through a key, never printed raw.
+  const statusLabel = (value: string) => t(`status.${value}`, { defaultValue: value });
+  const tierLabel = (tier: string) => t(`tier.${tier}`, { defaultValue: tier });
   // URL helpers derived from apiBase + mode.
   const listUrl = ownTenant ? apiBase : `${apiBase}/prospects`;
   const addUrl = listUrl;
@@ -177,7 +183,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     try {
       await apiClient.put(itemUrl(id), { status });
       setProspects((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to update status'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('error.updateStatus'), tone: 'error' }); }
   };
 
   const handleNotesBlur = async (id: string) => {
@@ -186,7 +192,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     try {
       await apiClient.put(itemUrl(id), { notes });
       setProspects((prev) => prev.map((p) => (p.id === id ? { ...p, notes } : p)));
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to update notes'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('error.updateNotes'), tone: 'error' }); }
     setEditingNotes((prev) => { const next = { ...prev }; delete next[id]; return next; });
   };
 
@@ -195,17 +201,17 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       await apiClient.put(`${itemUrl(id)}/dismiss`);
       setProspects((prev) => prev.filter((p) => p.id !== id));
       onCountChange?.(prospects.length - 1);
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to dismiss prospect'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('error.dismiss'), tone: 'error' }); }
   };
 
   const handleAddSubmit = async () => {
-    if (!formData.name.trim()) { alert('Name is required'); return; }
+    if (!formData.name.trim()) { void showMessage({ message: t('error.nameRequired'), tone: 'info' }); return; }
     try {
       await apiClient.post(addUrl, formData);
       setFormData({ name: '', address: '', phone: '', website: '', category: '', notes: '' });
       setShowAddForm(false);
       fetchProspects();
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to add prospect'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('error.add'), tone: 'error' }); }
   };
 
   const [exporting, setExporting] = useState(false);
@@ -228,7 +234,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       link.remove();
       URL.revokeObjectURL(link.href);
     } catch {
-      alert('Failed to export prospects.');
+      void showMessage({ message: t('error.export'), tone: 'error' });
     } finally { setExporting(false); }
   };
 
@@ -236,17 +242,17 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     <div>
       {/* Filters */}
       <div style={styles.filters}>
-        <input type="text" placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} style={styles.searchInput} />
+        <input type="text" placeholder={t('search.placeholder')} aria-label={t('search.placeholder')} value={search} onChange={(e) => setSearch(e.target.value)} style={styles.searchInput} />
         <label style={styles.checkboxLabel}>
           <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} style={styles.checkbox} />
-          Show Dismissed
+          {t('filter.showDismissed')}
         </label>
-        <label style={styles.checkboxLabel} title="Prospects held out by the confidence / contact-completeness filter (retained but excluded from the working list)">
+        <label style={styles.checkboxLabel} title={t('filter.showHeldTitle')}>
           <input type="checkbox" checked={showHeld} onChange={(e) => setShowHeld(e.target.checked)} style={styles.checkbox} />
-          Show Held
+          {t('filter.showHeld')}
         </label>
         <button style={styles.exportLink} onClick={handleExport} disabled={exporting}>
-          {exporting ? 'Exporting…' : 'Export CSV'}
+          {exporting ? t('export.exporting') : t('export.csv')}
         </button>
       </div>
 
@@ -254,22 +260,22 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
         <>
           <div style={styles.addFormToggle}>
             <button style={styles.toggleButton} onClick={() => setShowAddForm(!showAddForm)}>
-              {showAddForm ? '− Cancel' : '+ Add Prospect'}
+              {showAddForm ? t('add.cancelToggle') : t('add.toggle')}
             </button>
           </div>
           {showAddForm && (
             <div style={styles.addForm}>
               <div style={styles.formGrid}>
-                <input type="text" placeholder="Name *" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} style={styles.formInput} />
-                <input type="text" placeholder="Address" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} style={styles.formInput} />
-                <input type="text" placeholder="Phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} style={styles.formInput} />
-                <input type="text" placeholder="Website" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} style={styles.formInput} />
-                <input type="text" placeholder="Category" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} style={styles.formInput} />
-                <input type="text" placeholder="Notes" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} style={styles.formInput} />
+                <input type="text" placeholder={t('add.name')} aria-label={t('add.name')} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} style={styles.formInput} />
+                <input type="text" placeholder={t('add.address')} aria-label={t('add.address')} value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} style={styles.formInput} />
+                <input type="text" placeholder={t('add.phone')} aria-label={t('add.phone')} value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} style={styles.formInput} />
+                <input type="text" placeholder={t('add.website')} aria-label={t('add.website')} value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} style={styles.formInput} />
+                <input type="text" placeholder={t('add.category')} aria-label={t('add.category')} value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} style={styles.formInput} />
+                <input type="text" placeholder={t('add.notes')} aria-label={t('add.notes')} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} style={styles.formInput} />
               </div>
               <div style={styles.formActions}>
-                <Button onClick={handleAddSubmit}>Save</Button>
-                <button style={styles.cancelButton} onClick={() => { setShowAddForm(false); setFormData({ name: '', address: '', phone: '', website: '', category: '', notes: '' }); }}>Cancel</button>
+                <Button onClick={handleAddSubmit}>{t('common:save')}</Button>
+                <button style={styles.cancelButton} onClick={() => { setShowAddForm(false); setFormData({ name: '', address: '', phone: '', website: '', category: '', notes: '' }); }}>{t('common:cancel')}</button>
               </div>
             </div>
           )}
@@ -280,7 +286,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
           The tier counts double as toggle filter chips: click to show only that tier. */}
       {valuation && (
         <div style={styles.valuation}>
-          <span style={styles.valuationTitle}>Territory fit</span>
+          <span style={styles.valuationTitle}>{t('valuation.title')}</span>
           {(['strong', 'moderate', 'weak'] as const).map((tier) => {
             const on = tierFilter.has(tier);
             return (
@@ -289,22 +295,22 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
                 type="button"
                 onClick={() => toggleTier(tier)}
                 aria-pressed={on}
-                title={`Filter to ${tier} fit`}
+                title={t(`valuation.filterTo.${tier}`)}
                 style={{
                   ...styles.tierChip,
                   ...(on ? { background: TIER_COLOR[tier], color: TIER_TEXT[tier], borderColor: TIER_COLOR[tier] } : {}),
                 }}
               >
                 <span style={{ ...styles.tierDot, background: on ? TIER_TEXT[tier] : TIER_COLOR[tier] }} />
-                {valuation[tier]} {tier}
+                {t(`valuation.tierCount.${tier}`, { n: valuation[tier] })}
               </button>
             );
           })}
           {tierFilter.size > 0 && (
-            <button type="button" onClick={() => setTierFilter(new Set())} style={styles.tierClear}>clear</button>
+            <button type="button" onClick={() => setTierFilter(new Set())} style={styles.tierClear}>{t('valuation.clear')}</button>
           )}
           <span style={styles.valuationSep}>·</span>
-          <span style={styles.valuationMuted}>{valuation.total} businesses{valuation.held > 0 ? `, ${valuation.held} held` : ''}</span>
+          <span style={styles.valuationMuted}>{valuation.held > 0 ? t('valuation.totalHeld', { count: valuation.total, held: valuation.held }) : t('valuation.total', { count: valuation.total })}</span>
         </div>
       )}
 
@@ -316,37 +322,37 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
         filters={tableFilters}
         onFiltersChange={setTableFilters}
         loading={loading}
-        emptyMessage="No prospects found."
+        emptyMessage={t('table.empty')}
         clientSort
         columns={[
-          { key: 'name', header: 'Name', sortable: true, render: (_: any, p: Prospect) => (
+          { key: 'name', header: t('table.name'), sortable: true, render: (_: any, p: Prospect) => (
             <>
               <a href={mapsUrl(p)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
               {p.inclusion === 'held' && (
-                <span style={styles.heldBadge} title={`Held (${p.hold_reason || 'filtered'}) — retained but not shown as active`}>held</span>
+                <span style={styles.heldBadge} title={t('table.heldTitle', { reason: p.hold_reason || t('table.heldDefaultReason') })}>{t('table.held')}</span>
               )}
             </>
           ) },
-          { key: 'address', header: 'Address', sortable: true },
-          { key: 'city', header: 'City', sortable: true, render: (v: string) => v || '—' },
-          { key: 'category', header: 'Category', sortable: true },
-          { key: 'fit_score', header: 'Fit', sortable: true, filter: 'number' as const, render: (_: any, p: Prospect) => (p.fit_tier ? (
+          { key: 'address', header: t('table.address'), sortable: true },
+          { key: 'city', header: t('table.city'), sortable: true, render: (v: string) => v || '—' },
+          { key: 'category', header: t('table.category'), sortable: true },
+          { key: 'fit_score', header: t('table.fit'), sortable: true, filter: 'number' as const, render: (_: any, p: Prospect) => (p.fit_tier ? (
             <span style={styles.fitCell}>
-              <span style={{ ...styles.tierBadge, background: TIER_COLOR[p.fit_tier], color: TIER_TEXT[p.fit_tier] }}>{p.fit_tier}</span>
+              <span style={{ ...styles.tierBadge, background: TIER_COLOR[p.fit_tier], color: TIER_TEXT[p.fit_tier] }}>{tierLabel(p.fit_tier)}</span>
               <span style={styles.fitScore}>{p.fit_score ?? '—'}</span>
             </span>
           ) : '—') },
-          { key: 'confidence', header: 'Confidence', sortable: true, filter: 'number' as const, filterValue: (p: Prospect) => (p.confidence == null || p.confidence === '' ? null : Number(p.confidence)), filterLabel: (v: any) => formatConfidence(v), render: (_: any, p: Prospect) => formatConfidence(p.confidence) },
-          { key: 'status', header: 'Status', sortable: true, filterLabel: (v: string) => STATUS_OPTIONS.find((s) => s.value === v)?.label || v, render: (_: any, p: Prospect) => (
-            <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} onClick={(e) => e.stopPropagation()} style={styles.statusSelect} aria-label={`Status for ${p.name}`}>
-              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          { key: 'confidence', header: t('table.confidence'), sortable: true, filter: 'number' as const, filterValue: (p: Prospect) => (p.confidence == null || p.confidence === '' ? null : Number(p.confidence)), filterLabel: (v: any) => formatConfidence(v), render: (_: any, p: Prospect) => formatConfidence(p.confidence) },
+          { key: 'status', header: t('table.status'), sortable: true, filterLabel: (v: string) => statusLabel(v), render: (_: any, p: Prospect) => (
+            <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} onClick={(e) => e.stopPropagation()} style={styles.statusSelect} aria-label={t('table.statusFor', { name: p.name })}>
+              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{statusLabel(s.value)}</option>)}
             </select>
           ) },
-          { key: 'notes', header: 'Notes', sortable: true, render: (_: any, p: Prospect) => (
-            <input type="text" value={editingNotes[p.id] ?? p.notes ?? ''} onChange={(e) => setEditingNotes({ ...editingNotes, [p.id]: e.target.value })} onBlur={() => handleNotesBlur(p.id)} style={styles.notesInput} placeholder="Add notes..." aria-label={`Notes for ${p.name}`} />
+          { key: 'notes', header: t('table.notes'), sortable: true, render: (_: any, p: Prospect) => (
+            <input type="text" value={editingNotes[p.id] ?? p.notes ?? ''} onChange={(e) => setEditingNotes({ ...editingNotes, [p.id]: e.target.value })} onBlur={() => handleNotesBlur(p.id)} style={styles.notesInput} placeholder={t('table.addNotes')} aria-label={t('table.notesFor', { name: p.name })} />
           ) },
           { key: 'actions', header: '', filter: false as const, render: (_: any, p: Prospect) => (
-            <button style={styles.dismissButton} onClick={() => handleDismiss(p.id)} title="Dismiss prospect">✕</button>
+            <button style={styles.dismissButton} onClick={() => handleDismiss(p.id)} title={t('table.dismiss')} aria-label={t('table.dismiss')}>✕</button>
           ) },
         ]}
       />

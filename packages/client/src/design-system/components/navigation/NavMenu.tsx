@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 interface NavMenuItem {
   id: string;
@@ -15,9 +16,10 @@ interface NavMenuProps {
 
 export function NavMenu({ items }: NavMenuProps) {
   const location = useLocation();
+  const { t } = useTranslation('nav');
 
   return (
-    <nav aria-label="Navigation menu" style={styles.nav}>
+    <nav aria-label={t('menu.navigation')} style={styles.nav}>
       {items.map((item) => (
         <NavMenuItemComponent key={item.id} item={item} currentPath={location.pathname} />
       ))}

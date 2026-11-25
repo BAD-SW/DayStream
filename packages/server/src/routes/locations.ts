@@ -66,7 +66,7 @@ const updateLocationSchema = Joi.object({
 locationsRouter.get('/', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:locations.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const locations = await locationService.getLocations(businessId, {
       status: req.query.status as string,
@@ -76,7 +76,7 @@ locationsRouter.get('/', requireAnyPermission('settings:read', 'staff:read'), as
     success(res, locations);
   } catch (err: any) {
     console.error('Failed to list locations', err?.message || err);
-    error(res, 'Failed to list locations', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToListLocations'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -107,10 +107,10 @@ locationsRouter.post('/', requirePermission('settings:*'), validate(createLocati
 
     success(res, location, undefined, 201);
   } catch (err: any) {
-    if (err.message?.includes('duplicate') || err.message?.includes('unique')) {
-      error(res, 'A location with this name already exists', 'DUPLICATE_NAME', 409);
+    if ((isMessage(err.message, 'errors:customers.failedToGetPossibleDuplicates') || err.message?.includes('duplicate')) || messageHas(err.message, 'unique')) {
+      error(res, msg('errors:locations.aLocationWithThisNameAlready'), 'DUPLICATE_NAME', 409);
     } else {
-      error(res, 'Failed to create location', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:locations.failedToCreateLocation'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -119,10 +119,10 @@ locationsRouter.post('/', requirePermission('settings:*'), validate(createLocati
 locationsRouter.get('/:id', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:locations.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const location = await locationService.getLocationById(req.params.id, businessId);
-    if (!location) { error(res, 'Location not found', 'NOT_FOUND', 404); return; }
+    if (!location) { error(res, msg('errors:locations.locationNotFound'), 'NOT_FOUND', 404); return; }
 
     // Include assignment counts
     const summary = await locationService.getLocationSummary(req.params.id);
@@ -130,7 +130,7 @@ locationsRouter.get('/:id', requireAnyPermission('settings:read', 'staff:read'),
     success(res, { ...location, ...summary });
   } catch (err: any) {
     console.error('Failed to get location', err?.message || err);
-    error(res, 'Failed to get location', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToGetLocation'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -139,17 +139,17 @@ locationsRouter.put('/:id', requirePermission('settings:*'), validate(updateLoca
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:locations.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const location = await locationService.updateLocation(
       req.params.id, businessId, req.body, authReq.user.sub, authReq.tenantId,
     );
 
-    if (!location) { error(res, 'Location not found', 'NOT_FOUND', 404); return; }
+    if (!location) { error(res, msg('errors:locations.locationNotFound'), 'NOT_FOUND', 404); return; }
     success(res, location);
   } catch (err: any) {
     console.error('Failed to update location', err?.message || err);
-    error(res, 'Failed to update location', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToUpdateLocation'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -158,21 +158,21 @@ locationsRouter.put('/:id/deactivate', requirePermission('settings:*'), async (r
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:locations.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const deactivated = await locationService.deactivateLocation(
       req.params.id, businessId, authReq.user.sub, authReq.tenantId,
     );
 
-    if (!deactivated) { error(res, 'Location not found or already inactive', 'NOT_FOUND', 404); return; }
+    if (!deactivated) { error(res, msg('errors:locations.locationNotFoundOrAlreadyInactive'), 'NOT_FOUND', 404); return; }
     success(res, { deactivated: true });
   } catch (err: any) {
     if (err.code === 'HAS_FUTURE_BOOKINGS') {
       error(res, err.message, 'HAS_FUTURE_BOOKINGS', 409);
-    } else if (err.message?.includes('only active location')) {
+    } else if ((isMessage(err.message, 'errors:location.cannotDeactivateTheOnlyActiveLocation') || err.message?.includes('only active location'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to deactivate location', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:locations.failedToDeactivateLocation'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -182,6 +182,7 @@ locationsRouter.put('/:id/deactivate', requirePermission('settings:*'), async (r
 // ============================================================
 
 import * as locationHoursService from '../services/location-hours.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 // GET /api/v1/locations/:id/hours
 locationsRouter.get('/:id/hours', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
@@ -190,7 +191,7 @@ locationsRouter.get('/:id/hours', requireAnyPermission('settings:read', 'staff:r
     success(res, hours);
   } catch (err: any) {
     console.error('Failed to get location hours', err?.message || err);
-    error(res, 'Failed to get location hours', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToGetLocationHours'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -198,14 +199,14 @@ locationsRouter.get('/:id/hours', requireAnyPermission('settings:read', 'staff:r
 locationsRouter.put('/:id/hours', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     if (!Array.isArray(req.body.hours)) {
-      error(res, 'hours array required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:locations.hoursArrayRequired'), 'VALIDATION_ERROR', 400);
       return;
     }
     const hours = await locationHoursService.setLocationHours(req.params.id, req.body.hours);
     success(res, hours);
   } catch (err: any) {
     console.error('Failed to set location hours', err?.message || err);
-    error(res, 'Failed to set location hours', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToSetLocationHours'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -218,14 +219,14 @@ locationsRouter.get('/:id/hours/overrides', requireAnyPermission('settings:read'
     success(res, overrides);
   } catch (err: any) {
     console.error('Failed to get hour overrides', err?.message || err);
-    error(res, 'Failed to get hour overrides', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToGetHourOverrides'), 'INTERNAL_ERROR', 500);
   }
 });
 
 // POST /api/v1/locations/:id/hours/overrides
 locationsRouter.post('/:id/hours/overrides', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
-    if (!req.body.override_date) { error(res, 'override_date required', 'VALIDATION_ERROR', 400); return; }
+    if (!req.body.override_date) { error(res, msg('errors:locations.overrideDateRequired'), 'VALIDATION_ERROR', 400); return; }
     const override = await locationHoursService.upsertLocationHourOverride(req.params.id, {
       override_date: req.body.override_date,
       label: req.body.label,
@@ -236,7 +237,7 @@ locationsRouter.post('/:id/hours/overrides', requirePermission('settings:*'), as
     success(res, override, undefined, 201);
   } catch (err: any) {
     console.error('Failed to save hour override', err?.message || err);
-    error(res, 'Failed to save hour override', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToSaveHourOverride'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -244,11 +245,11 @@ locationsRouter.post('/:id/hours/overrides', requirePermission('settings:*'), as
 locationsRouter.delete('/:id/hours/overrides/:overrideId', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const deleted = await locationHoursService.deleteLocationHourOverride(req.params.overrideId, req.params.id);
-    if (!deleted) { error(res, 'Override not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:locations.overrideNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete hour override', err?.message || err);
-    error(res, 'Failed to delete hour override', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToDeleteHourOverride'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -260,7 +261,7 @@ locationsRouter.get('/:id/hours/overrides/years', requireAnyPermission('settings
     success(res, years);
   } catch (err: any) {
     console.error('Failed to get override years', err?.message || err);
-    error(res, 'Failed to get override years', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToGetOverrideYears'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -276,19 +277,19 @@ locationsRouter.get('/:id/staff', requireAnyPermission('settings:read', 'staff:r
     success(res, staff);
   } catch (err: any) {
     console.error('Failed to get location staff', err?.message || err);
-    error(res, 'Failed to get location staff', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToGetLocationStaff'), 'INTERNAL_ERROR', 500);
   }
 });
 
 // POST /api/v1/locations/:id/staff
 locationsRouter.post('/:id/staff', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
-    if (!req.body.staff_id) { error(res, 'staff_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!req.body.staff_id) { error(res, msg('errors:locations.staffIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const assignment = await locationHoursService.assignStaffToLocation(req.params.id, req.body.staff_id);
     success(res, assignment, undefined, 201);
   } catch (err: any) {
     console.error('Failed to assign staff', err?.message || err);
-    error(res, 'Failed to assign staff', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToAssignStaff'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -296,10 +297,10 @@ locationsRouter.post('/:id/staff', requirePermission('settings:*'), async (req: 
 locationsRouter.delete('/:id/staff/:staffId', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const removed = await locationHoursService.removeStaffFromLocation(req.params.id, req.params.staffId);
-    if (!removed) { error(res, 'Assignment not found', 'NOT_FOUND', 404); return; }
+    if (!removed) { error(res, msg('errors:locations.assignmentNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to remove staff', err?.message || err);
-    error(res, 'Failed to remove staff', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:locations.failedToRemoveStaff'), 'INTERNAL_ERROR', 500);
   }
 });

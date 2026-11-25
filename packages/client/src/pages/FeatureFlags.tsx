@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 
@@ -31,7 +32,7 @@ export function FeatureFlags() {
       await apiClient.put(`/v1/admin/feature-flags/${key}`, { enabled: !currentValue });
       setFlags((prev) => prev.map((f) => f.key === key ? { ...f, enabled: !currentValue } : f));
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to toggle flag');
+      void showMessage({ message: err.response?.data?.error || 'Failed to toggle flag', tone: 'error' });
     }
   };
 

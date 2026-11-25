@@ -19,14 +19,15 @@ export const PACKAGE_STEP_ORDER: FlowStep[] = [
   'product', 'auth', 'customer', 'payment', 'confirmation',
 ];
 
-export const STEP_LABELS: Record<FlowStep, string> = {
-  product: 'Details',
-  calendar: 'Date',
-  slots: 'Time',
-  auth: 'Sign in',
-  customer: 'Your details',
-  payment: 'Payment',
-  confirmation: 'Confirmed',
+/** The widget:* key of each step's name; the component that shows it calls t. */
+export const STEP_LABEL_KEYS: Record<FlowStep, string> = {
+  product: 'step.product',
+  calendar: 'step.calendar',
+  slots: 'step.slots',
+  auth: 'step.auth',
+  customer: 'step.customer',
+  payment: 'step.payment',
+  confirmation: 'step.confirmation',
 };
 
 /** Normalized result of a package purchase or membership enrollment — the two API

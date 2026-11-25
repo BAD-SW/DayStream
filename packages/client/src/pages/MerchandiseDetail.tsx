@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
@@ -8,12 +9,15 @@ import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard
 import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
+import { formatDateTime, formatNumber } from '../utils/format';
 import * as servicesApi from '../api/services';
 import type { ServiceCategory } from '../api/services';
 import { getVendors } from '../api/accounts-payable';
 import * as inventoryApi from '../api/inventory';
 import type { StockLine, StockMovement } from '../api/inventory';
 import { ChangeStockModal, ReorderModal, CountModal, TransferModal } from '../components/inventory/StockModals';
+import { TranslateButton } from '../components/TranslationsTable';
+import { useTranslation } from 'react-i18next';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error', inactive: 'neutral',
@@ -69,6 +73,7 @@ export function MerchandiseDetail() {
 }
 
 function MerchandiseDetailPage() {
+  const { t } = useTranslation('offerings');
   const { id } = useParams<{ id: string }>();
   const navigate = useGuardedNavigate();
   const [item, setItem] = useState<Merchandise | null>(null);
@@ -90,25 +95,25 @@ function MerchandiseDetailPage() {
     }).catch(() => setItem(null)).finally(() => setLoading(false));
   }, [id, businessId]);
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
-  if (!item) return <div style={styles.loading}>Product not found</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
+  if (!item) return <div style={styles.loading}>{t('merchandiseDetail.notFound')}</div>;
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
-        <button style={styles.back} onClick={() => navigate('/offers?tab=products')}>← Back to Offerings</button>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=products')}>{t('serviceCreate.backToOfferings')}</button>
 
         {/* Header */}
         <div style={styles.profileHeader}>
           <div style={styles.headerInfo}>
             <h1 style={styles.name}>{item.name}</h1>
-            {item.sku && <span style={styles.sku}>SKU: {item.sku}</span>}
+            {item.sku && <span style={styles.sku}>{t('merchandiseDetail.sku', { sku: item.sku })}</span>}
           </div>
           <div style={styles.headerRight}>
             <div style={styles.saveRow}><SaveChanges /></div>
             <div style={styles.saveRow}>
-              <Badge variant={STATUS_VARIANTS[item.status] || 'neutral'}>{item.status}</Badge>
+              <Badge variant={STATUS_VARIANTS[item.status] || 'neutral'}>{t(`shared.status.${item.status}`, { defaultValue: item.status })}</Badge>
               <span style={styles.price}>{formatCurrency(item.price)}</span>
             </div>
           </div>
@@ -127,6 +132,7 @@ function MerchandiseDetailPage() {
 // --- Product Form (always editable; saved with the page's Save changes) ---
 
 function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchandise; categories: ServiceCategory[]; businessId: string; onUpdate: (m: Merchandise) => void }) {
+  const { t } = useTranslation('offerings');
   const fromItem = (m: Merchandise) => ({
     name: m.name,
     description: m.description || '',
@@ -142,7 +148,7 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
     barcode: m.barcode || '',
     supplier_id: m.supplier_id || '',
   });
-  const draft = useDraft('product-details', 'Product details', fromItem(item), async (form) => {
+  const draft = useDraft('product-details', t('merchandiseDetail.draftName'), fromItem(item), async (form) => {
     const payload = {
       ...form,
       category_id: form.category_id || null,
@@ -184,7 +190,7 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
       await apiClient.put(`/v1/merchandise/${item.id}/${action}?business_id=${businessId}`);
       const res = await apiClient.get(`/v1/merchandise/${item.id}?business_id=${businessId}`);
       onUpdate(res.data.data);
-    } catch { alert(`Failed to ${action}`); }
+    } catch { void showMessage({ message: t(`merchandiseDetail.failedTo.${action}`, { defaultValue: `Failed to ${action}` }), tone: 'error' }); }
     finally { setStatusChanging(false); }
   };
 
@@ -193,81 +199,81 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
       {/* Actions bar */}
       <div style={styles.actionsBar}>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {item.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>Pause</Button>}
-          {item.status === 'paused' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>Activate</Button>}
-          {item.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>Archive</Button>}
-          {item.status === 'archived' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('restore')} loading={statusChanging}>Restore</Button>}
+          {item.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>{t('shared.pause')}</Button>}
+          {item.status === 'paused' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>{t('shared.activate')}</Button>}
+          {item.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>{t('shared.archive')}</Button>}
+          {item.status === 'archived' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('restore')} loading={statusChanging}>{t('shared.restore')}</Button>}
         </div>
       </div>
 
       {/* Details card */}
       <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Product Details<UnsavedTag dirty={draft.dirty} /></h3>
-          <Button size="sm" variant="secondary" onClick={() => { /* TODO: trigger translation for short_description and description */ }}>Translate</Button>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('merchandiseDetail.details')}<UnsavedTag dirty={draft.dirty} /></h3>
+          <TranslateButton entityType="product" entityId={item.id} title={item.name} label={t('serviceDetail.translate')} />
         </div>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
+            <label style={styles.label}>{t('shared.nameRequired')}</label>
             <input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Category</label>
+            <label style={styles.label}>{t('shared.category')}</label>
             <select style={{ ...styles.input, ...mark('category_id') }} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
-              <option value="">None</option>
+              <option value="">{t('shared.none')}</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Price *</label>
+            <label style={styles.label}>{t('shared.priceRequired')}</label>
             <input style={{ ...styles.input, ...mark('price') }} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => { setPriceDisplay(e.target.value); setForm({ ...form, price: Math.round(parseFloat(e.target.value || '0') * 100) || 0 }); }}
               onBlur={() => setPriceDisplay((form.price / 100).toFixed(2))}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>SKU</label>
+            <label style={styles.label}>{t('shared.sku')}</label>
             <input style={{ ...styles.input, ...mark('sku') }} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Tax Category</label>
+            <label style={styles.label}>{t('serviceDetail.taxCategory')}</label>
             <select style={{ ...styles.input, ...mark('tax_category_id') }} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
-              <option value="">No tax</option>
-              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+              <option value="">{t('serviceDetail.noTax')}</option>
+              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({formatNumber(tc.rate / 100, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)</option>)}
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Cost price</label>
-            <input style={{ ...styles.input, ...mark('cost_cents') }} type="number" step="0.01" min="0" value={costDisplay} placeholder="What you pay for one"
+            <label style={styles.label}>{t('merchandiseDetail.costPrice')}</label>
+            <input style={{ ...styles.input, ...mark('cost_cents') }} type="number" step="0.01" min="0" value={costDisplay} placeholder={t('merchandiseDetail.costPlaceholder')}
               onChange={(e) => { setCostDisplay(e.target.value); setForm({ ...form, cost_cents: toCents(e.target.value) }); }}
               onBlur={() => setCostDisplay(centsText(form.cost_cents))}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Barcode</label>
+            <label style={styles.label}>{t('merchandiseDetail.barcode')}</label>
             <input style={{ ...styles.input, ...mark('barcode') }} value={form.barcode} maxLength={64} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Supplier</label>
+            <label style={styles.label}>{t('merchandiseDetail.supplier')}</label>
             <select style={{ ...styles.input, ...mark('supplier_id') }} value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
-              <option value="">None</option>
-              {form.supplier_id && !vendors.some((v) => v.id === form.supplier_id) && <option value={form.supplier_id}>Current supplier</option>}
+              <option value="">{t('shared.none')}</option>
+              {form.supplier_id && !vendors.some((v) => v.id === form.supplier_id) && <option value={form.supplier_id}>{t('merchandiseDetail.currentSupplier')}</option>}
               {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </div>
           <div style={{ ...styles.formGroup, justifyContent: 'flex-end' }}>
             <label style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer', ...mark('track_stock') }}>
               <input type="checkbox" checked={form.track_stock} onChange={(e) => setForm({ ...form, track_stock: e.target.checked })} />
-              Track stock
+              {t('merchandiseDetail.trackStock')}
             </label>
-            <span style={styles.hint}>Count what is on hand at each location; Checkout cannot sell more than that.</span>
+            <span style={styles.hint}>{t('merchandiseDetail.trackStockHelp')}</span>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Short Description</label>
+            <label style={styles.label}>{t('shared.shortDescription')}</label>
             <input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Description</label>
+            <label style={styles.label}>{t('shared.description')}</label>
             <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
         </div>
@@ -279,9 +285,10 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
 // --- Product Image (a new or removed image waits for the page's Save changes) ---
 
 function ProductImage({ item, businessId, onUpdate }: { item: Merchandise; businessId: string; onUpdate: (m: Merchandise) => void }) {
+  const { t } = useTranslation('offerings');
   type Pending = { file: File | null; url: string; remove: boolean };
   const none: Pending = { file: null, url: '', remove: false };
-  const draft = useDraft<Pending>('product-image', 'Product image', none, async (d) => {
+  const draft = useDraft<Pending>('product-image', t('merchandiseDetail.imageDraftName'), none, async (d) => {
     if (d.file) {
       const formData = new FormData();
       formData.append('image', d.file);
@@ -310,28 +317,28 @@ function ProductImage({ item, businessId, onUpdate }: { item: Merchandise; busin
   return (
     <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Product Image<UnsavedTag dirty={draft.dirty} /></h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('merchandiseDetail.imageTitle')}<UnsavedTag dirty={draft.dirty} /></h3>
         <div style={{ display: 'flex', gap: '8px' }}>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)' }}>
-            {shown ? 'Replace' : 'Upload'}
+            {shown ? t('merchandiseDetail.replace') : t('merchandiseDetail.upload')}
             <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePick} style={{ display: 'none' }} />
           </label>
           {draft.dirty
-            ? <button onClick={() => draft.setValue(none)} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)' }}>Undo</button>
+            ? <button onClick={() => draft.setValue(none)} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)' }}>{t('serviceDetail.undo')}</button>
             : item.image_url && (
-              <button onClick={() => draft.setValue({ ...none, remove: true })} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-error)' }}>Remove</button>
+              <button onClick={() => draft.setValue({ ...none, remove: true })} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-error)' }}>{t('serviceDetail.remove')}</button>
             )}
         </div>
       </div>
       {shown ? (
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
           <img src={shown} alt={item.name} style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: 'var(--radius-md)', objectFit: 'cover', border: '1px solid var(--color-border)' }} />
-          {pending.file && <RowTag>New image · saved with Save changes</RowTag>}
+          {pending.file && <RowTag>{t('merchandiseDetail.newImage')}</RowTag>}
         </div>
       ) : (
-        <p style={styles.muted}>{pending.remove ? <RowTag>Image removed when you save</RowTag> : 'No image uploaded'}</p>
+        <p style={styles.muted}>{pending.remove ? <RowTag>{t('merchandiseDetail.imageRemoved')}</RowTag> : t('merchandiseDetail.noImage')}</p>
       )}
-      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>Accepted: JPEG, PNG, or WebP. Max 5MB. Recommended: at least 600×600px.</p>
+      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>{t('merchandiseDetail.imageRules')}</p>
     </div>
   );
 }
@@ -342,9 +349,10 @@ type VariantData = Pick<MerchVariant, 'name' | 'sku' | 'price' | 'cost_cents' | 
 const variantData = (v: VariantData) => ({ name: v.name, sku: v.sku || undefined, price: v.price, cost_cents: v.cost_cents ?? null, barcode: v.barcode || null });
 
 function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
+  const { t } = useTranslation('offerings');
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ key?: string; variant?: MerchVariant } | null>(null);
-  const list = useDraftList<MerchVariant>('product-variants', 'Variants', {
+  const list = useDraftList<MerchVariant>('product-variants', t('serviceDetail.variants'), {
     create: (v) => apiClient.post(`/v1/merchandise/${merchandiseId}/variants`, variantData(v)).then((r) => r.data.data),
     update: (v) => apiClient.put(`/v1/merchandise/${merchandiseId}/variants/${v.id}`, variantData(v)).then((r) => r.data.data),
     remove: (v) => apiClient.delete(`/v1/merchandise/${merchandiseId}/variants/${v.id}`).then(() => undefined),
@@ -363,8 +371,8 @@ function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
   return (
     <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Variants<UnsavedTag dirty={list.dirty} /></h3>
-        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Variant</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('serviceDetail.variants')}<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>{t('merchandiseDetail.addVariant')}</Button>
       </div>
 
       {/* Add/Edit Variant Modal */}
@@ -380,8 +388,8 @@ function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
         />
       )}
 
-      {loading && <p style={styles.muted}>Loading...</p>}
-      {!loading && list.rows.length === 0 && <p style={styles.muted}>No variants defined. Product uses its base price.</p>}
+      {loading && <p style={styles.muted}>{t('common:loading')}</p>}
+      {!loading && list.rows.length === 0 && <p style={styles.muted}>{t('merchandiseDetail.noVariants')}</p>}
       {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {list.rows.map((r) => {
@@ -391,17 +399,17 @@ function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
               <div key={r.key} style={{ ...styles.variantRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
                 <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
                   <strong>{v.name}</strong>
-                  {v.sku && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>SKU: {v.sku}</span>}
-                  {v.cost_cents != null && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Cost: {formatCurrency(v.cost_cents)}</span>}
-                  {r.isNew && <> <RowTag>New</RowTag></>}
-                  {edited && <> <RowTag>Changed</RowTag></>}
-                  {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                  {v.sku && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('merchandiseDetail.sku', { sku: v.sku })}</span>}
+                  {v.cost_cents != null && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('merchandiseDetail.cost', { amount: formatCurrency(v.cost_cents) })}</span>}
+                  {r.isNew && <> <RowTag>{t('serviceDetail.rowNew')}</RowTag></>}
+                  {edited && <> <RowTag>{t('serviceDetail.rowChanged')}</RowTag></>}
+                  {r.deleted && <> <RowTag>{t('serviceDetail.rowDeleted')}</RowTag></>}
                 </div>
                 <span style={{ fontWeight: 600 }}>{formatCurrency(v.price)}</span>
-                {!r.isNew && <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>}
-                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
-                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, variant: v })} title="Edit">✏️</button>
-                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Delete">×</button>
+                {!r.isNew && <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{t(`shared.status.${v.status}`, { defaultValue: v.status })}</Badge>}
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('serviceDetail.undo')}</Button> : <>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, variant: v })} title={t('common:edit')}>✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title={t('common:delete')}>×</button>
                 </>}
               </div>
             );
@@ -415,6 +423,7 @@ function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
 // --- Variant Modal ---
 
 function VariantModal({ variant, onClose, onDone }: { variant?: MerchVariant; onClose: () => void; onDone: (data: VariantData) => void }) {
+  const { t } = useTranslation('offerings');
   const [form, setForm] = useState({
     name: variant?.name || '',
     sku: variant?.sku || '',
@@ -426,7 +435,7 @@ function VariantModal({ variant, onClose, onDone }: { variant?: MerchVariant; on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) { setError('Name is required'); return; }
+    if (!form.name) { setError(t('products.nameRequiredMsg')); return; }
     onDone({ name: form.name, sku: form.sku || undefined, price: Math.round(parseFloat(priceDisplay || '0') * 100), cost_cents: toCents(costDisplay), barcode: form.barcode || null });
   };
 
@@ -434,41 +443,41 @@ function VariantModal({ variant, onClose, onDone }: { variant?: MerchVariant; on
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>{variant ? 'Edit Variant' : 'Add Variant'}</h3>
+          <h3 style={styles.modalTitle}>{variant ? t('merchandiseDetail.editVariant') : t('merchandiseDetail.addVariant')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Name * (e.g., "Small", "Red", "500ml")</label>
+            <label style={styles.label}>{t('merchandiseDetail.variantName')}</label>
             <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Price *</label>
+            <label style={styles.label}>{t('shared.priceRequired')}</label>
             <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => setPriceDisplay(e.target.value)}
               onBlur={() => setPriceDisplay((Math.round(parseFloat(priceDisplay || '0') * 100) / 100).toFixed(2))}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>SKU</label>
-            <input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Optional" />
+            <label style={styles.label}>{t('shared.sku')}</label>
+            <input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder={t('products.optional')} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Cost price</label>
-            <input style={styles.input} type="number" step="0.01" min="0" value={costDisplay} placeholder="Same as the product if empty"
+            <label style={styles.label}>{t('merchandiseDetail.costPrice')}</label>
+            <input style={styles.input} type="number" step="0.01" min="0" value={costDisplay} placeholder={t('merchandiseDetail.sameAsProduct')}
               onChange={(e) => setCostDisplay(e.target.value)}
               onBlur={() => setCostDisplay(centsText(toCents(costDisplay)))}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Barcode</label>
-            <input style={styles.input} value={form.barcode} maxLength={64} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="Optional" />
+            <label style={styles.label}>{t('merchandiseDetail.barcode')}</label>
+            <input style={styles.input} value={form.barcode} maxLength={64} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder={t('products.optional')} />
           </div>
-          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>{t('serviceDetail.savedWithPage')}</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit">{variant ? 'Done' : 'Add Variant'}</Button>
+            <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+            <Button type="submit">{variant ? t('serviceDetail.done') : t('merchandiseDetail.addVariant')}</Button>
           </div>
         </form>
       </div>
@@ -480,6 +489,7 @@ function VariantModal({ variant, onClose, onDone }: { variant?: MerchVariant; on
 // each one is a movement in the history, so it is not held for Save changes. ---
 
 function StockCard({ item, businessId }: { item: Merchandise; businessId: string }) {
+  const { t } = useTranslation('offerings');
   const { dirtySections } = useDraftSections();
   const [lines, setLines] = useState<StockLine[]>([]);
   const [history, setHistory] = useState<StockMovement[]>([]);
@@ -508,29 +518,29 @@ function StockCard({ item, businessId }: { item: Merchandise; businessId: string
   return (
     <div style={styles.card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Stock</h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('merchandiseDetail.stock')}</h3>
         {tracked && (
           <div style={{ display: 'flex', gap: 'var(--space-xs)', alignItems: 'center' }}>
-            {lines.length > 0 && <Button size="sm" variant="secondary" onClick={() => setCounting(true)}>Count</Button>}
-            {hasLocations && <Button size="sm" variant="secondary" onClick={() => setMoving(true)} disabled={!lines.some((l) => l.on_hand > 0)}>Transfer</Button>}
-            {history.length > 0 && <Button size="sm" variant="ghost" onClick={() => setShowHistory((s) => !s)}>{showHistory ? 'Hide history' : 'History'}</Button>}
+            {lines.length > 0 && <Button size="sm" variant="secondary" onClick={() => setCounting(true)}>{t('merchandiseDetail.count')}</Button>}
+            {hasLocations && <Button size="sm" variant="secondary" onClick={() => setMoving(true)} disabled={!lines.some((l) => l.on_hand > 0)}>{t('merchandiseDetail.transfer')}</Button>}
+            {history.length > 0 && <Button size="sm" variant="ghost" onClick={() => setShowHistory((s) => !s)}>{showHistory ? t('merchandiseDetail.hideHistory') : t('merchandiseDetail.history')}</Button>}
           </div>
         )}
       </div>
-      {!tracked && <p style={styles.muted}>Stock is not tracked. Tick Track stock in Product Details and save to count what is on hand.</p>}
-      {tracked && loading && <p style={styles.muted}>Loading...</p>}
-      {tracked && !loading && lines.length === 0 && <p style={styles.muted}>The business has no active location to hold stock.</p>}
+      {!tracked && <p style={styles.muted}>{t('merchandiseDetail.notTracked')}</p>}
+      {tracked && loading && <p style={styles.muted}>{t('common:loading')}</p>}
+      {tracked && !loading && lines.length === 0 && <p style={styles.muted}>{t('merchandiseDetail.noLocation')}</p>}
       {tracked && !loading && lines.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
             <thead>
               <tr>
-                {hasLocations && <th style={styles.th}>Location</th>}
-                {hasVariants && <th style={styles.th}>Option</th>}
-                <th style={{ ...styles.th, textAlign: 'right' }}>On hand</th>
-                <th style={{ ...styles.th, textAlign: 'right' }}>Average cost</th>
-                <th style={{ ...styles.th, textAlign: 'right' }}>Reorder at</th>
-                <th style={{ ...styles.th, textAlign: 'right' }}>Reorder qty</th>
+                {hasLocations && <th style={styles.th}>{t('merchandiseDetail.location')}</th>}
+                {hasVariants && <th style={styles.th}>{t('merchandiseDetail.option')}</th>}
+                <th style={{ ...styles.th, textAlign: 'right' }}>{t('merchandiseDetail.onHand')}</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>{t('merchandiseDetail.averageCost')}</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>{t('merchandiseDetail.reorderAt')}</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>{t('merchandiseDetail.reorderQty')}</th>
                 <th style={styles.th} />
               </tr>
             </thead>
@@ -541,14 +551,14 @@ function StockCard({ item, businessId }: { item: Merchandise; businessId: string
                   {hasVariants && <td style={styles.td}>{l.variant_name}</td>}
                   <td style={{ ...styles.td, textAlign: 'right', fontWeight: 600 }}>
                     {l.on_hand}{' '}
-                    {l.on_hand === 0 ? <Badge variant="error">Out of stock</Badge> : l.low ? <Badge variant="warning">Low</Badge> : null}
+                    {l.on_hand === 0 ? <Badge variant="error">{t('merchandiseDetail.outOfStock')}</Badge> : l.low ? <Badge variant="warning">{t('merchandiseDetail.low')}</Badge> : null}
                   </td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>{l.on_hand > 0 || l.avg_cost_cents > 0 ? formatCurrency(l.avg_cost_cents) : '—'}</td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>{l.reorder_level ?? '—'}</td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>{l.reorder_qty ?? '—'}</td>
                   <td style={{ ...styles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <Button size="sm" variant="secondary" onClick={() => setChanging(l)}>Change stock</Button>{' '}
-                    <Button size="sm" variant="ghost" onClick={() => setReordering(l)}>Reorder</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setChanging(l)}>{t('merchandiseDetail.changeStock')}</Button>{' '}
+                    <Button size="sm" variant="ghost" onClick={() => setReordering(l)}>{t('merchandiseDetail.reorder')}</Button>
                   </td>
                 </tr>
               ))}
@@ -561,28 +571,28 @@ function StockCard({ item, businessId }: { item: Merchandise; businessId: string
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>When</th>
-                <th style={styles.th}>What</th>
-                {hasLocations && <th style={styles.th}>Location</th>}
-                {hasVariants && <th style={styles.th}>Option</th>}
-                <th style={{ ...styles.th, textAlign: 'right' }}>Change</th>
-                <th style={{ ...styles.th, textAlign: 'right' }}>On hand after</th>
-                <th style={styles.th}>By</th>
+                <th style={styles.th}>{t('merchandiseDetail.when')}</th>
+                <th style={styles.th}>{t('merchandiseDetail.what')}</th>
+                {hasLocations && <th style={styles.th}>{t('merchandiseDetail.location')}</th>}
+                {hasVariants && <th style={styles.th}>{t('merchandiseDetail.option')}</th>}
+                <th style={{ ...styles.th, textAlign: 'right' }}>{t('merchandiseDetail.change')}</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>{t('merchandiseDetail.onHandAfter')}</th>
+                <th style={styles.th}>{t('merchandiseDetail.by')}</th>
               </tr>
             </thead>
             <tbody>
               {history.map((m) => (
                 <tr key={m.id}>
-                  <td style={styles.td}>{new Date(m.created_at).toLocaleString()}</td>
+                  <td style={styles.td}>{formatDateTime(m.created_at)}</td>
                   <td style={styles.td}>
-                    {inventoryApi.MOVEMENT_LABELS[m.reason] || m.reason}
-                    {m.adjust_reason && `: ${inventoryApi.ADJUST_REASONS.find((r) => r.value === m.adjust_reason)?.label || m.adjust_reason}`}
-                    {m.order_number && ` (order ${m.order_number})`}
+                    {inventoryApi.movementLabel(m.reason)}
+                    {m.adjust_reason && t('merchandiseDetail.reasonSuffix', { reason: inventoryApi.adjustReasonLabel(m.adjust_reason) })}
+                    {m.order_number && ` ${t('merchandiseDetail.orderSuffix', { number: m.order_number })}`}
                     {m.note && <div style={styles.hint}>{m.note}</div>}
                   </td>
                   {hasLocations && <td style={styles.td}>{m.location_name}</td>}
                   {hasVariants && <td style={styles.td}>{m.variant_name}</td>}
-                  <td style={{ ...styles.td, textAlign: 'right' }}>{m.qty_change > 0 ? `+${m.qty_change}` : m.qty_change}</td>
+                  <td style={{ ...styles.td, textAlign: 'right' }}>{formatNumber(m.qty_change, { signDisplay: 'exceptZero' })}</td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>{m.on_hand_after}</td>
                   <td style={styles.td}>{m.by_name || '—'}</td>
                 </tr>

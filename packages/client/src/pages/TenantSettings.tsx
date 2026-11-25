@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ThemeGallery } from './settings/ThemeGallery';
 import { ProcessorConfigForm } from '../components/ProcessorConfigForm';
 import { Button } from '../design-system/components/actions/Button';
@@ -8,16 +9,17 @@ import type { TenantBillingAccount } from '../api/payments';
 type SettingsTab = 'appearance' | 'payment-processors' | 'business-billing';
 
 export function TenantSettings() {
+  const { t } = useTranslation('tenant');
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
   const tabs: { key: SettingsTab; label: string }[] = [
-    { key: 'appearance', label: 'Themes' },
-    { key: 'payment-processors', label: 'Payment Processors' },
-    { key: 'business-billing', label: 'Business Billing' },
+    { key: 'appearance', label: t('settings.tabThemes') },
+    { key: 'payment-processors', label: t('settings.tabProcessors') },
+    { key: 'business-billing', label: t('settings.tabBilling') },
   ];
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Settings</h1>
+      <h1 style={styles.title}>{t('settings.title')}</h1>
       <div style={styles.tabBar}>
         {tabs.map((tab) => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
@@ -39,13 +41,12 @@ export function TenantSettings() {
  * Mirrors the system Payment Processors tab, one level down (owner_level='tenant').
  */
 function TenantPaymentProcessorsPanel() {
+  const { t } = useTranslation('tenant');
   return (
     <div style={styles.panel}>
-      <h3 style={styles.panelTitle}>Payment Processors</h3>
+      <h3 style={styles.panelTitle}>{t('settings.tabProcessors')}</h3>
       <p style={styles.panelSubtext}>
-        Configure the payment provider you use to charge your businesses. Credentials are
-        stored encrypted; secret values are never shown after saving. Each business configures
-        its own provider separately for charging its customers.
+        {t('settings.processorsHelp')}
       </p>
       <ProcessorConfigForm owner={{ owner_level: 'tenant' }} />
     </div>
@@ -63,6 +64,7 @@ const EMPTY_ACCOUNT: TenantBillingAccount = {
  * Platform Receiving Account (system Configuration → Platform Billing).
  */
 function TenantBillingAccountPanel() {
+  const { t } = useTranslation('tenant');
   const [form, setForm] = useState<TenantBillingAccount>(EMPTY_ACCOUNT);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -90,53 +92,53 @@ function TenantBillingAccountPanel() {
     setSaving(true); setMessage(null);
     try {
       await payApi.saveTenantBillingAccount(form);
-      setMessage('Business billing account saved.');
+      setMessage(t('settings.accountSaved'));
     } catch (err: any) {
-      setMessage(err?.response?.data?.message || 'Failed to save');
+      setMessage(err?.response?.data?.message || t('settings.accountSaveFailed'));
     } finally { setSaving(false); }
   };
 
-  if (loading) return <p style={styles.panelSubtext}>Loading…</p>;
+  if (loading) return <p style={styles.panelSubtext}>{t('settings.loading')}</p>;
 
   return (
     <div style={styles.panel}>
-      <h3 style={styles.panelTitle}>Business Billing — Receiving Account</h3>
-      <p style={styles.panelSubtext}>Your bank account where payments collected from your businesses are deposited.</p>
+      <h3 style={styles.panelTitle}>{t('settings.accountTitle')}</h3>
+      <p style={styles.panelSubtext}>{t('settings.accountHelp')}</p>
       {message && <div style={styles.successMsg}>{message}</div>}
       <div style={styles.formSection}>
         <div style={styles.formRow}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Bank Name</label>
-            <input style={styles.input} value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} placeholder="Bank Name" />
+            <label style={styles.label}>{t('settings.bankName')}</label>
+            <input style={styles.input} value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} placeholder={t('settings.bankName')} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Account Holder</label>
-            <input style={styles.input} value={form.account_holder} onChange={(e) => setForm({ ...form, account_holder: e.target.value })} placeholder="Company Name LLC" />
+            <label style={styles.label}>{t('settings.accountHolder')}</label>
+            <input style={styles.input} value={form.account_holder} onChange={(e) => setForm({ ...form, account_holder: e.target.value })} placeholder={t('settings.accountHolderPlaceholder')} />
           </div>
         </div>
         <div style={styles.formRow}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Account Number</label>
-            <input style={styles.input} value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} placeholder="••••••1234" />
+            <label style={styles.label}>{t('settings.accountNumber')}</label>
+            <input style={styles.input} value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} placeholder={t('settings.accountNumberPlaceholder')} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Routing Number</label>
+            <label style={styles.label}>{t('settings.routingNumber')}</label>
             <input style={styles.input} value={form.routing_number} onChange={(e) => setForm({ ...form, routing_number: e.target.value })} placeholder="021000021" />
           </div>
         </div>
         <div style={styles.formRow}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>IBAN (international)</label>
-            <input style={styles.input} value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="GB29 NWBK 6016 1331 9268 19" />
+            <label style={styles.label}>{t('settings.iban')}</label>
+            <input style={styles.input} value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder={t('settings.ibanPlaceholder')} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>SWIFT/BIC</label>
-            <input style={styles.input} value={form.swift} onChange={(e) => setForm({ ...form, swift: e.target.value })} placeholder="NWBKGB2L" />
+            <label style={styles.label}>{t('settings.swift')}</label>
+            <input style={styles.input} value={form.swift} onChange={(e) => setForm({ ...form, swift: e.target.value })} placeholder={t('settings.swiftPlaceholder')} />
           </div>
         </div>
       </div>
       <div style={styles.formActions}>
-        <Button onClick={handleSave} loading={saving}>Save Configuration</Button>
+        <Button onClick={handleSave} loading={saving}>{t('settings.saveConfiguration')}</Button>
       </div>
     </div>
   );

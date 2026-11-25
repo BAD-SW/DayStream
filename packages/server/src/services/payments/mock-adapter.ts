@@ -5,6 +5,7 @@ import {
   NormalizedEvent, NormalizedEventType, PaymentProviderName, ConnectionTestResult,
   OneTimeIntentInput, OneTimeIntentSession,
 } from './adapter';
+import { msg } from '../../i18n';
 
 /**
  * MockAdapter — a deterministic, in-memory PaymentAdapter used until a real
@@ -140,7 +141,7 @@ export class MockAdapter implements PaymentAdapter {
     const ok = signature.length === expected.length
       && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
     if (!ok) {
-      throw new Error('Invalid webhook signature');
+      throw new Error(msg('errors:mockAdapter.invalidWebhookSignature'));
     }
 
     let parsed: any;

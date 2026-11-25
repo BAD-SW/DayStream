@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DayStatus, getAvailabilityDays, WidgetApiError } from '../../api/widget';
+import { formatDate } from '../../utils/format';
 
 interface Props {
   businessId: string;
@@ -23,12 +25,18 @@ function shiftMonth(month: string, delta: number): string {
 
 function monthLabel(month: string): string {
   const [year, mon] = month.split('-').map(Number);
-  return new Date(Date.UTC(year, mon - 1, 1)).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  return formatDate(new Date(Date.UTC(year, mon - 1, 1)), { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 const minSelectableMonth = currentMonth();
 
+/** Single-letter weekday names, Sunday first, in the language shown. */
+function weekdayInitials(): string[] {
+  return Array.from({ length: 7 }, (_, i) => formatDate(new Date(2026, 0, 4 + i), { weekday: 'narrow' }));
+}
+
 export function AvailabilityCalendarStep({ businessId, serviceId, variantId, selectedDate, onSelectDate, onBack }: Props) {
+  const { t } = useTranslation('widget');
   const [month, setMonth] = useState(currentMonth());
   const [days, setDays] = useState<Record<string, DayStatus> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +63,7 @@ export function AvailabilityCalendarStep({ businessId, serviceId, variantId, sel
 
   return (
     <div className="dsw-step">
-      <h2 className="dsw-step-title">Choose a date</h2>
+      <h2 className="dsw-step-title">{t('calendar.title')}</h2>
 
       <div className="dsw-calendar-nav">
         <button
@@ -70,12 +78,12 @@ export function AvailabilityCalendarStep({ businessId, serviceId, variantId, sel
         <button type="button" className="dsw-btn dsw-btn--ghost" onClick={() => setMonth((m) => shiftMonth(m, 1))}>›</button>
       </div>
 
-      {loading && <p className="dsw-step-text">Loading availability…</p>}
+      {loading && <p className="dsw-step-text">{t('calendar.loading')}</p>}
       {error && <p className="dsw-step-error">{error}</p>}
 
       {!loading && !error && (
         <div className="dsw-calendar-grid">
-          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+          {weekdayInitials().map((d, i) => (
             <div key={`h-${i}`} className="dsw-calendar-weekday">{d}</div>
           ))}
           {cells.map((date, i) => {
@@ -101,7 +109,7 @@ export function AvailabilityCalendarStep({ businessId, serviceId, variantId, sel
         </div>
       )}
 
-      <button type="button" className="dsw-btn dsw-btn--ghost" onClick={onBack}>Back</button>
+      <button type="button" className="dsw-btn dsw-btn--ghost" onClick={onBack}>{t('common:back')}</button>
     </div>
   );
 }

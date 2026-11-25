@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Account code mappings for item types.
@@ -42,10 +43,10 @@ export async function generateJournalEntries(orderId: string, businessId: string
   const { rows: orders } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2', [orderId, businessId],
   );
-  if (orders.length === 0) throw new Error('Order not found');
+  if (orders.length === 0) throw new Error(msg('errors:orderJournal.orderNotFound'));
   const order = orders[0];
 
-  if (order.status !== 'completed') throw new Error('Order is not completed');
+  if (order.status !== 'completed') throw new Error(msg('errors:orderJournal.orderIsNotCompleted'));
 
   // Check if journal entry already exists for this order
   const { rows: existingEntries } = await adminPool.query(

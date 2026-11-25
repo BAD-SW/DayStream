@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import * as packagesApi from '../api/packages';
 import type { CustomerPackage, CustomerPackageItem, PackageUse } from '../api/packages';
 import { formatDateOnly } from '../utils/date';
+import { formatDateTime } from '../utils/format';
 
 // ============================================================
 // The customer's Packages tab (owner, 23 Nov 2026; spec 51, gap 19): every package bought, what it
@@ -15,15 +18,17 @@ import { formatDateOnly } from '../utils/date';
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', 'used up': 'neutral', expired: 'warning', cancelled: 'error', pending: 'info',
 };
-const statusLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+// A status is shown through packagesTab.status.<status>; an unknown one is shown capitalised.
+const statusLabel = (t: TFunction, s: string) => t('packagesTab.status.' + s, { defaultValue: s.charAt(0).toUpperCase() + s.slice(1) });
 
 /** "300 min" or "5 sessions" (a session item counts 1 per use). */
-const amount = (unit: CustomerPackageItem['unit'], n: number) => (unit === 'minutes' ? `${n} min` : `${n} ${n === 1 ? 'session' : 'sessions'}`);
+const amount = (t: TFunction, unit: CustomerPackageItem['unit'], n: number) => (unit === 'minutes' ? t('packagesTab.minutes', { n }) : t('packagesTab.sessions', { count: n }));
 const itemName = (i: CustomerPackageItem) => (i.variant_name ? `${i.name} (${i.variant_name})` : i.name);
-const useAmount = (i: CustomerPackageItem, u: PackageUse) => amount(i.unit, i.unit === 'minutes' ? (u.minutes || 0) : u.quantity);
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const useAmount = (t: TFunction, i: CustomerPackageItem, u: PackageUse) => amount(t, i.unit, i.unit === 'minutes' ? (u.minutes || 0) : u.quantity);
+const when = (iso: string) => formatDateTime(iso, undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 export function CustomerPackagesTab({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const { t } = useTranslation('customers');
   const navigate = useNavigate();
   const [rows, setRows] = useState<CustomerPackage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,56 +60,56 @@ export function CustomerPackagesTab({ customerId, businessId }: { customerId: st
         loading={loading}
         rowId={(p) => p.purchase_id}
         clientSort
-        emptyMessage={failed ? 'The packages could not be loaded.' : 'No packages bought yet.'}
+        emptyMessage={failed ? t('packagesTab.loadFailed') : t('packagesTab.none')}
         onRowClick={(p) => setOpen(open === p.purchase_id ? null : p.purchase_id)}
         expandedRowId={open}
-        renderExpanded={(p) => <Uses p={p} onOpenOrder={(id) => navigate(`/receipt/${id}`)} />}
+        renderExpanded={(p) => <Uses p={p} t={t} onOpenOrder={(id) => navigate(`/receipt/${id}`)} />}
         columns={[
           {
-            key: 'name', header: 'Package', sortable: true,
+            key: 'name', header: t('packagesTab.col.package'), sortable: true,
             render: (_: unknown, p: CustomerPackage) => (
               <div>
                 <strong>{p.name}</strong>
-                {p.order && <div style={s.sub}>Order {p.order.order_number}</div>}
+                {p.order && <div style={s.sub}>{t('packagesTab.order', { number: p.order.order_number })}</div>}
               </div>
             ),
           },
-          { key: 'includes', header: 'Includes', render: (_: unknown, p: CustomerPackage) => perItem(p, (i) => `${itemName(i)} · ${amount(i.unit, i.total)}`) },
+          { key: 'includes', header: t('packagesTab.col.includes'), render: (_: unknown, p: CustomerPackage) => perItem(p, (i) => `${itemName(i)} · ${amount(t, i.unit, i.total)}`) },
           {
-            key: 'used', header: 'Used', align: right,
+            key: 'used', header: t('packagesTab.col.used'), align: right,
             render: (_: unknown, p: CustomerPackage) => perItem(p, (i) => (
-              <>{amount(i.unit, i.used)}{i.booked > 0 && <div style={s.sub}>{amount(i.unit, i.booked)} booked</div>}</>
+              <>{amount(t, i.unit, i.used)}{i.booked > 0 && <div style={s.sub}>{t('packagesTab.booked', { amount: amount(t, i.unit, i.booked) })}</div>}</>
             ), true),
           },
-          { key: 'left', header: 'Left', align: right, render: (_: unknown, p: CustomerPackage) => perItem(p, (i) => <strong>{amount(i.unit, i.left)}</strong>, true) },
-          { key: 'purchased_at', header: 'Bought', sortable: true, render: (v: string) => formatDateOnly(v.slice(0, 10)) },
-          { key: 'expires_at', header: 'Expires', sortable: true, render: (v: string | null) => (v ? formatDateOnly(v.slice(0, 10)) : 'Never') },
-          { key: 'status', header: 'Status', sortable: true, render: (v: string) => <Badge variant={STATUS_VARIANT[v] || 'neutral'}>{statusLabel(v)}</Badge> },
+          { key: 'left', header: t('packagesTab.col.left'), align: right, render: (_: unknown, p: CustomerPackage) => perItem(p, (i) => <strong>{amount(t, i.unit, i.left)}</strong>, true) },
+          { key: 'purchased_at', header: t('packagesTab.col.bought'), sortable: true, render: (v: string) => formatDateOnly(v.slice(0, 10)) },
+          { key: 'expires_at', header: t('packagesTab.col.expires'), sortable: true, render: (v: string | null) => (v ? formatDateOnly(v.slice(0, 10)) : t('packagesTab.never')) },
+          { key: 'status', header: t('packagesTab.col.status'), sortable: true, render: (v: string) => <Badge variant={STATUS_VARIANT[v] || 'neutral'}>{statusLabel(t, v)}</Badge> },
         ]}
       />
-      {rows.length > 0 && <p style={s.hint}>Select a package to see when it was used.</p>}
+      {rows.length > 0 && <p style={s.hint}>{t('packagesTab.selectHint')}</p>}
     </div>
   );
 }
 
 /** The opened package: its description, then each item's uses with their appointments. */
-function Uses({ p, onOpenOrder }: { p: CustomerPackage; onOpenOrder: (orderId: string) => void }) {
+function Uses({ p, t, onOpenOrder }: { p: CustomerPackage; t: TFunction; onOpenOrder: (orderId: string) => void }) {
   return (
     <div style={s.uses}>
       {p.description && <p style={s.description}>{p.description}</p>}
       {p.items.map((i) => (
         <div key={i.item_id}>
-          {p.items.length > 1 && <h4 style={s.itemTitle}>{itemName(i)}: {amount(i.unit, i.left)} left of {amount(i.unit, i.total)}</h4>}
-          {i.uses.length === 0 ? <p style={s.hint}>Not used yet.</p> : (
+          {p.items.length > 1 && <h4 style={s.itemTitle}>{t('packagesTab.leftOf', { name: itemName(i), left: amount(t, i.unit, i.left), total: amount(t, i.unit, i.total) })}</h4>}
+          {i.uses.length === 0 ? <p style={s.hint}>{t('packagesTab.notUsed')}</p> : (
             <table style={s.table}>
               <thead>
                 <tr>
-                  <th style={s.th}>Date</th>
-                  <th style={s.th}>Appointment</th>
-                  <th style={s.th}>Staff</th>
-                  <th style={{ ...s.th, textAlign: 'right' }}>Used</th>
-                  <th style={s.th}>Status</th>
-                  <th style={s.th}>Order</th>
+                  <th style={s.th}>{t('packagesTab.col.date')}</th>
+                  <th style={s.th}>{t('packagesTab.col.appointment')}</th>
+                  <th style={s.th}>{t('packagesTab.col.staff')}</th>
+                  <th style={{ ...s.th, textAlign: 'right' }}>{t('packagesTab.col.used')}</th>
+                  <th style={s.th}>{t('packagesTab.col.status')}</th>
+                  <th style={s.th}>{t('packagesTab.col.orderCol')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -114,12 +119,12 @@ function Uses({ p, onOpenOrder }: { p: CustomerPackage; onOpenOrder: (orderId: s
                     <td style={s.td}>
                       {u.booking
                         ? <>{u.booking.service_name}{u.booking.variant_name ? ` · ${u.booking.variant_name}` : ''}{u.booking.reference && <div style={s.sub}>{u.booking.reference}</div>}</>
-                        : <span style={s.sub}>{u.note || 'Used without an appointment'}</span>}
+                        : <span style={s.sub}>{u.note || t('packagesTab.usedWithout')}</span>}
                     </td>
                     <td style={s.td}>{u.booking?.staff_name || '—'}</td>
-                    <td style={{ ...s.td, textAlign: 'right' }}>{useAmount(i, u)}</td>
+                    <td style={{ ...s.td, textAlign: 'right' }}>{useAmount(t, i, u)}</td>
                     <td style={s.td}>
-                      <Badge variant={u.kind === 'booked' ? 'info' : 'success'}>{u.kind === 'booked' ? 'Booked' : 'Used'}</Badge>
+                      <Badge variant={u.kind === 'booked' ? 'info' : 'success'}>{u.kind === 'booked' ? t('packagesTab.kindBooked') : t('packagesTab.kindUsed')}</Badge>
                     </td>
                     <td style={s.td}>
                       {u.order

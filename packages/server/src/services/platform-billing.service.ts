@@ -4,6 +4,7 @@ import { getConfiguredAdapter } from './payments';
 import { resolveConnectedAccount, getProviderToken, getCustomerRef } from './payment-methods.service';
 import { getDecryptedSecrets } from './processor-config.service';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /** Build an array of {field, from, to} for fields that changed between two objects. */
 function diffFields(
@@ -352,7 +353,7 @@ export async function billTenantForCycle(
 
   const computed = await computeChargeForCycle(tenantId, cycle, currency);
   if (!computed) {
-    throw Object.assign(new Error('Tenant has no billing plan configured'), { code: 'NO_PLAN' });
+    throw Object.assign(new Error(msg('errors:platformBilling.tenantHasNoBillingPlanConfigured')), { code: 'NO_PLAN' });
   }
 
   // Create or load the charge row (idempotent per tenant+cycle), then draw down

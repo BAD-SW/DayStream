@@ -3,6 +3,7 @@ import { adminPool } from '../db/pool';
 import { resolveBusinessCurrency } from './customer-payment.service';
 import { logAudit } from './audit.service';
 import { queueNotification } from './booking-notifications.service';
+import { msg } from '../i18n';
 
 /**
  * Section C — Gift cards (spec 10-payment-platform, task 4.8 / Requirement C7).
@@ -46,7 +47,7 @@ export interface CreateGiftCardInput {
 /** Issue a gift card with a unique code. The code is returned so it can be shown/emailed. */
 export async function createGiftCard(input: CreateGiftCardInput): Promise<any> {
   if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
-    throw new GiftCardError('Gift card amount must be a positive integer (cents)', 'INVALID_AMOUNT');
+    throw new GiftCardError(msg('errors:giftCard.giftCardAmountMustBeA'), 'INVALID_AMOUNT');
   }
   const currency = await resolveBusinessCurrency(input.businessId);
 
@@ -75,7 +76,7 @@ export async function createGiftCard(input: CreateGiftCardInput): Promise<any> {
       throw e;
     }
   }
-  if (!card) throw new GiftCardError('Could not allocate a unique gift card code', 'CODE_ALLOCATION_FAILED');
+  if (!card) throw new GiftCardError(msg('errors:giftCard.couldNotAllocateAUniqueGift'), 'CODE_ALLOCATION_FAILED');
 
   await logAudit({
     tenantId: input.tenantId, userId: input.createdBy, action: 'gift_card.issued',

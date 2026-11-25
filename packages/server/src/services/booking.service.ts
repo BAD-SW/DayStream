@@ -12,6 +12,7 @@ import { requiredResourceAlternatives, loadMaintenance, underMaintenance, loadRe
 import { getServiceHoursForDay } from './availability.service';
 import { touchActivity } from './person-identity.service';
 import { queueBookingConfirmation } from './booking-notifications.service';
+import { msg } from '../i18n';
 
 interface CreateBookingInput {
   businessId: string;
@@ -130,20 +131,20 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
     [input.serviceId, input.variantId, input.businessId],
   );
 
-  if (svcRows.length === 0) throw new Error('Service or variant not found');
+  if (svcRows.length === 0) throw new Error(msg('errors:booking.serviceOrVariantNotFound'));
 
   const service = svcRows[0];
   // A paused, archived or draft service is not for sale, whoever is booking.
   if (service.status !== 'active') {
-    throw new BookingRuleError(`This service is ${service.status} and cannot be booked`);
+    throw new BookingRuleError(msg('errors:booking.thisServiceIsAndCannotBe', { status: service.status }));
   }
   if (input.customerId) {
     const { rows: personRows } = await adminPool.query(
       'SELECT status FROM cus_customers WHERE id = $1 AND business_id = $2', [input.customerId, input.businessId],
     );
-    if (personRows.length === 0) throw new BookingRuleError('This person does not belong to this business');
+    if (personRows.length === 0) throw new BookingRuleError(msg('errors:booking.thisPersonDoesNotBelongTo'));
     if (personRows[0].status !== 'active') {
-      throw new BookingRuleError(`This person is ${personRows[0].status} and cannot be booked. Reactivate them first.`);
+      throw new BookingRuleError(msg('errors:booking.thisPersonIsAndCannotBe', { status: personRows[0].status }));
     }
   }
   const duration = service.duration;
@@ -156,7 +157,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
   const participantCount = input.participantCount && input.participantCount >= 1 ? Math.floor(input.participantCount) : 1;
   if ((bookingType === 'shared' || bookingType === 'group') && participantCount > (service.max_capacity || 1)) {
-    throw new BookingRuleError(`This session takes at most ${service.max_capacity || 1} people`);
+    throw new BookingRuleError(msg('errors:booking.thisSessionTakesAtMostPeople', { value: service.max_capacity || 1 }));
   }
 
   // Calculate price with applicable rules
@@ -179,14 +180,14 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   if (!input.overrideRules && !input.skipLeadTime) {
     const minAdvanceMs = (service.min_advance_booking_hours ?? 2) * 60 * 60 * 1000;
     if (startTime.getTime() - Date.now() < minAdvanceMs) {
-      throw new Error('Booking is within the minimum advance booking window');
+      throw new Error(msg('errors:booking.bookingIsWithinTheMinimumAdvance'));
     }
   }
 
   if (!input.overrideRules && !input.skipLeadTime) {
     const maxAdvanceDays = service.max_advance_booking_days || 30;
     if (startTime.getTime() - Date.now() > maxAdvanceDays * 24 * 60 * 60 * 1000) {
-      throw new Error(`Bookings can be made at most ${maxAdvanceDays} days ahead (maximum advance booking window)`);
+      throw new Error(msg('errors:booking.bookingsCanBeMadeAtMost', { maxAdvanceDays }));
     }
   }
 
@@ -211,7 +212,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   // A walk-in is someone already at the business: booked for today only, never a future day.
   // Not an override-able rule (a later visit is booked for a customer).
   if (!input.customerId && slotLocal.date !== localParts(new Date(), tzRows[0]?.timezone || 'UTC').date) {
-    throw new Error('A walk-in can only be booked for today. For another day, choose or add the customer.');
+    throw new Error(msg('errors:booking.aWalkInCanOnlyBe'));
   }
   if (locationId) {
     const bookingDate = slotLocal.date;
@@ -227,12 +228,12 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
     if (overrides.length > 0) {
       const override = overrides[0];
       if (override.is_closed) {
-        throw new Error('Business is closed on this date (holiday)');
+        throw new Error(msg('errors:booking.businessIsClosedOnThisDate'));
       }
       if (override.open_time && override.close_time) {
         const [oh, om] = override.open_time.split(':').map(Number);
         if (slotMins < oh * 60 + om || endMins > endOfDayMinutes(override.close_time)) {
-          throw new Error('Appointment time is outside business hours for this date');
+          throw new Error(msg('errors:booking.appointmentTimeIsOutsideBusinessHours'));
         }
       }
     } else {
@@ -244,12 +245,12 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
       if (hours.length > 0) {
         const bh = hours[0];
         if (bh.is_closed) {
-          throw new Error('Business is closed on this day');
+          throw new Error(msg('errors:booking.businessIsClosedOnThisDay'));
         }
         if (bh.open_time && bh.close_time) {
           const [oh, om] = bh.open_time.split(':').map(Number);
           if (slotMins < oh * 60 + om || endMins > endOfDayMinutes(bh.close_time)) {
-            throw new Error('Appointment time is outside business hours');
+            throw new Error(msg('errors:booking.appointmentTimeIsOutsideBusinessHours2'));
           }
         }
       }
@@ -269,7 +270,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
     const fits = windows.some((w) => slotLocal.startMinutes >= w.start && slotLocal.endMinutes <= w.end
       && (!w.staffIds || !input.staffId || w.staffIds.includes(input.staffId))
       && (!w.locationIds || !locationId || w.locationIds.includes(locationId)));
-    if (!fits) throw new Error('The service is not offered at this time');
+    if (!fits) throw new Error(msg('errors:booking.theServiceIsNotOfferedAt'));
   }
   // The provider's daily booking limit (Business Setup → staff → capacity).
   if (input.staffId && !input.overrideRules) {
@@ -291,7 +292,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
         [input.staffId, slotLocal.date, tzRows[0]?.timezone || 'UTC', excludedId()],
       );
       if (dayCount[0].n >= maxPerDay) {
-        throw new Error(`Staff member has reached their limit of ${maxPerDay} bookings for this day`);
+        throw new Error(msg('errors:booking.staffMemberHasReachedTheirLimit', { maxPerDay }));
       }
     }
   }
@@ -300,13 +301,13 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   let staffId = input.staffId || null;
   if (!staffId && bookingType === 'individual') {
     staffId = await autoAssignStaff(input.serviceId, input.businessId, startTime, endTime, bufferBefore, bufferAfter);
-    if (!staffId) throw new Error('No staff available for the selected time');
+    if (!staffId) throw new Error(msg('errors:booking.noStaffAvailableForTheSelected'));
   }
 
   // Conflict detection (skip staff conflict for shared/group and non-dedicated services)
   if (staffId && bookingType === 'individual' && service.requires_dedicated_staff !== false) {
     const staffConflict = await checkStaffConflict(staffId, startTime, endTime, bufferBefore, bufferAfter);
-    if (staffConflict) throw new Error('Staff member has a conflicting booking at this time');
+    if (staffConflict) throw new Error(msg('errors:booking.staffMemberHasAConflictingBooking'));
   }
 
   // Auto-assign resource if not provided but service availability rules require one
@@ -326,7 +327,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
           break;
         }
       }
-      if (!resourceId && !input.overrideRules) throw new Error('Resource has a conflicting booking at this time');
+      if (!resourceId && !input.overrideRules) throw new Error(msg('errors:booking.resourceHasAConflictingBookingAt'));
       if (!resourceId) resourceId = requiredResourceIds[0]; // override: still need *a* resource on the row
     }
   }
@@ -341,13 +342,13 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
         if (underMaintenance(maintenance, resId, startTime, endTime, businessTimeZone)) continue;
         if ((await getResourceRemainingCapacity(resId, startTime, endTime)) >= participantCount) { resourceId = resId; break; }
       }
-      if (!resourceId && !input.overrideRules) throw new Error('Resource has a conflicting booking at this time');
+      if (!resourceId && !input.overrideRules) throw new Error(msg('errors:booking.resourceHasAConflictingBookingAt'));
       if (!resourceId) resourceId = alternatives[0];
     }
   } else if (!input.overrideRules) {
     const maintenance = await loadMaintenance([resourceId]);
     if (underMaintenance(maintenance, resourceId, startTime, endTime, businessTimeZone)) {
-      throw new Error('Resource is under maintenance at this time');
+      throw new Error(msg('errors:booking.resourceIsUnderMaintenanceAtThis'));
     }
   }
 
@@ -356,7 +357,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   if (resourceId && !input.overrideRules) {
     const resHours = await loadResourceHours([resourceId]);
     if (!resourceOpen(resHours, resourceId, startTime, endTime, businessTimeZone)) {
-      throw new Error('The resource is not available at this time (outside its schedule or closed)');
+      throw new Error(msg('errors:booking.theResourceIsNotAvailableAt'));
     }
   }
 
@@ -364,7 +365,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
     const remaining = await getResourceRemainingCapacity(resourceId, startTime, endTime);
     if (participantCount > remaining) {
       if (!input.overrideRules) {
-        throw new Error(`Only ${Math.max(remaining, 0)} spot(s) remaining — exceeds resource capacity for this slot`);
+        throw new Error(msg('errors:booking.onlySpotSRemainingExceedsResource', { Math: Math.max(remaining, 0) }));
       }
       // overrideRules: allow through. The booking is still inserted with its real
       // participant_count below, so this time window now correctly reads as over capacity
@@ -396,7 +397,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   // Customer conflict check (skip for walk-ins)
   if (input.customerId) {
     const customerConflict = await checkCustomerConflict(input.customerId, startTime, endTime);
-    if (customerConflict) throw new Error('Customer has a conflicting booking at this time');
+    if (customerConflict) throw new Error(msg('errors:booking.customerHasAConflictingBookingAt'));
   }
 
   if (input.dryRun) {

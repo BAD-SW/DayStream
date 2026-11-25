@@ -6,6 +6,7 @@ import { widgetCors, widgetMutationLimiter, requireValidBusinessId, enforceAllow
 import { success, error } from '../utils/response';
 import * as widgetService from '../services/widget-booking.service';
 import { WidgetError } from '../services/widget-booking.service';
+import { msg, isMessage } from '../i18n';
 
 export const widgetRouter = Router();
 
@@ -61,7 +62,7 @@ widgetRouter.get('/availability', ...businessIdChecks, async (req: Request, res:
   try {
     const { business_id, service_id, variant_id, month } = req.query as Record<string, string>;
     if (!business_id || !service_id || !variant_id || !month) {
-      error(res, 'business_id, service_id, variant_id, and month are required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:widget.businessIdServiceIdVariantId'), 'VALIDATION_ERROR', 400);
       return;
     }
     const result = await widgetService.getAvailabilityDays(business_id, service_id, variant_id, month);
@@ -75,7 +76,7 @@ widgetRouter.get('/availability/slots', ...businessIdChecks, async (req: Request
   try {
     const { business_id, service_id, variant_id, date_from, date_to } = req.query as Record<string, string>;
     if (!business_id || !service_id || !variant_id || !date_from || !date_to) {
-      error(res, 'business_id, service_id, variant_id, date_from, and date_to are required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:widget.businessIdServiceIdVariantId2'), 'VALIDATION_ERROR', 400);
       return;
     }
     const slots = await widgetService.getAvailabilitySlots(business_id, service_id, variant_id, date_from, date_to);
@@ -109,7 +110,7 @@ widgetRouter.post('/availability/hold', ...businessIdChecks, authenticate, valid
     });
     success(res, { hold_id: hold.id, expires_at: hold.expires_at }, undefined, 201);
   } catch (err: any) {
-    if (err.message?.includes('already being held')) { error(res, err.message, 'CONFLICT', 409); return; }
+    if ((isMessage(err.message, 'errors:slotHold.thisSlotIsAlreadyBeingHeld') || err.message?.includes('already being held'))) { error(res, err.message, 'CONFLICT', 409); return; }
     handleWidgetError(res, err, 'Failed to hold slot');
   }
 });

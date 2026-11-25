@@ -1,10 +1,13 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as marketingApi from '../api/marketing';
 
 export function SequenceDetail() {
+  const { t } = useTranslation('marketing');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [sequence, setSequence] = useState<any>(null);
@@ -24,7 +27,7 @@ export function SequenceDetail() {
     try {
       const updated = await marketingApi.activateSequence(id);
       setSequence(updated);
-    } catch { alert('Activation failed'); }
+    } catch { void showMessage({ message: t('sequenceDetail.activateFailed'), tone: 'error' }); }
   };
 
   const handlePause = async () => {
@@ -32,39 +35,39 @@ export function SequenceDetail() {
     try {
       const updated = await marketingApi.pauseSequence(id);
       setSequence(updated);
-    } catch { alert('Pause failed'); }
+    } catch { void showMessage({ message: t('sequenceDetail.pauseFailed'), tone: 'error' }); }
   };
 
-  if (loading) return <div style={styles.page}><p>Loading...</p></div>;
-  if (!sequence) return <div style={styles.page}><p>Sequence not found.</p></div>;
+  if (loading) return <div style={styles.page}><p>{t('common:loading')}</p></div>;
+  if (!sequence) return <div style={styles.page}><p>{t('sequenceDetail.notFound')}</p></div>;
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/marketing')}>← Back to Marketing</button>
+      <button style={styles.back} onClick={() => navigate('/marketing')}>{t('page.back')}</button>
       <div style={styles.header}>
         <h1 style={styles.title}>{sequence.name}</h1>
-        <Badge variant={sequence.status === 'active' ? 'success' : sequence.status === 'paused' ? 'warning' : 'neutral'}>{sequence.status}</Badge>
+        <Badge variant={sequence.status === 'active' ? 'success' : sequence.status === 'paused' ? 'warning' : 'neutral'}>{t('status.' + sequence.status, { defaultValue: sequence.status })}</Badge>
       </div>
 
       <div style={styles.card}>
-        <div style={styles.field}><span style={styles.label}>Trigger</span><span style={styles.value}>{sequence.trigger_type}</span></div>
-        {sequence.description && <div style={styles.field}><span style={styles.label}>Description</span><span style={styles.value}>{sequence.description}</span></div>}
-        {sequence.steps && <div style={styles.field}><span style={styles.label}>Steps</span><span style={styles.value}>{sequence.steps.length || 0}</span></div>}
+        <div style={styles.field}><span style={styles.label}>{t('sequenceDetail.trigger')}</span><span style={styles.value}>{t('sequence.triggerValue.' + sequence.trigger_type, { defaultValue: sequence.trigger_type })}</span></div>
+        {sequence.description && <div style={styles.field}><span style={styles.label}>{t('sequence.description')}</span><span style={styles.value}>{sequence.description}</span></div>}
+        {sequence.steps && <div style={styles.field}><span style={styles.label}>{t('sequenceDetail.steps')}</span><span style={styles.value}>{sequence.steps.length || 0}</span></div>}
       </div>
 
       <div style={styles.actions}>
-        {sequence.status !== 'active' && <Button onClick={handleActivate}>Activate</Button>}
-        {sequence.status === 'active' && <Button onClick={handlePause}>Pause</Button>}
+        {sequence.status !== 'active' && <Button onClick={handleActivate}>{t('sequenceDetail.activate')}</Button>}
+        {sequence.status === 'active' && <Button onClick={handlePause}>{t('sequenceDetail.pause')}</Button>}
       </div>
 
       {enrollments.length > 0 && (
         <>
-          <h2 style={{ ...styles.title, fontSize: 'var(--font-size-lg)', marginTop: 'var(--space-xl)' }}>Enrollments</h2>
+          <h2 style={{ ...styles.title, fontSize: 'var(--font-size-lg)', marginTop: 'var(--space-xl)' }}>{t('page.enrollments')}</h2>
           <div style={styles.card}>
             {enrollments.slice(0, 20).map((e: any, i: number) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-base)', padding: '4px 0', borderBottom: '1px solid var(--color-border)' }}>
                 <span>{e.customer_name || e.customer_id?.slice(0, 8)}</span>
-                <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{e.status}</Badge>
+                <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{t('status.' + e.status, { defaultValue: e.status })}</Badge>
               </div>
             ))}
           </div>

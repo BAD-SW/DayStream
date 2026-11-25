@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface DrawerProps {
   open: boolean;
@@ -9,6 +10,7 @@ interface DrawerProps {
 }
 
 export function Drawer({ open, onClose, position = 'right', title, children }: DrawerProps) {
+  const { t } = useTranslation('common');
   useEffect(() => {
     if (open) document.body.style.overflow = 'hidden';
     else document.body.style.overflow = '';
@@ -34,7 +36,7 @@ export function Drawer({ open, onClose, position = 'right', title, children }: D
         {title && (
           <div style={styles.header}>
             <h2 style={styles.title}>{title}</h2>
-            <button onClick={onClose} style={styles.close} aria-label="Close">✕</button>
+            <button onClick={onClose} style={styles.close} aria-label={t('drawer.close')}>✕</button>
           </div>
         )}
         <div style={styles.body}>{children}</div>

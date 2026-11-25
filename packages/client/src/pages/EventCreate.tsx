@@ -8,11 +8,14 @@ import { LeaveGuard, confirmLeave } from '../components/unsaved/LeaveGuard';
 import * as eventsApi from '../api/events';
 import { getLocations } from '../api/locations';
 import { getTaxCategories } from '../api/services';
+import { formatNumber } from '../utils/format';
 import { QuarterTimeInput } from '../design-system/components/forms/QuarterTimeInput';
 import { DEFAULT_START_TIME, endFrom, durationBetween, endNotAfterStart } from '../utils/eventTiming';
 import type { Duration, DurationUnit } from '../utils/eventTiming';
+import { useTranslation } from 'react-i18next';
 
 export function EventCreate() {
+  const { t } = useTranslation('events');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +42,7 @@ export function EventCreate() {
   const endTooEarly = endNotAfterStart(startDate, startTime, endDate, endTime);
   // Something typed and not created yet: leaving asks first (David, 2026-11-01).
   const typed = !!(form.title || form.description || form.event_type_id || form.location_id || form.location_name || form.tax_category_id || startDate)
-    || form.capacity !== 50 || startTime !== DEFAULT_START_TIME || duration.amount !== 3 || duration.unit !== 'hours';
+    || form.capacity !== 50 || startTime !== DEFAULT_START_TIME || duration.amount !== 3 || duration.unit !== t('create.hours');
 
   const changeStart = (date: string, time: string) => {
     setStartDate(date); setStartTime(time);
@@ -72,7 +75,7 @@ export function EventCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (endTooEarly) { setError('The end must be after the start'); return; }
+    if (endTooEarly) { setError(t('create.endAfterStart')); return; }
     setLoading(true);
     setError('');
     try {
@@ -82,112 +85,112 @@ export function EventCreate() {
       });
       navigate(`/events/${event.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create event');
+      setError(err.response?.data?.error || t('create.failed'));
     } finally {
       setLoading(false);
     }
   };
 
-  // Layout: Proposal A, chosen by David on 2026-10-28 — title row with the buttons, then
-  // "About the event" on the left and "When" and "Where and tickets" on the right, all on one screen.
+  // Layout: Proposal A, chosen by David on 2026-10-28 â€” title row with the buttons, then
+  // t('create.aboutEvent') on the left and t('create.when') and t('create.whereTickets') on the right, all on one screen.
   return (
     <div style={styles.page}>
       <LeaveGuard when={typed && !loading} />
       <form id="create-event" onSubmit={handleSubmit}>
         <StickyPageTop>
-          <button type="button" style={styles.back} onClick={() => confirmLeave(() => navigate('/events'))}>← Events</button>
+          <button type="button" style={styles.back} onClick={() => confirmLeave(() => navigate('/events'))}>{t('create.back')}</button>
           <PageHeader
-            title="Create Event"
+            title={t('create.title')}
             actions={<>
-              <Button type="button" variant="outline" onClick={() => confirmLeave(() => navigate('/events'))}>Cancel</Button>
-              <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Event'}</Button>
+              <Button type="button" variant="outline" onClick={() => confirmLeave(() => navigate('/events'))}>{t('common:cancel')}</Button>
+              <Button type="submit" disabled={loading}>{loading ? t('create.creating') : t('create.title')}</Button>
             </>}
           />
         </StickyPageTop>
         {error && <Alert variant="error">{error}</Alert>}
         <div style={styles.columns}>
           <section style={styles.card} aria-labelledby="ce-about">
-            <h2 id="ce-about" style={styles.cardTitle}>About the event</h2>
+            <h2 id="ce-about" style={styles.cardTitle}>{t('create.aboutEvent')}</h2>
             <div style={styles.fieldWrapper}>
-              <label style={styles.label} htmlFor="event-title">Title *</label>
+              <label style={styles.label} htmlFor="event-title">{t('create.titleRequired')}</label>
               <input id="event-title" style={styles.input} value={form.title} onChange={(e) => handleChange('title', e.target.value)} required />
             </div>
             <div style={styles.typeRow}>
               <div style={styles.fieldWrapper}>
-                <label style={styles.label} htmlFor="event-type">Event Type *</label>
+                <label style={styles.label} htmlFor="event-type">{t('create.eventTypeRequired')}</label>
                 <select id="event-type" style={styles.input} required value={form.event_type_id} onChange={(e) => handleChange('event_type_id', e.target.value)}>
-                  <option value="">— Select —</option>
+                  <option value="">{t('create.select')}</option>
                   {eventTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
               <div style={styles.fieldWrapper}>
-                <label style={styles.label} htmlFor="event-capacity">Capacity</label>
+                <label style={styles.label} htmlFor="event-capacity">{t('create.capacity')}</label>
                 <input id="event-capacity" style={styles.input} type="number" min={1} value={form.capacity} onChange={(e) => handleChange('capacity', Number(e.target.value))} />
               </div>
             </div>
             <div style={{ ...styles.fieldWrapper, flexGrow: 1 }}>
-              <label style={styles.label} htmlFor="event-description">Description</label>
+              <label style={styles.label} htmlFor="event-description">{t('create.description')}</label>
               <textarea id="event-description" style={{ ...styles.input, minHeight: '220px', flexGrow: 1, resize: 'vertical' }} value={form.description} onChange={(e) => handleChange('description', e.target.value)} />
             </div>
           </section>
 
           <div style={styles.side}>
             <section style={styles.card} aria-labelledby="ce-when">
-              <h2 id="ce-when" style={styles.cardTitle}>When</h2>
+              <h2 id="ce-when" style={styles.cardTitle}>{t('create.when')}</h2>
               <div style={styles.when}>
                 <div style={styles.fieldWrapper}>
-                  <label style={styles.label} htmlFor="event-start-date">Start *</label>
+                  <label style={styles.label} htmlFor="event-start-date">{t('create.startRequired')}</label>
                   <div style={styles.pair}>
-                    <input id="event-start-date" style={styles.input} type="date" value={startDate} onChange={(e) => changeStart(e.target.value, startTime)} required aria-label="Start date" />
-                    <QuarterTimeInput style={{ ...styles.input, ...styles.time }} value={startTime} onChange={(t) => changeStart(startDate, t)} required aria-label="Start time" />
+                    <input id="event-start-date" style={styles.input} type="date" value={startDate} onChange={(e) => changeStart(e.target.value, startTime)} required aria-label={t('create.startDate')} />
+                    <QuarterTimeInput style={{ ...styles.input, ...styles.time }} value={startTime} onChange={(t) => changeStart(startDate, t)} required aria-label={t('create.startTime')} />
                   </div>
                 </div>
                 <div style={styles.fieldWrapper}>
-                  <label style={styles.label} htmlFor="event-duration">Duration *</label>
+                  <label style={styles.label} htmlFor="event-duration">{t('create.durationRequired')}</label>
                   <div style={styles.pair}>
                     <input id="event-duration" style={{ ...styles.input, ...styles.amount }} type="number" min={0.01} step="any" value={duration.amount}
-                      onChange={(e) => changeDuration({ ...duration, amount: Number(e.target.value) })} required aria-label="Duration" />
-                    <select style={styles.input} value={duration.unit} onChange={(e) => changeDuration({ ...duration, unit: e.target.value as DurationUnit })} aria-label="Duration unit">
-                      <option value="hours">hours</option>
-                      <option value="days">days</option>
+                      onChange={(e) => changeDuration({ ...duration, amount: Number(e.target.value) })} required aria-label={t('create.duration')} />
+                    <select style={styles.input} value={duration.unit} onChange={(e) => changeDuration({ ...duration, unit: e.target.value as DurationUnit })} aria-label={t('create.durationUnit')}>
+                      <option value={t('create.hours')}>{t('create.hours')}</option>
+                      <option value={t('create.days')}>{t('create.days')}</option>
                     </select>
                   </div>
                 </div>
               </div>
               <div style={styles.fieldWrapper}>
-                <label style={styles.label} htmlFor="event-end-date">End *</label>
+                <label style={styles.label} htmlFor="event-end-date">{t('create.endRequired')}</label>
                 <div style={styles.pair}>
-                  <input id="event-end-date" style={styles.input} type="date" min={startDate || undefined} value={endDate} onChange={(e) => changeEnd(e.target.value, endTime)} required aria-label="End date" />
-                  <QuarterTimeInput style={{ ...styles.input, ...styles.time }} value={endTime} onChange={(t) => changeEnd(endDate, t)} required aria-label="End time" />
+                  <input id="event-end-date" style={styles.input} type="date" min={startDate || undefined} value={endDate} onChange={(e) => changeEnd(e.target.value, endTime)} required aria-label={t('create.endDate')} />
+                  <QuarterTimeInput style={{ ...styles.input, ...styles.time }} value={endTime} onChange={(t) => changeEnd(endDate, t)} required aria-label={t('create.endTime')} />
                 </div>
-                {endTooEarly && <span role="alert" style={styles.fieldError}>The end must be after the start.</span>}
+                {endTooEarly && <span role="alert" style={styles.fieldError}>{t('create.endAfterStartDot')}</span>}
               </div>
             </section>
 
             <section style={styles.card} aria-labelledby="ce-where">
-              <h2 id="ce-where" style={styles.cardTitle}>Where and tickets</h2>
+              <h2 id="ce-where" style={styles.cardTitle}>{t('create.whereTickets')}</h2>
               <div style={styles.row}>
                 <div style={styles.fieldWrapper}>
-                  <label style={styles.label} htmlFor="event-hosted-at">Hosted at</label>
+                  <label style={styles.label} htmlFor="event-hosted-at">{t('create.hostedAt')}</label>
                   <select id="event-hosted-at" style={styles.input} value={form.location_id} onChange={(e) => {
                     const loc = locations.find((l) => l.id === e.target.value);
                     setForm({ ...form, location_id: e.target.value, location_name: form.location_name || loc?.name || '' });
                   }}>
-                    <option value="">— Select —</option>
+                    <option value="">{t('create.select')}</option>
                     {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
                 <div style={styles.fieldWrapper}>
-                  <label style={styles.label} htmlFor="event-location-name">Location shown to customers</label>
+                  <label style={styles.label} htmlFor="event-location-name">{t('create.locationShown')}</label>
                   <input id="event-location-name" style={styles.input} value={form.location_name} onChange={(e) => handleChange('location_name', e.target.value)} />
                 </div>
               </div>
-              <span style={styles.help}>The business of this location sells the tickets.</span>
+              <span style={styles.help}>{t('create.locationHelp')}</span>
               <div style={styles.fieldWrapper}>
-                <label style={styles.label} htmlFor="event-tax">Ticket tax</label>
+                <label style={styles.label} htmlFor="event-tax">{t('create.ticketTax')}</label>
                 <select id="event-tax" style={styles.input} value={form.tax_category_id} onChange={(e) => handleChange('tax_category_id', e.target.value)}>
-                  <option value="">Business default tax</option>
-                  {taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.rate / 100).toLocaleString()}%)</option>)}
+                  <option value="">{t('create.defaultTax')}</option>
+                  {taxes.map((tax) => <option key={tax.id} value={tax.id}>{tax.name} ({formatNumber(tax.rate / 100)}%)</option>)}
                 </select>
               </div>
             </section>

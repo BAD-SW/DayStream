@@ -3,6 +3,7 @@ import { LEAD_SOURCES, DEFAULT_LEAD_STAGES, LEAD_SOURCE_LABELS } from '@daystrea
 import { createActivity } from './customer-activity.service';
 import { createCustomer } from './customer.service';
 import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
+import { msg } from '../i18n';
 
 /**
  * Leads (THE-17): the people of a business still at lifecycle stage "lead", with the
@@ -52,14 +53,14 @@ async function stageOf(businessId: string, stageId: string) {
     'SELECT id, name, sort_order FROM cus_lead_stages WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
     [stageId, businessId],
   );
-  if (!rows[0]) throw new LeadError('Lead stage not found', 'STAGE_NOT_FOUND', 404);
+  if (!rows[0]) throw new LeadError(msg('errors:leads.leadStageNotFound'), 'STAGE_NOT_FOUND', 404);
   return rows[0];
 }
 
 function cleanName(name: unknown): string {
   const n = String(name ?? '').trim();
-  if (!n) throw new LeadError('A stage needs a name', 'VALIDATION_ERROR');
-  if (n.length > 60) throw new LeadError('A stage name can have at most 60 characters', 'VALIDATION_ERROR');
+  if (!n) throw new LeadError(msg('errors:leads.aStageNeedsAName'), 'VALIDATION_ERROR');
+  if (n.length > 60) throw new LeadError(msg('errors:leads.aStageNameCanHaveAt'), 'VALIDATION_ERROR');
   return n;
 }
 
@@ -68,7 +69,7 @@ async function assertNameFree(businessId: string, name: string, exceptId?: strin
     `SELECT 1 FROM cus_lead_stages WHERE business_id = $1 AND deleted_at IS NULL AND LOWER(name) = LOWER($2) AND id IS DISTINCT FROM $3`,
     [businessId, name, exceptId || null],
   );
-  if (rows[0]) throw new LeadError('A stage with this name already exists', 'DUPLICATE_STAGE', 409);
+  if (rows[0]) throw new LeadError(msg('errors:leads.aStageWithThisNameAlready'), 'DUPLICATE_STAGE', 409);
 }
 
 export async function addStage(businessId: string, name: unknown) {
@@ -100,7 +101,7 @@ export async function reorderStages(businessId: string, ids: string[]) {
   const current = await getStages(businessId);
   const known = new Set(current.map((s) => s.id));
   if (ids.length !== current.length || new Set(ids).size !== ids.length || ids.some((id) => !known.has(id))) {
-    throw new LeadError('The new order must list every stage once', 'VALIDATION_ERROR');
+    throw new LeadError(msg('errors:leads.theNewOrderMustListEvery'), 'VALIDATION_ERROR');
   }
   await adminPool.query(
     `UPDATE cus_lead_stages s SET sort_order = o.ord, updated_at = NOW()
@@ -118,13 +119,13 @@ export async function reorderStages(businessId: string, ids: string[]) {
 export async function deleteStage(businessId: string, stageId: string, moveTo: string | undefined, userId: string) {
   const stages = await getStages(businessId);
   const stage = stages.find((s) => s.id === stageId);
-  if (!stage) throw new LeadError('Lead stage not found', 'STAGE_NOT_FOUND', 404);
-  if (stages.length === 1) throw new LeadError('The last stage cannot be deleted', 'LAST_STAGE');
+  if (!stage) throw new LeadError(msg('errors:leads.leadStageNotFound'), 'STAGE_NOT_FOUND', 404);
+  if (stages.length === 1) throw new LeadError(msg('errors:leads.theLastStageCannotBeDeleted'), 'LAST_STAGE');
 
   const isFirst = stages[0].id === stageId;
   if ((stage.lead_count || 0) > 0) {
-    if (!moveTo) throw new LeadError('Choose the stage its leads move to', 'MOVE_TO_REQUIRED');
-    if (moveTo === stageId) throw new LeadError('Choose another stage', 'VALIDATION_ERROR');
+    if (!moveTo) throw new LeadError(msg('errors:leads.chooseTheStageItsLeadsMove'), 'MOVE_TO_REQUIRED');
+    if (moveTo === stageId) throw new LeadError(msg('errors:leads.chooseAnotherStage'), 'VALIDATION_ERROR');
     const target = await stageOf(businessId, moveTo);
     // Leads with no stage set are in the first stage; they move too when that one is deleted.
     const { rows: moved } = await adminPool.query(
@@ -253,18 +254,18 @@ async function assertStaff(businessId: string, tenantId: string, userId: string 
       WHERE id = $1 AND tenant_id = $2 AND business_id = $3 AND status = 'active' AND persona = 'business'`,
     [userId, tenantId, businessId],
   );
-  if (!rows[0]) throw new LeadError('Assigned staff must be an active staff member of this business', 'VALIDATION_ERROR');
+  if (!rows[0]) throw new LeadError(msg('errors:leads.assignedStaffMustBeAnActive'), 'VALIDATION_ERROR');
   return `${rows[0].first_name} ${rows[0].last_name || ''}`.trim();
 }
 
 function assertSource(source: string | null | undefined) {
-  if (source && !LEAD_SOURCES.includes(source)) throw new LeadError('Unknown lead source', 'VALIDATION_ERROR');
+  if (source && !LEAD_SOURCES.includes(source)) throw new LeadError(msg('errors:leads.unknownLeadSource'), 'VALIDATION_ERROR');
 }
 
 async function assertTags(businessId: string, tagIds: string[]) {
   if (tagIds.length === 0) return;
   const { rows } = await adminPool.query('SELECT id FROM cus_tags WHERE business_id = $1 AND id = ANY($2::uuid[])', [businessId, tagIds]);
-  if (rows.length !== new Set(tagIds).size) throw new LeadError('Tag not found', 'VALIDATION_ERROR');
+  if (rows.length !== new Set(tagIds).size) throw new LeadError(msg('errors:leads.tagNotFound'), 'VALIDATION_ERROR');
 }
 
 export interface NewLead {
@@ -275,7 +276,7 @@ export interface NewLead {
 /** Add a lead by hand (David, THE-17 point 6). A person who already exists is refused, as in People. */
 export async function createLead(businessId: string, tenantId: string, userId: string, input: NewLead) {
   if (!(input.email || '').trim() && !(input.phone || '').trim()) {
-    throw new LeadError('An email address or a phone number is required', 'CONTACT_POINT_REQUIRED');
+    throw new LeadError(msg('errors:leads.anEmailAddressOrAPhone'), 'CONTACT_POINT_REQUIRED');
   }
   assertSource(input.lead_source);
   const stages = await getStages(businessId);
@@ -320,7 +321,7 @@ export async function createLead(businessId: string, tenantId: string, userId: s
 
 export async function getLead(businessId: string, id: string) {
   const { rows: who } = await adminPool.query('SELECT first_name, email FROM cus_customers WHERE id = $1 AND business_id = $2', [id, businessId]);
-  if (!who[0]) throw new LeadError('Lead not found', 'NOT_FOUND', 404);
+  if (!who[0]) throw new LeadError(msg('errors:leads.leadNotFound'), 'NOT_FOUND', 404);
   const stages = await getStages(businessId);
   const { rows } = await adminPool.query(
     `SELECT c.id, c.reference_number, c.first_name, c.last_name, c.email, c.phone, c.status, c.created_at, c.lifecycle_stage,
@@ -343,7 +344,7 @@ export async function updateLead(
   patch: { lead_stage_id?: string; owner_user_id?: string | null; lead_source?: string | null },
 ) {
   const current = await getLead(businessId, id);
-  if (current.lifecycle_stage !== 'lead') throw new LeadError('This person is no longer a lead', 'NOT_A_LEAD', 409);
+  if (current.lifecycle_stage !== 'lead') throw new LeadError(msg('errors:leads.thisPersonIsNoLongerA'), 'NOT_A_LEAD', 409);
 
   // The source can be corrected after the lead is added (David, 2026-10-29); the change is on the Timeline.
   if (patch.lead_source !== undefined && (patch.lead_source || null) !== (current.lead_source || null)) {

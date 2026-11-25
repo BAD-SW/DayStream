@@ -52,10 +52,10 @@ export { USER_ROLES, PERSONAS } from './constants/roles';
 export { ERROR_CODES } from './constants/error-codes';
 export { CONFIG_KEYS } from './constants/config-keys';
 export {
-  SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES, DEFAULT_LANGUAGE, LANGUAGE_DETAILS, LANGUAGE_LABELS, LANGUAGE_OPTIONS,
+  SUPPORTED_LANGUAGES, TRANSLATED_LANGUAGES, languageLocale, SUPPORTED_CURRENCIES, DEFAULT_LANGUAGE, LANGUAGE_DETAILS, LANGUAGE_LABELS, LANGUAGE_OPTIONS,
   isSupportedLanguage, languageFromText, supportedLanguagesText,
 } from './constants/supported';
-export type { SupportedLanguage, SupportedCurrency } from './constants/supported';
+export type { SupportedLanguage, TranslatedLanguage, SupportedCurrency } from './constants/supported';
 export { COUNTRIES, countryNameToIso2, countryNameToDialCode, iso2ToCountry } from './constants/countries';
 export type { CountryInfo } from './constants/countries';
 export {
@@ -102,3 +102,11 @@ export type { CheckInText, CheckInTextKey, CheckInTextField } from './checkin/te
 export { formatCurrency } from './utils/currency';
 export { formatDate, formatDateTime } from './utils/date';
 export { generateSlug } from './utils/slug';
+
+// Phase 44: comparing translation files with English (the translation command and the checks)
+export { placeholdersOf, pluralForms, neededKeys, compareBundles } from './i18n/check';
+export type { TranslationBundle, BundleProblems } from './i18n/check';
+
+// Phase 44: a business's languages and the offering texts it translates (requirements 8 and 9)
+export { TRANSLATABLE_FIELDS, TRANSLATABLE_ENTITIES, isTranslatableEntity, businessLanguages } from './i18n/offerings';
+export type { TranslatableEntity, TranslatableField, TranslationFields } from './i18n/offerings';

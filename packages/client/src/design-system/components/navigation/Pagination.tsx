@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface PaginationProps {
   page: number;
   totalPages: number;
@@ -8,17 +10,18 @@ interface PaginationProps {
 }
 
 export function Pagination({ page, totalPages, onPageChange, itemsPerPage, itemsPerPageOptions, onItemsPerPageChange }: PaginationProps) {
+  const { t } = useTranslation('common');
   if (totalPages <= 1 && !itemsPerPageOptions) return null;
 
   const pages = getPageNumbers(page, totalPages);
 
   return (
-    <nav aria-label="Pagination" style={styles.container}>
+    <nav aria-label={t('pagination.label')} style={styles.container}>
       <button
         onClick={() => onPageChange(page - 1)}
         disabled={page <= 1}
         style={styles.button}
-        aria-label="Previous page"
+        aria-label={t('pagination.previous')}
       >
         ←
       </button>
@@ -42,7 +45,7 @@ export function Pagination({ page, totalPages, onPageChange, itemsPerPage, items
         onClick={() => onPageChange(page + 1)}
         disabled={page >= totalPages}
         style={styles.button}
-        aria-label="Next page"
+        aria-label={t('pagination.next')}
       >
         →
       </button>
@@ -52,10 +55,10 @@ export function Pagination({ page, totalPages, onPageChange, itemsPerPage, items
           value={itemsPerPage}
           onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
           style={styles.perPage}
-          aria-label="Items per page"
+          aria-label={t('pagination.itemsPerPage')}
         >
           {itemsPerPageOptions.map((opt) => (
-            <option key={opt} value={opt}>{opt} / page</option>
+            <option key={opt} value={opt}>{t('pagination.perPage', { n: opt })}</option>
           ))}
         </select>
       )}

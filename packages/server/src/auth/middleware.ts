@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 export interface JwtPayload {
   sub: string;        // user_id
@@ -20,7 +21,7 @@ export interface AuthenticatedRequest extends Request {
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    throw new Error('JWT_SECRET environment variable is not set');
+    throw new Error(msg('errors:middleware.jwtSecretEnvironmentVariableIsNot'));
   }
   return secret;
 }
@@ -33,7 +34,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'No token provided', code: 'NO_TOKEN' });
+    res.status(401).json({ error: msg('errors:middleware.noTokenProvided'), code: 'NO_TOKEN' });
     return;
   }
 
@@ -46,12 +47,12 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
     next();
   } catch (err: any) {
     if (err.name === 'TokenExpiredError') {
-      res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+      res.status(401).json({ error: msg('errors:middleware.tokenExpired'), code: 'TOKEN_EXPIRED' });
     } else if (err.name === 'JsonWebTokenError') {
-      res.status(401).json({ error: 'Invalid token', code: 'INVALID_TOKEN' });
+      res.status(401).json({ error: msg('errors:middleware.invalidToken'), code: 'INVALID_TOKEN' });
     } else {
       logger.error('Authentication error', { error: err.message });
-      res.status(401).json({ error: 'Authentication failed', code: 'AUTH_FAILED' });
+      res.status(401).json({ error: msg('errors:middleware.authenticationFailed'), code: 'AUTH_FAILED' });
     }
   }
 }

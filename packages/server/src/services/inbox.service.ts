@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg as msgText } from '../i18n';
 
 /**
  * Inbox (THE-18, David 2026-11-04). One conversation per person per business; messages are
@@ -173,7 +174,7 @@ const personName = (c: any) => [c.first_name, c.last_name].filter(Boolean).join(
 /** The person's conversation, created when it doesn't exist yet. New ones go to the person's owner. */
 export async function conversationFor(businessId: string, customerId: string) {
   const { rows: cust } = await adminPool.query('SELECT id, tenant_id, owner_user_id FROM cus_customers WHERE id = $1 AND business_id = $2', [customerId, businessId]);
-  if (!cust[0]) throw new InboxError('Person not found', 404, 'NOT_FOUND');
+  if (!cust[0]) throw new InboxError(msgText('errors:inbox.personNotFound'), 404, 'NOT_FOUND');
   const { rows } = await adminPool.query(
     `INSERT INTO inbox_conversations (tenant_id, business_id, customer_id, assignee_user_id)
      VALUES ($1, $2, $3, $4)
@@ -283,11 +284,11 @@ async function addMessage(convId: string, m: { direction: string; channel: strin
  */
 export async function sendMessage(args: { conversationId: string; businessId: string; userId: string; channel: InboxChannel | 'internal'; subject?: string; body: string; mentions?: string[] }) {
   const body = (args.body || '').trim();
-  if (!body) throw new InboxError('Write a message first');
+  if (!body) throw new InboxError(msgText('errors:inbox.writeAMessageFirst'));
   const conv = await getConversation(args.conversationId, args.businessId);
-  if (!conv) throw new InboxError('Conversation not found', 404, 'NOT_FOUND');
+  if (!conv) throw new InboxError(msgText('errors:inbox.conversationNotFound'), 404, 'NOT_FOUND');
   const person = conv.person;
-  if (!person || ['anonymized', 'merged', 'archived'].includes(person.status)) throw new InboxError('This person can no longer be contacted');
+  if (!person || ['anonymized', 'merged', 'archived'].includes(person.status)) throw new InboxError(msgText('errors:inbox.thisPersonCanNoLongerBe'));
 
   if (args.channel === 'internal') {
     const note = await addMessage(conv.id, { direction: 'note', channel: 'internal', body, senderId: args.userId, mentions: args.mentions || [] });
@@ -296,9 +297,9 @@ export async function sendMessage(args: { conversationId: string; businessId: st
     }
     return note;
   }
-  if (!CONNECTED_CHANNELS.includes(args.channel)) throw new InboxError(`${args.channel === 'sms' ? 'SMS' : 'WhatsApp'} is not connected yet`);
-  if (args.channel === 'email' && !person.email) throw new InboxError('This person has no email address');
-  if (args.channel === 'email' && !args.subject?.trim()) throw new InboxError('An email needs a subject');
+  if (!CONNECTED_CHANNELS.includes(args.channel)) throw new InboxError(msgText('errors:inbox.isNotConnectedYet', { value: args.channel === 'sms' ? 'SMS' : 'WhatsApp' }));
+  if (args.channel === 'email' && !person.email) throw new InboxError(msgText('errors:inbox.thisPersonHasNoEmailAddress'));
+  if (args.channel === 'email' && !args.subject?.trim()) throw new InboxError(msgText('errors:inbox.anEmailNeedsASubject'));
 
   let status = 'sent'; let failure: string | null = null;
   if (args.channel === 'email') {
@@ -327,7 +328,7 @@ export async function sendMessage(args: { conversationId: string; businessId: st
  */
 export async function receiveMessage(args: { businessId: string; customerId: string; channel: InboxChannel; subject?: string; body: string; newLead?: boolean }) {
   const body = (args.body || '').trim();
-  if (!body) throw new InboxError('Write a message first');
+  if (!body) throw new InboxError(msgText('errors:inbox.writeAMessageFirst'));
   const conv = await conversationFor(args.businessId, args.customerId);
   const msg = await addMessage(conv.id, { direction: 'in', channel: args.channel, subject: args.subject || null, body, status: 'received' });
   const { rows } = await adminPool.query(
@@ -362,11 +363,11 @@ export async function recordAutomatic(args: { businessId: string; customerId: st
 
 export async function assign(id: string, businessId: string, assigneeId: string | null, actorId: string) {
   const conv = await getConversation(id, businessId);
-  if (!conv) throw new InboxError('Conversation not found', 404, 'NOT_FOUND');
+  if (!conv) throw new InboxError(msgText('errors:inbox.conversationNotFound'), 404, 'NOT_FOUND');
   if (assigneeId) {
     const users = await businessUsers(businessId);
     const u = users.find((x) => x.id === assigneeId);
-    if (!u || u.inboxRole === 'staff') throw new InboxError('Choose someone who uses the Inbox');
+    if (!u || u.inboxRole === 'staff') throw new InboxError(msgText('errors:inbox.chooseSomeoneWhoUsesTheInbox'));
   }
   await adminPool.query(`UPDATE inbox_conversations SET assignee_user_id = $2, updated_at = NOW() WHERE id = $1`, [id, assigneeId]);
   const assigneeName = assigneeId ? (await adminPool.query(`SELECT TRIM(CONCAT(first_name, ' ', last_name)) AS n FROM usr_users WHERE id = $1`, [assigneeId])).rows[0]?.n : null;
@@ -377,7 +378,7 @@ export async function assign(id: string, businessId: string, assigneeId: string 
 
 export async function setStatus(id: string, businessId: string, status: 'open' | 'closed', actorId: string) {
   const { rowCount } = await adminPool.query(`UPDATE inbox_conversations SET status = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`, [id, businessId, status]);
-  if (!rowCount) throw new InboxError('Conversation not found', 404, 'NOT_FOUND');
+  if (!rowCount) throw new InboxError(msgText('errors:inbox.conversationNotFound'), 404, 'NOT_FOUND');
   await addMessage(id, { direction: 'event', channel: 'internal', body: status === 'closed' ? 'Marked done' : 'Reopened', senderId: actorId });
   return getConversation(id, businessId);
 }

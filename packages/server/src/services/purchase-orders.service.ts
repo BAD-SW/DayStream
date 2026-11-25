@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { formatCurrency } from '@daystream/shared';
 import { adminPool } from '../db/pool';
 import { StockError, move, inTx } from './inventory.service';
+import { msg } from '../i18n';
 
 /**
  * Purchase orders (spec 51, gap 7; design 7.7). An order placed with a vendor for tracked products,
@@ -17,19 +18,19 @@ export interface PoLineInput { merchandiseId: string; variantId: string | null; 
 
 async function tenantOf(db: PoolClient | typeof adminPool, businessId: string): Promise<string> {
   const { rows } = await db.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
-  if (!rows[0]) throw new StockError('Business not found', 'INVALID');
+  if (!rows[0]) throw new StockError(msg('errors:purchaseOrders.businessNotFound'), 'INVALID');
   return rows[0].tenant_id;
 }
 
 /** Lines must be tracked products of the business, each option at most once. */
 async function checkLines(c: PoolClient, businessId: string, lines: PoLineInput[]) {
-  if (lines.length === 0) throw new StockError('Add at least one product.', 'INVALID');
+  if (lines.length === 0) throw new StockError(msg('errors:purchaseOrders.addAtLeastOneProduct'), 'INVALID');
   const seen = new Set<string>();
   for (const l of lines) {
-    if (!Number.isInteger(l.qtyOrdered) || l.qtyOrdered <= 0) throw new StockError('Order a whole number of 1 or more of each product.', 'INVALID');
-    if (!Number.isInteger(l.unitCostCents) || l.unitCostCents < 0) throw new StockError('Enter a cost of 0 or more for each product.', 'INVALID');
+    if (!Number.isInteger(l.qtyOrdered) || l.qtyOrdered <= 0) throw new StockError(msg('errors:purchaseOrders.orderAWholeNumberOf1'), 'INVALID');
+    if (!Number.isInteger(l.unitCostCents) || l.unitCostCents < 0) throw new StockError(msg('errors:purchaseOrders.enterACostOf0Or'), 'INVALID');
     const key = `${l.merchandiseId}:${l.variantId || ''}`;
-    if (seen.has(key)) throw new StockError('Each product (or option) can be on the order once; change its quantity instead.', 'INVALID');
+    if (seen.has(key)) throw new StockError(msg('errors:purchaseOrders.eachProductOrOptionCanBe'), 'INVALID');
     seen.add(key);
     const { rows } = await c.query(
       `SELECT m.name, m.track_stock,
@@ -38,9 +39,9 @@ async function checkLines(c: PoolClient, businessId: string, lines: PoLineInput[
          FROM prd_merchandise m WHERE m.id = $1 AND m.business_id = $3`,
       [l.merchandiseId, l.variantId, businessId]);
     const p = rows[0];
-    if (!p) throw new StockError('One of the products is not a product of this business.', 'INVALID');
-    if (!p.track_stock) throw new StockError(`${p.name}: stock is not tracked. Turn on Track stock first.`, 'NOT_TRACKED');
-    if (l.variantId ? !p.variant_ok : p.options > 0) throw new StockError(`${p.name}: choose one of its options.`, 'INVALID');
+    if (!p) throw new StockError(msg('errors:purchaseOrders.oneOfTheProductsIsNot'), 'INVALID');
+    if (!p.track_stock) throw new StockError(msg('errors:purchaseOrders.stockIsNotTrackedTurnOn', { name: p.name }), 'NOT_TRACKED');
+    if (l.variantId ? !p.variant_ok : p.options > 0) throw new StockError(msg('errors:purchaseOrders.chooseOneOfItsOptions', { name: p.name }), 'INVALID');
   }
 }
 
@@ -57,7 +58,7 @@ async function writeLines(c: PoolClient, tenantId: string, businessId: string, p
 /** Lock and load an order of the business. */
 async function lockedPo(c: PoolClient, businessId: string, poId: string) {
   const { rows } = await c.query('SELECT * FROM inv_purchase_orders WHERE id = $1 AND business_id = $2 FOR UPDATE', [poId, businessId]);
-  if (!rows[0]) throw new StockError('Purchase order not found', 'INVALID');
+  if (!rows[0]) throw new StockError(msg('errors:purchaseOrders.purchaseOrderNotFound'), 'INVALID');
   return rows[0] as { id: string; status: PoStatus; location_id: string; vendor_id: string; po_number: string; tenant_id: string };
 }
 
@@ -88,7 +89,7 @@ export async function updatePo(args: {
 }): Promise<void> {
   await inTx(async (c) => {
     const po = await lockedPo(c, args.businessId, args.poId);
-    if (po.status !== 'draft') throw new StockError('Only a draft purchase order can be changed.', 'INVALID');
+    if (po.status !== 'draft') throw new StockError(msg('errors:purchaseOrders.onlyADraftPurchaseOrderCan'), 'INVALID');
     await checkLines(c, args.businessId, args.lines);
     await c.query(
       `UPDATE inv_purchase_orders SET vendor_id = $2, location_id = $3, expected_on = $4, note = $5, updated_at = NOW() WHERE id = $1`,
@@ -148,11 +149,11 @@ export async function getPo(businessId: string, poId: string) {
 /** Sent to the vendor: by email (when asked and the vendor has one), or only marked as sent. */
 export async function sendPo(businessId: string, poId: string, opts: { email: boolean }): Promise<{ emailedTo: string | null }> {
   const po = await getPo(businessId, poId);
-  if (!po) throw new StockError('Purchase order not found', 'INVALID');
-  if (po.status !== 'draft' && po.status !== 'sent') throw new StockError('This purchase order has already been received.', 'INVALID');
+  if (!po) throw new StockError(msg('errors:purchaseOrders.purchaseOrderNotFound'), 'INVALID');
+  if (po.status !== 'draft' && po.status !== 'sent') throw new StockError(msg('errors:purchaseOrders.thisPurchaseOrderHasAlreadyBeen'), 'INVALID');
   let emailedTo: string | null = null;
   if (opts.email) {
-    if (!po.vendor_email) throw new StockError(`${po.vendor_name} has no email address. Add one to the vendor, or mark the order as sent.`, 'INVALID');
+    if (!po.vendor_email) throw new StockError(msg('errors:purchaseOrders.hasNoEmailAddressAddOne', { vendor_name: po.vendor_name }), 'INVALID');
     const { rows: biz } = await adminPool.query('SELECT name, email, currency FROM sys_businesses WHERE id = $1', [businessId]);
     const { sendEmail } = await import('./email.service');
     // The business's Purchase Order template (Settings > Templates), when it has an active one;
@@ -234,23 +235,23 @@ export async function receivePo(args: {
 }): Promise<{ status: PoStatus }> {
   return inTx(async (c) => {
     const po = await lockedPo(c, args.businessId, args.poId);
-    if (po.status === 'draft') throw new StockError('Send the purchase order (or mark it as sent) before receiving it.', 'INVALID');
-    if (!['sent', 'partly_received'].includes(po.status)) throw new StockError('Everything on this purchase order has been received, or it is closed.', 'INVALID');
+    if (po.status === 'draft') throw new StockError(msg('errors:purchaseOrders.sendThePurchaseOrderOrMark'), 'INVALID');
+    if (!['sent', 'partly_received'].includes(po.status)) throw new StockError(msg('errors:purchaseOrders.everythingOnThisPurchaseOrderHas'), 'INVALID');
     let any = false;
     for (const r of args.lines) {
       if (!r.qty) continue;
-      if (!Number.isInteger(r.qty) || r.qty < 0) throw new StockError('Received quantities are whole numbers of 0 or more.', 'INVALID');
+      if (!Number.isInteger(r.qty) || r.qty < 0) throw new StockError(msg('errors:purchaseOrders.receivedQuantitiesAreWholeNumbersOf'), 'INVALID');
       const { rows } = await c.query(
         `SELECT pl.*, m.name AS product_name, v.name AS variant_name FROM inv_po_lines pl
            JOIN prd_merchandise m ON m.id = pl.merchandise_id LEFT JOIN prd_merchandise_variants v ON v.id = pl.variant_id
           WHERE pl.id = $1 AND pl.po_id = $2 FOR UPDATE OF pl`, [r.lineId, po.id]);
       const line = rows[0];
-      if (!line) throw new StockError('A line is not on this purchase order.', 'INVALID');
+      if (!line) throw new StockError(msg('errors:purchaseOrders.aLineIsNotOnThis'), 'INVALID');
       const left = line.qty_ordered - line.qty_received;
       const name = line.variant_name ? `${line.product_name} (${line.variant_name})` : line.product_name;
-      if (r.qty > left) throw new StockError(`${name}: only ${left} still to come.`, 'INVALID');
+      if (r.qty > left) throw new StockError(msg('errors:purchaseOrders.onlyStillToCome', { name, left }), 'INVALID');
       const cost = r.unitCostCents ?? line.unit_cost_cents;
-      if (!Number.isInteger(cost) || cost < 0) throw new StockError(`${name}: enter a cost of 0 or more.`, 'INVALID');
+      if (!Number.isInteger(cost) || cost < 0) throw new StockError(msg('errors:purchaseOrders.enterACostOf0Or2', { name }), 'INVALID');
       await move(c, { businessId: args.businessId, locationId: po.location_id, merchandiseId: line.merchandise_id, variantId: line.variant_id }, {
         qty: r.qty, reason: 'receive', unitCostCents: cost, poLineId: line.id, userId: args.userId,
         note: args.note ? `${po.po_number}: ${args.note}` : po.po_number,
@@ -259,7 +260,7 @@ export async function receivePo(args: {
       await c.query('UPDATE inv_po_lines SET qty_received = qty_received + $2, unit_cost_cents = $3, updated_at = NOW() WHERE id = $1', [line.id, r.qty, cost]);
       any = true;
     }
-    if (!any) throw new StockError('Enter how many arrived of at least one product.', 'INVALID');
+    if (!any) throw new StockError(msg('errors:purchaseOrders.enterHowManyArrivedOfAt'), 'INVALID');
     const { rows: t } = await c.query('SELECT BOOL_AND(qty_received >= qty_ordered) AS all_in FROM inv_po_lines WHERE po_id = $1', [po.id]);
     const status: PoStatus = t[0].all_in ? 'received' : 'partly_received';
     await c.query('UPDATE inv_purchase_orders SET status = $2, updated_at = NOW() WHERE id = $1', [po.id, status]);
@@ -277,9 +278,9 @@ export async function billPo(args: {
       `SELECT pl.id, pl.qty_received - pl.qty_billed AS qty, pl.unit_cost_cents, m.name AS product_name, v.name AS variant_name
          FROM inv_po_lines pl JOIN prd_merchandise m ON m.id = pl.merchandise_id LEFT JOIN prd_merchandise_variants v ON v.id = pl.variant_id
         WHERE pl.po_id = $1 AND pl.qty_received > pl.qty_billed ORDER BY m.name, v.name FOR UPDATE OF pl`, [po.id]);
-    if (lines.length === 0) throw new StockError('Nothing received is waiting to be billed.', 'INVALID');
+    if (lines.length === 0) throw new StockError(msg('errors:purchaseOrders.nothingReceivedIsWaitingToBe'), 'INVALID');
     const { rows: acct } = await c.query("SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '1300'", [args.businessId]);
-    if (!acct[0]) throw new StockError('The Inventory account (1300) is missing from the chart of accounts.', 'INVALID');
+    if (!acct[0]) throw new StockError(msg('errors:purchaseOrders.theInventoryAccount1300IsMissing'), 'INVALID');
     const { rows: vendor } = await c.query('SELECT payment_terms FROM fin_vendors WHERE id = $1', [po.vendor_id]);
     const amount = lines.reduce((t: number, l: { qty: number; unit_cost_cents: number }) => t + l.qty * l.unit_cost_cents, 0);
     const due = args.dueDate || new Date(Date.now() + (Number(vendor[0]?.payment_terms) || 0) * 86400000).toISOString().slice(0, 10);
@@ -308,7 +309,7 @@ export async function closePo(businessId: string, poId: string): Promise<{ statu
     let status: PoStatus;
     if (po.status === 'draft' || po.status === 'sent') status = 'cancelled';
     else if (po.status === 'partly_received') status = 'closed';
-    else throw new StockError('This purchase order is already finished.', 'INVALID');
+    else throw new StockError(msg('errors:purchaseOrders.thisPurchaseOrderIsAlreadyFinished'), 'INVALID');
     await c.query('UPDATE inv_purchase_orders SET status = $2, updated_at = NOW() WHERE id = $1', [po.id, status]);
     return { status };
   });

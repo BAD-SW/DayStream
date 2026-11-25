@@ -2,6 +2,7 @@ import cors from 'cors';
 import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * CORS for /api/v1/widget/* only — the business's external website (an arbitrary origin)
@@ -26,7 +27,7 @@ export function requireValidBusinessId(req: Request, res: Response, next: NextFu
   const businessId = (req.params.business_id || req.query.business_id || req.body?.business_id) as string | undefined;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!businessId || !uuidRe.test(businessId)) {
-    res.status(400).json({ error: 'Invalid or missing business_id', code: 'VALIDATION_ERROR' });
+    res.status(400).json({ error: msg('errors:widgetCors.invalidOrMissingBusinessId'), code: 'VALIDATION_ERROR' });
     return;
   }
   next();
@@ -49,7 +50,7 @@ export async function enforceAllowedOrigin(req: Request, res: Response, next: Ne
     if (allowedOrigins && allowedOrigins.length > 0) {
       const origin = req.headers.origin;
       if (!origin || !allowedOrigins.includes(origin)) {
-        res.status(403).json({ error: 'Origin not permitted', code: 'FORBIDDEN' });
+        res.status(403).json({ error: msg('errors:widgetCors.originNotPermitted'), code: 'FORBIDDEN' });
         return;
       }
     }

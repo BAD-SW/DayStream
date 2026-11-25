@@ -1,0 +1,20 @@
+{
+  "kiosk.title": "Quiosco",
+  "kiosk.titleNamed": "Quiosco · {{name}}",
+  "kiosk.otherAppointments": "Tus otras citas",
+  "phone.linkInvalid": "Este enlace ya no es válido. Por favor, diríjase a la recepción.",
+  "prompt.title": "Formularios aún por completar",
+  "prompt.checkIn": "Registrar llegada",
+  "prompt.checkInAnyway": "De todos modos, regístrese.",
+  "prompt.allComplete": "Todos los formularios están completos. Ya puede registrarse.",
+  "prompt.lead_one": "Este cliente no ha completado este formulario para la cita:",
+  "prompt.lead_many": "Este cliente no ha completado los siguientes formularios para la cita:",
+  "prompt.lead_other": "Este cliente no ha completado los siguientes formularios para la cita:",
+  "prompt.outOfDate": "obsoleto",
+  "prompt.fillInNow": "Rellena ahora",
+  "prompt.hint_one": "Puedes registrarte ahora y recoger el formulario más tarde, o pedirle al cliente que lo complete primero.",
+  "prompt.hint_many": "Puedes registrarte ahora y recoger los formularios más tarde, o bien pedirle al cliente que los complete primero.",
+  "prompt.hint_other": "Puedes registrarte ahora y recoger los formularios más tarde, o bien pedirle al cliente que los complete primero.",
+  "prompt.openForms": "Abre los formularios del cliente.",
+  "prompt.startFailed": "No se pudo iniciar el formulario."
+}

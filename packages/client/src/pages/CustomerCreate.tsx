@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { LanguageSelect } from '../components/LanguageSelect';
+import { useBusinessLanguages } from '../context/useBusinessLanguages';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import { iso2ToCountry } from '@daystream/shared';
 import { Button } from '../design-system/components/actions/Button';
@@ -11,6 +13,8 @@ import { isoCountryFromTimezone } from '../utils/timezoneCountry';
 import * as customersApi from '../api/customers';
 
 export function CustomerCreate() {
+  const { t } = useTranslation('customers');
+  const { languages: businessLanguages } = useBusinessLanguages();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,7 +61,7 @@ export function CustomerCreate() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!businessId) {
-      setError('No business context. Please log in again.');
+      setError(t('create.noBusiness'));
       return;
     }
 
@@ -65,13 +69,13 @@ export function CustomerCreate() {
     setExisting(null);
     // A person needs at least one way to be reached; either is enough.
     if (!form.email.trim() && !form.phone.trim()) {
-      setError('Enter an email address or a phone number.');
+      setError(t('create.contactRequired'));
       return;
     }
     if (form.phone.trim() && !isValidPhoneNumber(form.phone.trim(), phoneCountryIso2 as any)) {
       const countryName = iso2ToCountry(phoneCountryIso2)?.name || phoneCountryIso2;
       const dialCode = iso2ToCountry(phoneCountryIso2)?.dialCode || '';
-      setPhoneError(`Enter a valid phone number for the selected country (${countryName}, ${dialCode}).`);
+      setPhoneError(t('create.invalidPhone', { country: countryName, dialCode }));
       return;
     }
 
@@ -96,7 +100,7 @@ export function CustomerCreate() {
     } catch (err: any) {
       const data = err.response?.data;
       if (data?.details?.existing_id) setExisting({ id: data.details.existing_id, name: data.details.existing_name });
-      setError(data?.error || 'Failed to add this person');
+      setError(data?.error || t('create.failed'));
     } finally {
       setLoading(false);
     }
@@ -104,30 +108,30 @@ export function CustomerCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
-      <h1 style={styles.title}>Add Person</h1>
+      <button style={styles.back} onClick={() => navigate('/customers')}>{t('segments.back')}</button>
+      <h1 style={styles.title}>{t('people.addPerson')}</h1>
 
       {error && <Alert variant="error">{error}</Alert>}
       {existing && (
         <div style={styles.existing}>
-          <span>This person already exists{existing.name ? `: ${existing.name}` : ''}.</span>
-          <Button type="button" size="sm" onClick={() => navigate(`/customers/${existing.id}`)}>Open their profile</Button>
+          <span>{existing.name ? t('create.existsNamed', { name: existing.name }) : t('create.exists')}</span>
+          <Button type="button" size="sm" onClick={() => navigate(`/customers/${existing.id}`)}>{t('create.openProfile')}</Button>
         </div>
       )}
 
       <form onSubmit={handleSubmit} style={styles.form}>
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>Basic Info</h2>
+          <h2 style={styles.sectionTitle}>{t('create.basicInfo')}</h2>
           <div style={styles.row}>
-            <Field label="First Name *" value={form.first_name} onChange={(v) => handleChange('first_name', v)} required />
-            <Field label="Last Name" value={form.last_name} onChange={(v) => handleChange('last_name', v)} />
+            <Field label={t('create.firstName')} value={form.first_name} onChange={(v) => handleChange('first_name', v)} required />
+            <Field label={t('create.lastName')} value={form.last_name} onChange={(v) => handleChange('last_name', v)} />
           </div>
 
-          <p style={styles.hintText}>Enter an email, a phone number, or both. One is enough to save the person.</p>
-          <Field label="Email" type="email" value={form.email} onChange={(v) => handleChange('email', v)} />
+          <p style={styles.hintText}>{t('create.contactHint')}</p>
+          <Field label={t('create.email')} type="email" value={form.email} onChange={(v) => handleChange('email', v)} />
 
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Phone</label>
+            <label style={styles.label}>{t('create.phone')}</label>
             <div style={styles.phoneRow}>
               <CountrySelect value={phoneCountryIso2} onChange={setPhoneCountryIso2} mode="dial" />
               <input
@@ -142,48 +146,48 @@ export function CustomerCreate() {
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>Details</h2>
+          <h2 style={styles.sectionTitle}>{t('create.details')}</h2>
           <div style={styles.row}>
-            <Field label="Date of Birth" type="date" value={form.date_of_birth} onChange={(v) => handleChange('date_of_birth', v)} />
+            <Field label={t('create.dateOfBirth')} type="date" value={form.date_of_birth} onChange={(v) => handleChange('date_of_birth', v)} />
             <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Gender</label>
+              <label style={styles.label}>{t('create.gender')}</label>
               <select value={form.gender} onChange={(e) => handleChange('gender', e.target.value)} style={styles.input}>
                 <option value="">—</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-                <option value="prefer_not_to_say">Prefer not to say</option>
+                <option value="male">{t('cond.gender.male')}</option>
+                <option value="female">{t('cond.gender.female')}</option>
+                <option value="other">{t('cond.gender.other')}</option>
+                <option value="prefer_not_to_say">{t('create.preferNotToSay')}</option>
               </select>
             </div>
           </div>
 
           <div style={styles.row}>
             <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Language</label>
-              <LanguageSelect value={form.preferred_language} onChange={(v) => handleChange('preferred_language', v)} style={styles.input} />
+              <label style={styles.label}>{t('create.language')}</label>
+              <LanguageSelect languages={businessLanguages} value={form.preferred_language} onChange={(v) => handleChange('preferred_language', v)} style={styles.input} />
             </div>
             <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Country</label>
+              <label style={styles.label}>{t('create.country')}</label>
               <CountrySelect value={countryIso2} onChange={handleCountryChange} mode="name" />
             </div>
           </div>
 
           <div style={styles.row}>
             <div style={styles.fieldWrapper}>
-              <label style={styles.label} htmlFor="person-source">How did they come to us?</label>
+              <label style={styles.label} htmlFor="person-source">{t('create.howCame')}</label>
               <select id="person-source" value={form.source} onChange={(e) => handleChange('source', e.target.value)} style={styles.input}>
-                <option value="manual">Added by staff</option>
-                <option value="walk_in">Walk-in</option>
-                <option value="referral">Referral</option>
+                <option value="manual">{t('source.manual')}</option>
+                <option value="walk_in">{t('source.walk_in')}</option>
+                <option value="referral">{t('source.referral')}</option>
               </select>
             </div>
           </div>
         </section>
 
         <div style={styles.actions}>
-          <Button type="button" onClick={() => navigate('/customers')}>Cancel</Button>
+          <Button type="button" onClick={() => navigate('/customers')}>{t('common:cancel')}</Button>
           <Button type="submit" disabled={loading}>
-            {loading ? 'Saving...' : 'Add Person'}
+            {loading ? t('create.saving') : t('people.addPerson')}
           </Button>
         </div>
       </form>

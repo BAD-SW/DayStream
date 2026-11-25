@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { getOutstandingForms, startFormRequest } from '../../api/forms';
@@ -27,6 +28,7 @@ export function useCheckInFormsPrompt(businessId: string): {
   prompt: ReactNode;
 } {
   const navigate = useNavigate();
+  const { t } = useTranslation('checkin');
   const [open, setOpen] = useState<{ booking: CheckInBooking; proceed: () => void | Promise<void> } | null>(null);
   const [forms, setForms] = useState<OutstandingForms['forms']>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -80,7 +82,7 @@ export function useCheckInFormsPrompt(businessId: string): {
       if (!r.url) throw new Error('no link');
       setFill({ url: r.url, name });
     } catch (err) {
-      setMessage((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'The form could not be started.');
+      setMessage((err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('prompt.startFailed'));
     } finally { setBusy(null); }
   };
   const fillDone = () => {
@@ -89,41 +91,40 @@ export function useCheckInFormsPrompt(businessId: string): {
   };  const prompt = fill ? (
     <FormFillModal url={fill.url} title={fill.name} onClose={() => setFill(null)} onDone={fillDone} />
   ) : open ? (
-    <Modal open onClose={close} title="Forms still to complete" size="md" footer={(
+    <Modal open onClose={close} title={t('prompt.title')} size="md" footer={(
       <div style={s.footer}>
-        <Button variant="ghost" onClick={close}>Cancel</Button>
+        <Button variant="ghost" onClick={close}>{t('common:cancel')}</Button>
         <Button variant={forms.length === 0 ? 'primary' : 'secondary'} onClick={proceed}>
-          {forms.length === 0 ? 'Check in' : 'Check in anyway'}
+          {forms.length === 0 ? t('prompt.checkIn') : t('prompt.checkInAnyway')}
         </Button>
       </div>
     )}>
       {forms.length === 0 ? (
-        <p role="status" style={s.done}>All the forms are complete. You can check in now.</p>
+        <p role="status" style={s.done}>{t('prompt.allComplete')}</p>
       ) : (
         <>
           <p style={s.lead}>
-            {forms.length === 1 ? 'This customer has not completed this form' : 'This customer has not completed these forms'} for the appointment:
+            {t('prompt.lead', { count: forms.length })}
           </p>
           <ul style={s.list}>
             {forms.map((f) => (
               <li key={f.groupId} style={s.row}>
                 <span style={s.name}>
                   {f.name}
-                  {f.status === 'out_of_date' && <span style={s.tag}>out of date</span>}
+                  {f.status === 'out_of_date' && <span style={s.tag}>{t('prompt.outOfDate')}</span>}
                 </span>
                 <Button size="sm" variant="secondary" loading={busy === f.groupId} onClick={() => fillInHere(f.groupId, f.name)}>
-                  Fill in now
+                  {t('prompt.fillInNow')}
                 </Button>
               </li>
             ))}
           </ul>
           <p style={s.hint}>
-            You can check in now and collect the {forms.length === 1 ? 'form' : 'forms'} later, or have the customer complete
-            {forms.length === 1 ? ' it' : ' them'} first.
+            {t('prompt.hint', { count: forms.length })}
           </p>
           <button type="button" style={s.link}
             onClick={() => { const c = open.booking.customer_id; close(); if (c) navigate(`/customers/${c}?tab=forms`); }}>
-            Open the customer's forms
+            {t('prompt.openForms')}
           </button>
         </>
       )}

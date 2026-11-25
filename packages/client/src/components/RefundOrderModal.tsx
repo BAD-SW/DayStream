@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { Modal } from '../design-system/components/feedback/Modal';
 import { Button } from '../design-system/components/actions/Button';
 import * as checkoutApi from '../api/checkout';
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export function RefundOrderModal({ businessId, order: orderProp, orderId, onClose, onRefunded }: Props) {
+  const { t } = useTranslation('checkout');
   const [order, setOrder] = useState<Order | null>(orderProp ?? null);
   const [loading, setLoading] = useState(!orderProp);
   const [qty, setQty] = useState<Record<string, number>>({});
@@ -43,7 +45,7 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
     setLoading(true);
     checkoutApi.getOrder(id)
       .then((o) => setOrder(o))
-      .catch(() => setError('Could not load the order.'))
+      .catch(() => setError(t('refund.loadFailed')))
       .finally(() => setLoading(false));
   }, [orderProp, orderId]);
 
@@ -62,45 +64,44 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
 
   const submit = async () => {
     if (!order) return;
-    if (!reason.trim()) { setError('A reason is required.'); return; }
+    if (!reason.trim()) { setError(t('refund.reasonRequired')); return; }
     const lines = refundable
       .filter((it) => (qty[it.id] || 0) > 0)
       .map((it) => ({ order_item_id: it.id, quantity: qty[it.id], ...(it.from_stock ? { restock: !writeOff[it.id] } : {}) }));
-    if (lines.length === 0 && tipRefund <= 0) { setError('Select at least one item, or the tip, to refund.'); return; }
+    if (lines.length === 0 && tipRefund <= 0) { setError(t('refund.selectOne')); return; }
     setBusy(true); setError(null);
     try {
       const res = await checkoutApi.refundOrder(order.id, businessId, reason.trim(), lines, Math.min(tipRefund, tipLeft));
-      if (res.status === 'failed') { setError(res.failureReason || 'The refund was declined.'); return; }
+      if (res.status === 'failed') { setError(res.failureReason || t('refund.declined')); return; }
       onRefunded();
     } catch (err: any) {
-      setError(err?.response?.data?.error || 'Failed to process the refund.');
+      setError(err?.response?.data?.error || t('refund.failed'));
     } finally { setBusy(false); }
   };
 
-  const title = order ? `Refund — Order ${order.order_number}` : 'Refund';
+  const title = order ? t('refund.titleOrder', { number: order.order_number }) : t('refund.title');
 
   return (
     <Modal open onClose={onClose} title={title}
       footer={<>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>{t('common:cancel')}</Button>
         <Button variant="destructive" loading={busy} disabled={loading || !order || (refundable.length === 0 && tipLeft === 0)} onClick={submit}>
-          Refund {estTotal > 0 ? formatCurrency(estTotal) : ''}
+          {estTotal > 0 ? t('refund.buttonAmount', { amount: formatCurrency(estTotal) }) : t('refund.title')}
         </Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
         {loading ? (
-          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>Loading order…</p>
+          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>{t('refund.loadingOrder')}</p>
         ) : !order ? (
-          <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error || 'Order not found.'}</p>
+          <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error || t('refund.notFound')}</p>
         ) : refundable.length === 0 && tipLeft === 0 ? (
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
-            Nothing left to refund on this order. (Services, memberships, packages and gift cards are not refundable.)
+            {t('refund.nothingLeft')}
           </p>
         ) : (
           <>
             <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
-              Choose how many of each item to return.
-              {order.payment_method === 'card' ? ' The card will be refunded.' : ' Recorded as refunded (manual payment).'}
+              {t(order.payment_method === 'card' ? 'refund.chooseCard' : 'refund.chooseManual')}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -112,17 +113,17 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{it.item_name}{it.variant_name ? ` (${it.variant_name})` : ''}</span>
                       <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                        {formatCurrency(perUnit(it))} each · {rem} of {it.quantity} refundable
+                        {t('refund.lineDetail', { price: formatCurrency(perUnit(it)), remaining: rem, quantity: it.quantity })}
                       </span>
                       {askStock && (
-                        <span role="radiogroup" aria-label={`What happens to the returned ${it.item_name}`} style={{ display: 'flex', gap: 'var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text)' }}>
+                        <span role="radiogroup" aria-label={t('refund.returnedLabel', { name: it.item_name })} style={{ display: 'flex', gap: 'var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text)' }}>
                           <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                             <input type="radio" name={`stock-${it.id}`} checked={!writeOff[it.id]} onChange={() => setWriteOff((p) => ({ ...p, [it.id]: false }))} />
-                            Back into stock
+                            {t('refund.backIntoStock')}
                           </label>
                           <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                             <input type="radio" name={`stock-${it.id}`} checked={!!writeOff[it.id]} onChange={() => setWriteOff((p) => ({ ...p, [it.id]: true }))} />
-                            Write off (cannot be sold)
+                            {t('refund.writeOff')}
                           </label>
                         </span>
                       )}
@@ -132,7 +133,7 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
                       value={qty[it.id] || 0}
                       onChange={(e) => setLineQty(it.id, parseInt(e.target.value, 10) || 0, rem)}
                       style={{ width: '64px', padding: '8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
-                      aria-label={`Quantity to refund for ${it.item_name}`}
+                      aria-label={t('refund.quantityLabel', { name: it.item_name })}
                     />
                   </div>
                 );
@@ -141,33 +142,33 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
                 // The tip is its own line: refunding items never refunds it (spec 51, gap 14).
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>Tip</span>
+                    <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{t('tip.title')}</span>
                     <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                      {formatCurrency(tipLeft)} refundable · taken off what the staff are owed
+                      {t('refund.tipRefundable', { amount: formatCurrency(tipLeft) })}
                     </span>
                   </div>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
                     <CurrencyInput value={tipRefund} onChange={(v) => setTipRefund(Math.max(0, Math.min(v, tipLeft)))} style={{ width: '90px' }} />
                     <button type="button" onClick={() => setTipRefund(tipLeft)}
-                      style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 'var(--font-size-xs)', padding: 0, fontFamily: 'var(--font-family)' }}>All</button>
+                      style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 'var(--font-size-xs)', padding: 0, fontFamily: 'var(--font-family)' }}>{t('refund.all')}</button>
                   </span>
                 </div>
               )}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Reason <span style={{ color: 'var(--color-error)' }}>*</span></label>
+              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{t('refund.reason')} <span style={{ color: 'var(--color-error)' }}>*</span></label>
               <input
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g. customer returned product"
+                placeholder={t('refund.reasonPlaceholder')}
                 style={{ padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
               />
             </div>
 
             {anySelected && (
               <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
-                Estimated refund: <strong>{formatCurrency(estTotal)}</strong> (final amount uses each line's recorded price &amp; tax).
+                <Trans t={t} i18nKey="refund.estimated" values={{ amount: formatCurrency(estTotal) }} components={[<strong key="s" />]} />
               </p>
             )}
             {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error}</p>}

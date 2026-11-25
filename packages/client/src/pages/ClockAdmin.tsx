@@ -1,4 +1,7 @@
+import { askConfirm } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatDay, formatDateTime } from '../utils/format';
 import { Button } from '../design-system/components/actions/Button';
 import { getStaffList } from '../api/staff';
 import { useContextManager } from '../context/ContextManager';
@@ -15,12 +18,7 @@ import type { ClockEvent, ClockEventType, DayHours } from '../api/clock';
  * can be deleted but not altered in place.
  */
 
-const EVENT_LABEL: Record<ClockEventType, string> = {
-  clock_in: 'Clock In',
-  break_start: 'Start Break',
-  break_end: 'End Break',
-  clock_out: 'Clock Out',
-};
+const EVENT_TYPES: ClockEventType[] = ['clock_in', 'break_start', 'break_end', 'clock_out'];
 
 interface StaffRow {
   id: string;              // stf_profiles.id
@@ -36,13 +34,10 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 function isoToday(): string { return new Date().toISOString().slice(0, 10); }
-function fmtMinutes(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = Math.round(mins % 60);
-  return `${h}h ${m}m`;
-}
 
 export function ClockAdmin() {
+  const { t } = useTranslation('staff');
+  const fmtMinutes = (mins: number): string => t('hours.hm', { h: Math.floor(mins / 60), m: Math.round(mins % 60) });
   // Use the active context, not localStorage: the stored business_id can be
   // empty or stale and point at a different business than the one on screen.
   const businessId = useContextManager().activeContext.businessId || '';
@@ -91,7 +86,7 @@ export function ClockAdmin() {
       setEvents(ev);
       setHours(hr);
     } catch {
-      setErrorMsg('Failed to load clock records.');
+      setErrorMsg(t('hours.errLoad'));
       setEvents([]); setHours([]);
     } finally { setLoading(false); }
   }, [businessId, selectedStaff, start, end]);
@@ -113,25 +108,25 @@ export function ClockAdmin() {
       });
       setNewAt(''); setNewNote('');
       await load();
-    } catch { setErrorMsg('Failed to add entry.'); }
+    } catch { setErrorMsg(t('clockAdmin.errAdd')); }
     finally { setSaving(false); }
   }
 
   async function handleDelete(ev: ClockEvent) {
-    if (!confirm(`Delete this ${EVENT_LABEL[ev.event_type]} entry?`)) return;
+    if (!(await askConfirm({ message: t('clockAdmin.confirmDelete', { event: t(`clock.event.${ev.event_type}`) }), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     try { await clockApi.deleteClockEvent(ev.id, businessId); await load(); }
-    catch { setErrorMsg('Failed to delete entry.'); }
+    catch { setErrorMsg(t('clockAdmin.errDelete')); }
   }
 
   async function handleSetPin() {
     if (!selectedStaff) return;
-    if (!/^\d{4}$/.test(pinValue)) { setPinMsg('PIN must be exactly 4 digits.'); return; }
+    if (!/^\d{4}$/.test(pinValue)) { setPinMsg(t('clockAdmin.pinInvalid')); return; }
     setPinMsg(null);
     try {
       await clockApi.setClockPin(selectedStaff.id, businessId, pinValue);
       setPinValue('');
-      setPinMsg('PIN updated.');
-    } catch { setPinMsg('Failed to set PIN.'); }
+      setPinMsg(t('clockAdmin.pinUpdated'));
+    } catch { setPinMsg(t('clockAdmin.pinFailed')); }
   }
 
   const totalWorked = hours.reduce((s, d) => s + d.worked_minutes, 0);
@@ -139,7 +134,7 @@ export function ClockAdmin() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Time Clock — Records & Corrections</h1>
+        <h1 style={styles.title}>{t('clockAdmin.title')}</h1>
       </div>
 
       <div style={styles.toolbar}>
@@ -148,7 +143,7 @@ export function ClockAdmin() {
           value={selectedStaff?.id || ''}
           onChange={(e) => setSelectedStaff(staff.find((s) => s.id === e.target.value) || null)}
         >
-          {staff.length === 0 && <option value="">No staff with accounts</option>}
+          {staff.length === 0 && <option value="">{t('clockAdmin.noStaff')}</option>}
           {staff.map((s) => (
             <option key={s.id} value={s.id}>{s.first_name} {s.last_name} ({s.staff_ref})</option>
           ))}
@@ -162,34 +157,34 @@ export function ClockAdmin() {
       {/* PIN management */}
       {selectedStaff && (
         <div style={styles.pinRow}>
-          <span style={styles.pinLabel}>Set clock PIN for {selectedStaff.first_name}:</span>
+          <span style={styles.pinLabel}>{t('clockAdmin.setPinFor', { name: selectedStaff.first_name })}</span>
           <input
             style={{ ...styles.select, width: '120px' }}
             value={pinValue}
             onChange={(e) => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 4))}
             inputMode="numeric"
             type="password"
-            placeholder="4 digits"
+            placeholder={t('clock.pinPlaceholder')}
           />
-          <Button size="sm" variant="outline" onClick={handleSetPin} disabled={pinValue.length !== 4}>Set PIN</Button>
+          <Button size="sm" variant="outline" onClick={handleSetPin} disabled={pinValue.length !== 4}>{t('clockAdmin.setPin')}</Button>
           {pinMsg && <span style={styles.pinMsg}>{pinMsg}</span>}
         </div>
       )}
 
       {/* Daily hours summary */}
       <div style={styles.card}>
-        <div style={styles.cardHeader}>Daily Hours {hours.length > 0 && <span style={styles.muted}>· total {fmtMinutes(totalWorked)}</span>}</div>
-        {loading ? <p style={styles.muted}>Loading…</p> : hours.length === 0 ? (
-          <p style={styles.muted}>No clocked hours in this range.</p>
+        <div style={styles.cardHeader}>{t('hours.daily')} {hours.length > 0 && <span style={styles.muted}>{t('hours.total', { time: fmtMinutes(totalWorked) })}</span>}</div>
+        {loading ? <p style={styles.muted}>{t('hours.loading')}</p> : hours.length === 0 ? (
+          <p style={styles.muted}>{t('hours.noHours')}</p>
         ) : (
           <Table
             rowId={(d: DayHours) => d.date}
             data={hours}
             clientSort
             columns={[
-              { key: 'date', header: 'Date', sortable: true, filter: 'date' as const },
-              { key: 'worked_minutes', header: 'Worked', sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
-              { key: 'break_minutes', header: 'Break', sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
+              { key: 'date', header: t('hours.date'), sortable: true, filter: 'date' as const, render: (v: string) => formatDay(v) },
+              { key: 'worked_minutes', header: t('hours.worked'), sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
+              { key: 'break_minutes', header: t('hours.break'), sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
             ]}
           />
         )}
@@ -197,20 +192,20 @@ export function ClockAdmin() {
 
       {/* Events + corrections */}
       <div style={styles.card}>
-        <div style={styles.cardHeader}>Punches</div>
+        <div style={styles.cardHeader}>{t('hours.punches')}</div>
         {events.length === 0 ? (
-          <p style={styles.muted}>No punches in this range.</p>
+          <p style={styles.muted}>{t('hours.noPunches')}</p>
         ) : (
           <Table
             rowId={(ev: ClockEvent) => ev.id}
             data={events}
             clientSort
             columns={[
-              { key: 'event_at', header: 'When', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) },
-              { key: 'event_type', header: 'Event', sortable: true, filterLabel: (v: string) => EVENT_LABEL[v as ClockEventType] || v, render: (v: ClockEventType) => EVENT_LABEL[v] },
-              { key: 'source', header: 'Source', sortable: true, filterLabel: (v: string) => (v === 'manual' ? 'Manual' : 'Clock'), render: (v: string) => (v === 'manual' ? 'Manual' : 'Clock') },
-              { key: 'note', header: 'Note', sortable: true, render: (v: string) => v || '—' },
-              { key: 'actions', header: '', filter: false as const, render: (_: any, ev: ClockEvent) => <button style={styles.linkBtn} onClick={() => handleDelete(ev)}>Delete</button> },
+              { key: 'event_at', header: t('hours.when'), sortable: true, filter: 'date' as const, render: (v: string) => formatDateTime(v, undefined, { dateStyle: 'short', timeStyle: 'short' }) },
+              { key: 'event_type', header: t('hours.event'), sortable: true, filterLabel: (v: string) => t(`clock.event.${v}`, { defaultValue: v }), render: (v: ClockEventType) => t(`clock.event.${v}`) },
+              { key: 'source', header: t('hours.source'), sortable: true, filterLabel: (v: string) => (v === 'manual' ? t('hours.sourceManual') : t('hours.sourceClock')), render: (v: string) => (v === 'manual' ? t('hours.sourceManual') : t('hours.sourceClock')) },
+              { key: 'note', header: t('hours.note'), sortable: true, render: (v: string) => v || '—' },
+              { key: 'actions', header: '', filter: false as const, render: (_: any, ev: ClockEvent) => <button style={styles.linkBtn} onClick={() => handleDelete(ev)}>{t('common:delete')}</button> },
             ]}
           />
         )}
@@ -218,15 +213,15 @@ export function ClockAdmin() {
         {/* Add a missed punch */}
         {selectedStaff && (
           <form onSubmit={handleAdd} style={styles.addForm}>
-            <span style={styles.addLabel}>Add entry:</span>
+            <span style={styles.addLabel}>{t('clockAdmin.addEntry')}</span>
             <select style={styles.select} value={newType} onChange={(e) => setNewType(e.target.value as ClockEventType)}>
-              {(Object.keys(EVENT_LABEL) as ClockEventType[]).map((t) => (
-                <option key={t} value={t}>{EVENT_LABEL[t]}</option>
+              {EVENT_TYPES.map((type) => (
+                <option key={type} value={type}>{t(`clock.event.${type}`)}</option>
               ))}
             </select>
             <input type="datetime-local" style={styles.select} value={newAt} onChange={(e) => setNewAt(e.target.value)} required />
-            <input type="text" style={{ ...styles.select, flex: 1 }} value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Note (optional)" />
-            <Button type="submit" size="sm" loading={saving} disabled={!newAt}>Add</Button>
+            <input type="text" style={{ ...styles.select, flex: 1 }} value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder={t('clockAdmin.notePlaceholder')} />
+            <Button type="submit" size="sm" loading={saving} disabled={!newAt}>{t('locationDetail.add', { ns: 'setup' })}</Button>
           </form>
         )}
       </div>

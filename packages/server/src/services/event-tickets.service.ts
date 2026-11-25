@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 interface CreateTierInput {
   name: string;
@@ -99,7 +100,7 @@ export async function deleteTier(id: string, eventId: string) {
     `SELECT id FROM evt_registrations WHERE ticket_tier_id = $1 LIMIT 1`,
     [id],
   );
-  if (used.length > 0) throw new Error('Cannot delete tier with existing registrations');
+  if (used.length > 0) throw new Error(msg('errors:eventTickets.cannotDeleteTierWithExistingRegistrations'));
 
   const { rowCount } = await adminPool.query(
     `DELETE FROM evt_ticket_tiers WHERE id = $1 AND event_id = $2`,
@@ -121,7 +122,7 @@ export async function checkTierAvailability(tierId: string) {
     [tierId],
   );
 
-  if (rows.length === 0) throw new Error('Ticket tier not found');
+  if (rows.length === 0) throw new Error(msg('errors:eventTickets.ticketTierNotFound'));
 
   const tier = rows[0];
   const now = new Date();

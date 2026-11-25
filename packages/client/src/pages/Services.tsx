@@ -8,7 +8,9 @@ import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 import type { Service, ServiceCategory } from '../api/services';
 import { formatCurrency } from '../utils/currency';
+import { formatPercent } from '../utils/format';
 import { formatDateOnly } from '../utils/date';
+import { useTranslation } from 'react-i18next';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error', inactive: 'neutral',
@@ -18,6 +20,7 @@ const VALID_TABS = ['services', 'products', 'memberships', 'packages', 'promotio
 type Tab = typeof VALID_TABS[number];
 
 export function Services() {
+  const { t } = useTranslation('offerings');
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'services');
@@ -25,12 +28,12 @@ export function Services() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Offerings</h1>
+        <h1 style={styles.title}>{t('offerings.title')}</h1>
       </div>
       <div style={styles.tabBar}>
         {(['services', 'products', 'memberships', 'packages', 'promotions'] as const).map((tab) => {
           const isActive = activeTab === tab;
-          const labels: Record<string, string> = { services: 'Services', products: 'Products', memberships: 'Memberships', packages: 'Packages', promotions: 'Promotions' };
+          const labels: Record<string, string> = { services: t('offerings.tab.services'), products: t('offerings.tab.products'), memberships: t('offerings.tab.memberships'), packages: t('offerings.tab.packages'), promotions: t('offerings.tab.promotions') };
           return (
             <button key={tab} onClick={() => setActiveTab(tab)}
               style={{
@@ -58,6 +61,7 @@ export function Services() {
 // --- Services Tab ---
 
 function ServicesTab() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const [services, setServices] = useState<any[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
@@ -100,19 +104,19 @@ function ServicesTab() {
   };
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
-    { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
-    { key: 'default_duration', header: 'Duration', sortable: true, filter: 'number' as const, filterUnit: 'min', filterLabel: (v: any) => (v ? `${v} min` : '—'), render: (val: number) => val ? `${val} min` : '—' },
-    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'name', header: t('shared.name'), sortable: true },
+    { key: 'category_name', header: t('shared.category'), sortable: true, render: (val: string) => val || '—' },
+    { key: 'default_duration', header: t('shared.duration'), sortable: true, filter: 'number' as const, filterUnit: t('services.unitMin'), filterLabel: (v: any) => (v ? t('services.minutes', { value: v }) : '—'), render: (val: number) => val ? t('services.minutes', { value: val }) : '—' },
+    { key: 'status', header: t('shared.status'), sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`shared.status.${val}`, { defaultValue: val })}</Badge> },
     {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
-          {row.status === 'draft' && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
-          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
-          {row.status === 'paused' && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
-          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
-          {row.status === 'archived' && <ActionBtn label="Restore" onClick={() => handleQuickAction('restore', row)} />}
+          {row.status === 'draft' && <ActionBtn label={t('shared.activate')} onClick={() => handleQuickAction('activate', row)} />}
+          {row.status === 'active' && <ActionBtn label={t('shared.pause')} onClick={() => handleQuickAction('pause', row)} />}
+          {row.status === 'paused' && <ActionBtn label={t('shared.activate')} onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label={t('shared.archive')} onClick={() => handleQuickAction('archive', row)} />}
+          {row.status === 'archived' && <ActionBtn label={t('shared.restore')} onClick={() => handleQuickAction('restore', row)} />}
         </div>
       ),
     },
@@ -121,11 +125,11 @@ function ServicesTab() {
   return (
     <>
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search services..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('services.search')} />
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Service</Button>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>{t('services.add')}</Button>
       </div>
-      <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} emptyMessage="No services found" mobileCardMode clientSort />
+      <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} emptyMessage={t('services.empty')} mobileCardMode clientSort />
       {showCreate && <CreateServiceModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={(svc) => { setShowCreate(false); navigate(`/offers/services/${svc.id}`); }} />}
     </>
   );
@@ -134,6 +138,7 @@ function ServicesTab() {
 // --- Products Tab ---
 
 function ProductsTab() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
@@ -179,19 +184,19 @@ function ProductsTab() {
   };
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
-    { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
-    { key: 'price', header: 'Price', sortable: true, filter: 'amount' as const, filterLabel: (v: any) => (v != null ? formatCurrency(v) : '—'), render: (val: number) => val != null ? formatCurrency(val) : '—' },
-    { key: 'sku', header: 'SKU', sortable: true, render: (val: string) => val || '—' },
-    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'name', header: t('shared.name'), sortable: true },
+    { key: 'category_name', header: t('shared.category'), sortable: true, render: (val: string) => val || '—' },
+    { key: 'price', header: t('shared.price'), sortable: true, filter: 'amount' as const, filterLabel: (v: any) => (v != null ? formatCurrency(v) : '—'), render: (val: number) => val != null ? formatCurrency(val) : '—' },
+    { key: 'sku', header: t('shared.sku'), sortable: true, render: (val: string) => val || '—' },
+    { key: 'status', header: t('shared.status'), sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`shared.status.${val}`, { defaultValue: val })}</Badge> },
     {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
-          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
-          {row.status === 'paused' && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
-          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
-          {row.status === 'archived' && <ActionBtn label="Restore" onClick={() => handleQuickAction('restore', row)} />}
+          {row.status === 'active' && <ActionBtn label={t('shared.pause')} onClick={() => handleQuickAction('pause', row)} />}
+          {row.status === 'paused' && <ActionBtn label={t('shared.activate')} onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label={t('shared.archive')} onClick={() => handleQuickAction('archive', row)} />}
+          {row.status === 'archived' && <ActionBtn label={t('shared.restore')} onClick={() => handleQuickAction('restore', row)} />}
         </div>
       ),
     },
@@ -200,11 +205,11 @@ function ProductsTab() {
   return (
     <>
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search products..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('products.search')} />
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Product</Button>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>{t('products.add')}</Button>
       </div>
-      <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} emptyMessage="No products found" mobileCardMode clientSort />
+      <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} emptyMessage={t('products.empty')} mobileCardMode clientSort />
       {showCreate && <CreateProductModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchProducts(); }} />}
     </>
   );
@@ -215,6 +220,7 @@ function ProductsTab() {
 // --- Create Service Modal ---
 
 function CreateServiceModal({ businessId, categories, onClose, onCreated }: { businessId: string; categories: ServiceCategory[]; onClose: () => void; onCreated: (s: Service) => void }) {
+  const { t } = useTranslation('offerings');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
@@ -232,13 +238,13 @@ function CreateServiceModal({ businessId, categories, onClose, onCreated }: { bu
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.category_id) { setError('Name and category are required'); return; }
+    if (!form.name || !form.category_id) { setError(t('services.nameCategoryRequired')); return; }
     setLoading(true);
     setError('');
     try {
       const service = await servicesApi.createService({ ...form, business_id: businessId });
       onCreated(service);
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create service'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('services.createFailed')); }
     finally { setLoading(false); }
   };
 
@@ -246,22 +252,22 @@ function CreateServiceModal({ businessId, categories, onClose, onCreated }: { bu
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>Add Service</h3>
+          <h3 style={styles.modalTitle}>{t('services.add')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} style={styles.formGrid}>
-          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Category *</label><select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} required><option value="">Select...</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-          <div style={styles.formGroup}><label style={styles.label}>Booking Type</label><select style={styles.input} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}><option value="individual">Individual</option><option value="shared">Shared</option><option value="group">Group</option><option value="resource">Resource</option></select></div>
-          <div style={styles.formGroup}><label style={styles.label}>Duration (min)</label><input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Buffer Before (min)</label><input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Buffer After (min)</label><input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Max Capacity</label><input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} /></div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Short Description</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', gridColumn: '1 / -1' }}><input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />Enable online booking</label>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Service</Button></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.nameRequired')}</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.categoryRequired')}</label><select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} required><option value="">{t('shared.select')}</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.bookingType')}</label><select style={styles.input} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}><option value="individual">{t('shared.bookingType.individual')}</option><option value="shared">{t('shared.bookingType.shared')}</option><option value="group">{t('shared.bookingType.group')}</option><option value="resource">{t('shared.bookingType.resource')}</option></select></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('services.durationMin')}</label><input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('services.bufferBefore')}</label><input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('services.durationBuffer.after')}</label><input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('services.maxCapacity')}</label><input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>{t('shared.shortDescription')}</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>{t('shared.description')}</label><textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', gridColumn: '1 / -1' }}><input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />{t('shared.onlineBooking')}</label>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button><Button type="submit" loading={loading}>{t('services.create')}</Button></div>
         </form>
       </div>
     </div>
@@ -271,6 +277,7 @@ function CreateServiceModal({ businessId, categories, onClose, onCreated }: { bu
 // --- Create Product Modal ---
 
 function CreateProductModal({ businessId, categories, onClose, onCreated }: { businessId: string; categories: ServiceCategory[]; onClose: () => void; onCreated: () => void }) {
+  const { t } = useTranslation('offerings');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [priceDisplay, setPriceDisplay] = useState('0.00');
@@ -278,13 +285,13 @@ function CreateProductModal({ businessId, categories, onClose, onCreated }: { bu
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) { setError('Name is required'); return; }
+    if (!form.name) { setError(t('products.nameRequiredMsg')); return; }
     setLoading(true);
     setError('');
     try {
       await apiClient.post('/v1/merchandise', { business_id: businessId, name: form.name, description: form.description || undefined, short_description: form.short_description || undefined, category_id: form.category_id || undefined, sku: form.sku || undefined, price: form.price });
       onCreated();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create product'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('products.createFailed')); }
     finally { setLoading(false); }
   };
 
@@ -292,18 +299,18 @@ function CreateProductModal({ businessId, categories, onClose, onCreated }: { bu
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>Add Product</h3>
+          <h3 style={styles.modalTitle}>{t('products.add')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} style={styles.formGrid}>
-          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Category</label><select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}><option value="">None</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-          <div style={styles.formGroup}><label style={styles.label}>Price *</label><input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay} onChange={(e) => setPriceDisplay(e.target.value)} onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>SKU</label><input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Optional" /></div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Short Description</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Product</Button></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.nameRequired')}</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.category')}</label><select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}><option value="">{t('shared.none')}</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.priceRequired')}</label><input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay} onChange={(e) => setPriceDisplay(e.target.value)} onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.sku')}</label><input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder={t('products.optional')} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>{t('shared.shortDescription')}</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>{t('shared.description')}</label><textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button><Button type="submit" loading={loading}>{t('products.create')}</Button></div>
         </form>
       </div>
     </div>
@@ -313,6 +320,7 @@ function CreateProductModal({ businessId, categories, onClose, onCreated }: { bu
 // --- Memberships Tab ---
 
 function MembershipsTab() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
   const [plans, setPlans] = useState<any[]>([]);
@@ -348,30 +356,30 @@ function MembershipsTab() {
   };
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
+    { key: 'name', header: t('shared.name'), sortable: true },
     {
-      key: 'billing_frequency', header: 'Billing', sortable: true,
-      render: (val: string) => val ? val.charAt(0).toUpperCase() + val.slice(1) : '—',
+      key: 'billing_frequency', header: t('memberships.billing'), sortable: true,
+      render: (val: string) => val ? t(`shared.billing.${val}`, { defaultValue: val.charAt(0).toUpperCase() + val.slice(1) }) : '—',
     },
     {
-      key: 'price', header: 'Price', sortable: true, filter: 'amount' as const,
+      key: 'price', header: t('shared.price'), sortable: true, filter: 'amount' as const,
       render: (val: number) => formatCurrency(val),
     },
     {
-      key: 'active_enrollments', header: 'Enrolled', sortable: true,
+      key: 'active_enrollments', header: t('memberships.enrolled'), sortable: true,
       render: (val: number) => val || 0,
     },
     {
-      key: 'status', header: 'Status', sortable: true,
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
+      key: 'status', header: t('shared.status'), sortable: true,
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`shared.status.${val}`, { defaultValue: val })}</Badge>,
     },
     {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
-          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
-          {(row.status === 'paused' || row.status === 'draft') && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
-          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
+          {row.status === 'active' && <ActionBtn label={t('shared.pause')} onClick={() => handleQuickAction('pause', row)} />}
+          {(row.status === 'paused' || row.status === 'draft') && <ActionBtn label={t('shared.activate')} onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label={t('shared.archive')} onClick={() => handleQuickAction('archive', row)} />}
         </div>
       ),
     },
@@ -380,16 +388,16 @@ function MembershipsTab() {
   return (
     <>
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search memberships..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('memberships.search')} />
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="draft">Draft</option>
-          <option value="archived">Archived</option>
+          <option value="">{t('shared.allStatuses')}</option>
+          <option value="active">{t('shared.option.active')}</option>
+          <option value="paused">{t('shared.option.paused')}</option>
+          <option value="draft">{t('shared.option.draft')}</option>
+          <option value="archived">{t('shared.option.archived')}</option>
         </select>
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Membership</Button>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>{t('memberships.add')}</Button>
       </div>
 
       <Table
@@ -400,7 +408,7 @@ function MembershipsTab() {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
-        emptyMessage="No membership plans defined"
+        emptyMessage={t('memberships.empty')}
         mobileCardMode
         clientSort
       />
@@ -417,6 +425,7 @@ function MembershipsTab() {
 }
 
 function CreateMembershipModal({ businessId, onClose, onCreated }: { businessId: string; onClose: () => void; onCreated: (plan: any) => void }) {
+  const { t } = useTranslation('offerings');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [priceDisplay, setPriceDisplay] = useState('0.00');
@@ -432,14 +441,14 @@ function CreateMembershipModal({ businessId, onClose, onCreated }: { businessId:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) { setError('Name is required'); return; }
+    if (!form.name) { setError(t('products.nameRequiredMsg')); return; }
     setLoading(true);
     setError('');
     try {
       const res = await apiClient.post('/v1/memberships/plans', { ...form, business_id: businessId });
       onCreated(res.data.data);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create membership plan');
+      setError(err.response?.data?.error || t('memberships.createFailed'));
     } finally { setLoading(false); }
   };
 
@@ -447,51 +456,51 @@ function CreateMembershipModal({ businessId, onClose, onCreated }: { businessId:
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>Add Membership Plan</h3>
+          <h3 style={styles.modalTitle}>{t('memberships.addPlan')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} style={styles.formGrid}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
+            <label style={styles.label}>{t('shared.nameRequired')}</label>
             <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Billing Frequency *</label>
+            <label style={styles.label}>{t('memberships.billingFrequency')}</label>
             <select style={styles.input} value={form.billing_frequency} onChange={(e) => setForm({ ...form, billing_frequency: e.target.value })}>
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Biweekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="annually">Annually</option>
+              <option value="weekly">{t('shared.billing.weekly')}</option>
+              <option value="biweekly">{t('shared.billing.biweekly')}</option>
+              <option value="monthly">{t('shared.billing.monthly')}</option>
+              <option value="quarterly">{t('shared.billing.quarterly')}</option>
+              <option value="annually">{t('shared.billing.annually')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Price per Period *</label>
+            <label style={styles.label}>{t('memberships.pricePerPeriod')}</label>
             <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => setPriceDisplay(e.target.value)}
               onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Trial Days</label>
+            <label style={styles.label}>{t('memberships.trialDays')}</label>
             <input style={styles.input} type="number" min={0} value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Discount on Services (%)</label>
+            <label style={styles.label}>{t('memberships.discountServices')}</label>
             <input style={styles.input} type="number" min={0} max={100} value={form.discount_services_pct} onChange={(e) => setForm({ ...form, discount_services_pct: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Discount on Products (%)</label>
+            <label style={styles.label}>{t('memberships.discountProducts')}</label>
             <input style={styles.input} type="number" min={0} max={100} value={form.discount_merchandise_pct} onChange={(e) => setForm({ ...form, discount_merchandise_pct: Number(e.target.value) })} />
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Description</label>
+            <label style={styles.label}>{t('shared.description')}</label>
             <textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
-            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={loading}>Create Plan</Button>
+            <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+            <Button type="submit" loading={loading}>{t('memberships.createPlan')}</Button>
           </div>
         </form>
       </div>
@@ -502,6 +511,7 @@ function CreateMembershipModal({ businessId, onClose, onCreated }: { businessId:
 // --- Packages Tab ---
 
 function PackagesTab() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
   const [packages, setPackages] = useState<any[]>([]);
@@ -537,21 +547,21 @@ function PackagesTab() {
   };
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
-    { key: 'price', header: 'Price', sortable: true, filter: 'amount' as const, render: (val: number) => formatCurrency(val) },
+    { key: 'name', header: t('shared.name'), sortable: true },
+    { key: 'price', header: t('shared.price'), sortable: true, filter: 'amount' as const, render: (val: number) => formatCurrency(val) },
     {
-      key: 'expiration_type', header: 'Expiration', sortable: true,
-      render: (val: string, row: any) => val === 'none' ? 'Never' : `${row.expiration_days} ${row.expiration_unit || 'days'}`,
+      key: 'expiration_type', header: t('packages.expiration'), sortable: true,
+      render: (val: string, row: any) => val === 'none' ? t('packages.never') : t(`packages.expiry.${row.expiration_unit || 'days'}`, { count: Number(row.expiration_days) }),
     },
-    { key: 'active_purchases', header: 'Sold', sortable: true, render: (val: number) => val || 0 },
-    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'active_purchases', header: t('packages.sold'), sortable: true, render: (val: number) => val || 0 },
+    { key: 'status', header: t('shared.status'), sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`shared.status.${val}`, { defaultValue: val })}</Badge> },
     {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
-          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
-          {(row.status === 'paused' || row.status === 'archived') && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
-          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
+          {row.status === 'active' && <ActionBtn label={t('shared.pause')} onClick={() => handleQuickAction('pause', row)} />}
+          {(row.status === 'paused' || row.status === 'archived') && <ActionBtn label={t('shared.activate')} onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label={t('shared.archive')} onClick={() => handleQuickAction('archive', row)} />}
         </div>
       ),
     },
@@ -560,15 +570,15 @@ function PackagesTab() {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search packages..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('packages.search')} />
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="archived">Archived</option>
+          <option value="">{t('shared.allStatuses')}</option>
+          <option value="active">{t('shared.option.active')}</option>
+          <option value="paused">{t('shared.option.paused')}</option>
+          <option value="archived">{t('shared.option.archived')}</option>
         </select>
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Package</Button>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>{t('packages.add')}</Button>
       </div>
 
       <Table
@@ -579,7 +589,7 @@ function PackagesTab() {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
-        emptyMessage="No packages defined"
+        emptyMessage={t('packages.empty')}
         mobileCardMode
         clientSort
       />
@@ -596,6 +606,7 @@ function PackagesTab() {
 }
 
 function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: string; onClose: () => void; onCreated: (pkg: any) => void }) {
+  const { t } = useTranslation('offerings');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [priceDisplay, setPriceDisplay] = useState('0.00');
@@ -611,7 +622,7 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) { setError('Name is required'); return; }
+    if (!form.name) { setError(t('products.nameRequiredMsg')); return; }
     setLoading(true);
     setError('');
     try {
@@ -626,7 +637,7 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
         new_customers_only: form.new_customers_only,
       });
       onCreated(res.data.data);
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create package'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('packages.createFailed')); }
     finally { setLoading(false); }
   };
 
@@ -634,46 +645,46 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>Add Package</h3>
+          <h3 style={styles.modalTitle}>{t('packages.add')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} style={styles.formGrid}>
-          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.nameRequired')}</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Price *</label>
+            <label style={styles.label}>{t('shared.priceRequired')}</label>
             <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => setPriceDisplay(e.target.value)}
               onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Expiration</label>
+            <label style={styles.label}>{t('packages.expiration')}</label>
             <select style={styles.input} value={form.expiration_type} onChange={(e) => setForm({ ...form, expiration_type: e.target.value })}>
-              <option value="none">Never expires</option>
-              <option value="days_from_purchase">Days from purchase</option>
+              <option value="none">{t('packages.neverExpires')}</option>
+              <option value="days_from_purchase">{t('packages.daysFromPurchase')}</option>
             </select>
           </div>
           {form.expiration_type === 'days_from_purchase' && (
             <div style={styles.formGroup}>
-              <label style={styles.label}>Expires after</label>
+              <label style={styles.label}>{t('packages.expiresAfter')}</label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input style={{ ...styles.input, flex: 1 }} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} />
                 <select style={{ ...styles.input, width: '120px' }} value={form.expiration_unit} onChange={(e) => setForm({ ...form, expiration_unit: e.target.value })}>
-                  <option value="days">Days</option>
-                  <option value="weeks">Weeks</option>
-                  <option value="months">Months</option>
+                  <option value="days">{t('packages.days')}</option>
+                  <option value="weeks">{t('packages.weeks')}</option>
+                  <option value="months">{t('packages.months')}</option>
                 </select>
               </div>
             </div>
           )}
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px' }} /> New customers only (intro offer)
+              <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px' }} /> {t('packages.newCustomersOnly')}
             </label>
           </div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Package</Button></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>{t('shared.description')}</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button><Button type="submit" loading={loading}>{t('packages.create')}</Button></div>
         </form>
       </div>
     </div>
@@ -682,15 +693,8 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
 
 // --- Promotions Tab ---
 
-const PROMO_TYPE_LABELS: Record<string, string> = {
-  discount_percentage: '% Off',
-  discount_fixed: '$ Off',
-  price_override: 'Fixed Price',
-  premium_percentage: '% Premium',
-  premium_fixed: '$ Premium',
-};
-
 function PromotionsTab() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
   const [promotions, setPromotions] = useState<any[]>([]);
@@ -726,33 +730,33 @@ function PromotionsTab() {
   };
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
-    { key: 'type', header: 'Type', sortable: true, render: (val: string) => PROMO_TYPE_LABELS[val] || val },
+    { key: 'name', header: t('shared.name'), sortable: true },
+    { key: 'type', header: t('shared.type'), sortable: true, render: (val: string) => t(`shared.promoType.${val}`, { defaultValue: val }) },
     {
-      key: 'value', header: 'Value', sortable: true, filter: 'values' as const,
+      key: 'value', header: t('shared.value'), sortable: true, filter: 'values' as const,
       render: (_: any, row: any) => {
-        if (row.type.includes('percentage')) return `${row.value}%`;
+        if (row.type.includes('percentage')) return formatPercent(row.value);
         return formatCurrency(row.value);
       },
     },
-    { key: 'promo_code', header: 'Code', sortable: true, render: (val: string) => val || '—' },
+    { key: 'promo_code', header: t('shared.code'), sortable: true, render: (val: string) => val || '—' },
     {
-      key: 'date_range', header: 'Active Period', sortable: true,
+      key: 'date_range', header: t('promotions.activePeriod'), sortable: true,
       render: (_: any, row: any) => {
-        if (!row.date_from && !row.date_to) return 'Always';
+        if (!row.date_from && !row.date_to) return t('promotions.always');
         const from = row.date_from ? formatDateOnly(row.date_from) : '';
         const to = row.date_to ? formatDateOnly(row.date_to) : '';
-        return `${from} – ${to}`;
+        return t('promotions.range', { from, to });
       },
     },
-    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'status', header: t('shared.status'), sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`shared.status.${val}`, { defaultValue: val })}</Badge> },
     {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
-          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
-          {(row.status === 'paused' || row.status === 'expired') && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
-          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
+          {row.status === 'active' && <ActionBtn label={t('shared.pause')} onClick={() => handleQuickAction('pause', row)} />}
+          {(row.status === 'paused' || row.status === 'expired') && <ActionBtn label={t('shared.activate')} onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label={t('shared.archive')} onClick={() => handleQuickAction('archive', row)} />}
         </div>
       ),
     },
@@ -761,16 +765,16 @@ function PromotionsTab() {
   return (
     <>
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search promotions..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('promotions.search')} />
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="expired">Expired</option>
-          <option value="archived">Archived</option>
+          <option value="">{t('shared.allStatuses')}</option>
+          <option value="active">{t('shared.option.active')}</option>
+          <option value="paused">{t('shared.option.paused')}</option>
+          <option value="expired">{t('shared.option.expired')}</option>
+          <option value="archived">{t('shared.option.archived')}</option>
         </select>
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Promotion</Button>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>{t('promotions.add')}</Button>
       </div>
 
       <Table
@@ -781,7 +785,7 @@ function PromotionsTab() {
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
-        emptyMessage="No promotions defined"
+        emptyMessage={t('promotions.empty')}
         mobileCardMode
         clientSort
       />
@@ -798,6 +802,7 @@ function PromotionsTab() {
 }
 
 function CreatePromotionModal({ businessId, onClose, onCreated }: { businessId: string; onClose: () => void; onCreated: (promo: any) => void }) {
+  const { t } = useTranslation('offerings');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
@@ -815,8 +820,8 @@ function CreatePromotionModal({ businessId, onClose, onCreated }: { businessId: 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) { setError('Name is required'); return; }
-    if (!form.value) { setError('Value is required'); return; }
+    if (!form.name) { setError(t('products.nameRequiredMsg')); return; }
+    if (!form.value) { setError(t('promotions.valueRequiredMsg')); return; }
     setLoading(true);
     setError('');
     try {
@@ -835,7 +840,7 @@ function CreatePromotionModal({ businessId, onClose, onCreated }: { businessId: 
       };
       const res = await apiClient.post('/v1/promotions', data);
       onCreated(res.data.data);
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create promotion'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('promotions.createFailed')); }
     finally { setLoading(false); }
   };
 
@@ -843,37 +848,37 @@ function CreatePromotionModal({ businessId, onClose, onCreated }: { businessId: 
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>Add Promotion</h3>
+          <h3 style={styles.modalTitle}>{t('promotions.add')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} style={styles.formGrid}>
-          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.nameRequired')}</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Type *</label>
+            <label style={styles.label}>{t('promotions.typeRequired')}</label>
             <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-              <option value="discount_percentage">Percentage Discount</option>
-              <option value="discount_fixed">Fixed Amount Discount</option>
-              <option value="price_override">Price Override</option>
-              <option value="premium_percentage">Percentage Premium</option>
-              <option value="premium_fixed">Fixed Amount Premium</option>
+              <option value="discount_percentage">{t('promotions.type.percentageDiscount')}</option>
+              <option value="discount_fixed">{t('promotions.type.fixedDiscount')}</option>
+              <option value="price_override">{t('promotions.type.priceOverride')}</option>
+              <option value="premium_percentage">{t('promotions.type.percentagePremium')}</option>
+              <option value="premium_fixed">{t('promotions.type.fixedPremium')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>{form.type.includes('percentage') ? 'Percentage *' : 'Amount *'}</label>
+            <label style={styles.label}>{form.type.includes('percentage') ? t('promotions.percentageRequired') : t('promotions.amountRequired')}</label>
             <input style={styles.input} type="number" step={form.type.includes('percentage') ? '1' : '0.01'} min="0" value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} required />
           </div>
-          <div style={styles.formGroup}><label style={styles.label}>Promo Code</label><input style={styles.input} value={form.promo_code} onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })} placeholder="Optional" /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Start Date</label><input style={styles.input} type="date" value={form.date_from} onChange={(e) => setForm({ ...form, date_from: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>End Date</label><input style={styles.input} type="date" value={form.date_to} onChange={(e) => setForm({ ...form, date_to: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Max Redemptions</label><input style={styles.input} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder="Unlimited" /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Max per Customer</label><input style={styles.input} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder="Unlimited" /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.promoCode')}</label><input style={styles.input} value={form.promo_code} onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })} placeholder={t('products.optional')} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.startDate')}</label><input style={styles.input} type="date" value={form.date_from} onChange={(e) => setForm({ ...form, date_from: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.endDate')}</label><input style={styles.input} type="date" value={form.date_to} onChange={(e) => setForm({ ...form, date_to: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.maxRedemptions')}</label><input style={styles.input} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder={t('promotions.unlimited')} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.maxPerCustomer')}</label><input style={styles.input} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder={t('promotions.unlimited')} /></div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', gridColumn: '1 / -1' }}>
             <input type="checkbox" checked={form.stackable} onChange={(e) => setForm({ ...form, stackable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
-            Stackable (can combine with other promotions)
+            {t('promotions.stackable')}
           </label>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Promotion</Button></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>{t('shared.description')}</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button><Button type="submit" loading={loading}>{t('promotions.create')}</Button></div>
         </form>
       </div>
     </div>

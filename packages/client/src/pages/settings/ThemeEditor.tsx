@@ -1,4 +1,5 @@
 import { useState, useEffect, CSSProperties } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { Card } from '../../design-system/components/data/Card';
 import { Input } from '../../design-system/components/forms/Input';
 import { Select } from '../../design-system/components/forms/Select';
@@ -38,7 +39,7 @@ const COLOR_KEYS = [
 const COLOR_KEYS_COL_A = COLOR_KEYS.slice(0, 9);
 const COLOR_KEYS_COL_B = COLOR_KEYS.slice(9);
 const BRANDING_KEYS = ['logo-url', 'favicon-url', 'app-icon-url', 'brand-name'];
-const BASE_THEME_LABELS: Record<BuiltInThemeId, string> = { navy: 'Navy', 'bold-business': 'Bold Business', classic: 'Classic' };
+const BASE_THEME_IDS: BuiltInThemeId[] = ['navy', 'bold-business', 'classic'];
 const FONT_SIZE_TOKENS = ['--font-size-title', '--font-size-subtitle', '--font-size-body', '--font-size-small'];
 const FONT_WEIGHT_TOKENS = ['--font-weight-normal', '--font-weight-medium', '--font-weight-bold'];
 
@@ -54,6 +55,8 @@ function ownScopeFor(persona: ThemeEditorProps['persona']): ThemeScope {
 }
 
 export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEditorProps) {
+  const { t } = useTranslation('settings');
+  const tokenLabel = (k: string) => t(`themes.token.${k.slice(2)}`);
   const isEditingExisting = mode === 'edit' && !!theme && !theme.is_built_in;
   // Quick Setup (4 inputs, everything else derived) is the default for a fresh theme;
   // editing an existing one opens in Advanced since it may already have hand-tuned values.
@@ -111,7 +114,7 @@ export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEd
 
   async function handleSave() {
     setNameError(null);
-    if (!name.trim()) { setNameError('Name is required.'); return; }
+    if (!name.trim()) { setNameError(t('themes.nameRequired')); return; }
 
     const tokens: Record<string, string> = {};
     for (const k of [...TYPOGRAPHY_KEYS, ...COLOR_KEYS, ...BRANDING_KEYS]) {
@@ -129,8 +132,8 @@ export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEd
       }
       onSaved();
     } catch (err: any) {
-      if (err.response?.status === 409) setNameError(err.response?.data?.error || 'A theme with this name already exists at this scope.');
-      else setNameError(err.response?.data?.error || 'Failed to save theme.');
+      if (err.response?.status === 409) setNameError(err.response?.data?.error || t('themes.nameExists'));
+      else setNameError(err.response?.data?.error || t('themes.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -147,30 +150,30 @@ export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEd
     <div className="te">
       <Card
         padding="lg"
-        title={isEditingExisting ? `Edit "${theme!.name}"` : 'New theme'}
+        title={isEditingExisting ? t('themes.editTitle', { name: theme!.name }) : t('themes.newTheme')}
         actions={<>
-          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-          <Button onClick={handleSave} loading={saving}>Save theme</Button>
+          <Button variant="ghost" onClick={onCancel}>{t('common:cancel')}</Button>
+          <Button onClick={handleSave} loading={saving}>{t('themes.saveTheme')}</Button>
         </>}
       >
         <div className={`te-basics${isEditingExisting ? ' te-basics--edit' : ''}`}>
-          <Input label="Theme name" name="theme-name" value={name} onChange={setName} placeholder="e.g. Transcend Teal" error={nameError ?? undefined} />
+          <Input label={t('themes.themeName')} name="theme-name" value={name} onChange={setName} placeholder={t('themes.themeNamePlaceholder')} error={nameError ?? undefined} />
           {!isEditingExisting && (
             <Select
-              label="Base theme"
+              label={t('themes.baseTheme')}
               name="theme-base"
               value={baseTheme}
               onChange={(v) => setBaseTheme(v as BuiltInThemeId)}
-              options={(Object.keys(BASE_THEME_LABELS) as BuiltInThemeId[]).map((id) => ({ value: id, label: BASE_THEME_LABELS[id] }))}
+              options={BASE_THEME_IDS.map((id) => ({ value: id, label: t(`themes.base.${id}`) }))}
             />
           )}
           <div className="te-field">
-            <span className="te-label">Setup mode</span>
+            <span className="te-label">{t('themes.setupMode')}</span>
             <SegmentedControl
-              aria-label="Setup mode"
+              aria-label={t('themes.setupMode')}
               value={setupMode}
               onChange={setSetupMode}
-              options={[{ value: 'quick', label: 'Quick Setup' }, { value: 'advanced', label: 'Advanced' }]}
+              options={[{ value: 'quick', label: t('themes.quickSetup') }, { value: 'advanced', label: t('themes.advanced') }]}
             />
           </div>
         </div>
@@ -178,16 +181,14 @@ export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEd
 
       {setupMode === 'quick' ? (
         <div className="te-quick">
-          <Card padding="lg" title="Quick setup">
+          <Card padding="lg" title={t('themes.quickSetupTitle')}>
             <div className="te-stack">
-              <ColorField label="Primary colour" value={values['--color-primary'] || '#000000'} onChange={(v) => handleBrandChange('primary', v)} />
-              <ColorField label="Secondary colour" value={values['--color-secondary'] || '#000000'} onChange={(v) => handleBrandChange('secondary', v)} />
-              <Select label="Font family" name="theme-font" value={values['--font-family'] || 'System Default'} onChange={(v) => handleChange('--font-family', v)} options={fontOptions} />
-              <Input label="Logo URL" name="theme-logo" value={values['logo-url'] || ''} onChange={(v) => handleChange('logo-url', v)} placeholder="https://…/logo.svg" />
+              <ColorField label={t('themes.primaryColour')} value={values['--color-primary'] || '#000000'} onChange={(v) => handleBrandChange('primary', v)} />
+              <ColorField label={t('themes.secondaryColour')} value={values['--color-secondary'] || '#000000'} onChange={(v) => handleBrandChange('secondary', v)} />
+              <Select label={t('themes.fontFamily')} name="theme-font" value={values['--font-family'] || 'System Default'} onChange={(v) => handleChange('--font-family', v)} options={fontOptions} />
+              <Input label={t('themes.logoUrl')} name="theme-logo" value={values['logo-url'] || ''} onChange={(v) => handleChange('logo-url', v)} placeholder={'https://…/logo.svg'} />
               <p className="te-hint">
-                Hover/contrast/sidebar/nav shades are derived automatically from your primary and secondary colours.
-                Backgrounds, text, borders, and status colours follow the {BASE_THEME_LABELS[baseTheme]} base theme.
-                Switch to <strong>Advanced</strong> to fine-tune any of it.
+                <Trans i18nKey="themes.quickHint" ns="settings" values={{ base: t(`themes.base.${baseTheme}`) }} components={{ strong: <strong /> }} />
               </p>
             </div>
           </Card>
@@ -195,48 +196,48 @@ export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEd
         </div>
       ) : (
         <div className="te-advanced">
-          <Card padding="lg" title="Typography" actions={<Button variant="ghost" size="sm" onClick={handleResetToBase}>Reset to base</Button>}>
+          <Card padding="lg" title={t('themes.typography')} actions={<Button variant="ghost" size="sm" onClick={handleResetToBase}>{t('themes.resetToBase')}</Button>}>
             <div className="te-stack">
-              <Select label="Font family" name="theme-font-adv" value={values['--font-family'] || 'System Default'} onChange={(v) => handleChange('--font-family', v)} options={fontOptions} />
+              <Select label={t('themes.fontFamily')} name="theme-font-adv" value={values['--font-family'] || 'System Default'} onChange={(v) => handleChange('--font-family', v)} options={fontOptions} />
               <div className="te-grid-2">
                 {FONT_SIZE_TOKENS.map((k) => (
-                  <Input key={k} label={LABELS[k]} name={`theme${k}`} value={values[k] || ''} onChange={(v) => handleChange(k, v)} placeholder="e.g. 16px" />
+                  <Input key={k} label={tokenLabel(k)} name={`theme${k}`} value={values[k] || ''} onChange={(v) => handleChange(k, v)} placeholder={t('themes.sizePlaceholder')} />
                 ))}
               </div>
               <div className="te-grid-3">
                 {FONT_WEIGHT_TOKENS.map((k) => (
-                  <Select key={k} label={LABELS[k]} name={`theme${k}`} value={values[k] || ''} onChange={(v) => handleChange(k, v)} placeholder="—"
+                  <Select key={k} label={tokenLabel(k)} name={`theme${k}`} value={values[k] || ''} onChange={(v) => handleChange(k, v)} placeholder="—"
                     options={['300', '400', '500', '600', '700', '800'].map((w) => ({ value: w, label: w }))} />
                 ))}
               </div>
               {TEXT_COLOR_KEYS.map((k) => (
-                <ColorField key={k} label={LABELS[k]} value={values[k] || '#000000'} onChange={(v) => handleChange(k, v)} />
+                <ColorField key={k} label={tokenLabel(k)} value={values[k] || '#000000'} onChange={(v) => handleChange(k, v)} />
               ))}
             </div>
           </Card>
 
-          <Card padding="lg" title="Colours">
+          <Card padding="lg" title={t('themes.colours')}>
             <div className="te-stack">
               {COLOR_KEYS_COL_A.map((k) => (
-                <ColorField key={k} label={LABELS[k]} value={values[k] || '#000000'} onChange={(v) => handleChange(k, v)} />
+                <ColorField key={k} label={tokenLabel(k)} value={values[k] || '#000000'} onChange={(v) => handleChange(k, v)} />
               ))}
             </div>
           </Card>
-          <Card padding="lg" title="More colours">
+          <Card padding="lg" title={t('themes.moreColours')}>
             <div className="te-stack">
               {COLOR_KEYS_COL_B.map((k) => (
-                <ColorField key={k} label={LABELS[k]} value={values[k] || '#000000'} onChange={(v) => handleChange(k, v)} />
+                <ColorField key={k} label={tokenLabel(k)} value={values[k] || '#000000'} onChange={(v) => handleChange(k, v)} />
               ))}
             </div>
           </Card>
 
           <div className="te-stack">
-            <Card padding="lg" title="Branding">
+            <Card padding="lg" title={t('themes.branding')}>
               <div className="te-stack">
-                <Input label="Logo URL" name="theme-logo-adv" value={values['logo-url'] || ''} onChange={(v) => handleChange('logo-url', v)} placeholder="https://…/logo.svg" />
-                <Input label="Favicon URL" name="theme-favicon" value={values['favicon-url'] || ''} onChange={(v) => handleChange('favicon-url', v)} placeholder="https://…/favicon.png" />
-                <Input label="App icon URL" name="theme-app-icon" value={values['app-icon-url'] || ''} onChange={(v) => handleChange('app-icon-url', v)} placeholder="https://…/icon.png" />
-                <Input label="Brand name override" name="theme-brand-name" value={values['brand-name'] || ''} onChange={(v) => handleChange('brand-name', v)} placeholder="Blank = use platform/tenant name" />
+                <Input label={t('themes.logoUrl')} name="theme-logo-adv" value={values['logo-url'] || ''} onChange={(v) => handleChange('logo-url', v)} placeholder={'https://…/logo.svg'} />
+                <Input label={t('themes.faviconUrl')} name="theme-favicon" value={values['favicon-url'] || ''} onChange={(v) => handleChange('favicon-url', v)} placeholder="https://…/favicon.png" />
+                <Input label={t('themes.appIconUrl')} name="theme-app-icon" value={values['app-icon-url'] || ''} onChange={(v) => handleChange('app-icon-url', v)} placeholder="https://…/icon.png" />
+                <Input label={t('themes.brandNameOverride')} name="theme-brand-name" value={values['brand-name'] || ''} onChange={(v) => handleChange('brand-name', v)} placeholder={t('themes.brandNamePlaceholder')} />
               </div>
             </Card>
             {renderPreview()}
@@ -248,19 +249,19 @@ export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEd
 
   function renderPreview() {
     return (
-      <Card padding="lg" title="Live preview">
-        <p className="te-preview-note">Updates as you edit. Not saved until you click Save.</p>
+      <Card padding="lg" title={t('themes.livePreview')}>
+        <p className="te-preview-note">{t('themes.previewNote')}</p>
         <div className="te-preview" data-base-theme={baseTheme === 'classic' ? undefined : baseTheme} style={previewStyle}>
-          <div className="te-preview__sidebar">Sidebar</div>
-          <div className="te-preview__topbar">Top bar</div>
-          <div className="te-preview__title">Book an appointment</div>
-          <div className="te-preview__body">Body text sample</div>
-          <div className="te-preview__muted">Muted small text</div>
+          <div className="te-preview__sidebar">{t('themes.previewSidebar')}</div>
+          <div className="te-preview__topbar">{t('themes.previewTopBar')}</div>
+          <div className="te-preview__title">{t('themes.previewTitle')}</div>
+          <div className="te-preview__body">{t('themes.previewBody')}</div>
+          <div className="te-preview__muted">{t('themes.previewMuted')}</div>
           <div className="te-preview__buttons">
-            <span className="te-preview__btn te-preview__btn--primary">Primary</span>
-            <span className="te-preview__btn te-preview__btn--secondary">Secondary</span>
+            <span className="te-preview__btn te-preview__btn--primary">{t('themes.previewPrimary')}</span>
+            <span className="te-preview__btn te-preview__btn--secondary">{t('themes.previewSecondary')}</span>
           </div>
-          <div className="te-preview__card">Card / table row surface</div>
+          <div className="te-preview__card">{t('themes.previewCard')}</div>
         </div>
       </Card>
     );
@@ -268,15 +269,16 @@ export function ThemeEditor({ persona, mode, theme, onSaved, onCancel }: ThemeEd
 }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const { t } = useTranslation('settings');
   const id = `color-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   return (
     <div className="te-field">
       <label className="te-label" htmlFor={id}>{label}</label>
       <div className="te-color-row">
-        <input type="color" aria-label={`${label} picker`} value={/^#[0-9A-Fa-f]{6}$/.test(value) ? value : '#000000'} onChange={(e) => onChange(e.target.value)} className="te-color-swatch" />
+        <input type="color" aria-label={t('themes.colourPicker', { label })} value={/^#[0-9A-Fa-f]{6}$/.test(value) ? value : '#000000'} onChange={(e) => onChange(e.target.value)} className="te-color-swatch" />
         <input id={id} type="text" value={value} onChange={(e) => onChange(e.target.value)} className="te-color-hex" spellCheck={false} />
       </div>
-      <div className="te-presets" role="group" aria-label={`${label} presets`}>
+      <div className="te-presets" role="group" aria-label={t('themes.colourPresets', { label })}>
         {PRESET_COLORS.map((c) => (
           <button key={c} type="button" title={c} aria-label={c} aria-pressed={value.toLowerCase() === c.toLowerCase()}
             onClick={() => onChange(c)} className="te-preset" style={{ background: c }} />
@@ -286,14 +288,4 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-const LABELS: Record<string, string> = {
-  '--font-size-title': 'Title size', '--font-size-subtitle': 'Subtitle size', '--font-size-body': 'Body text size', '--font-size-small': 'Small text size',
-  '--font-weight-normal': 'Normal weight', '--font-weight-medium': 'Medium weight', '--font-weight-bold': 'Bold weight',
-  '--color-text-title': 'Title colour', '--color-text-body': 'Body text colour', '--color-text-secondary': 'Secondary text (sidebar, labels)', '--color-text-muted': 'Muted text colour',
-  '--color-primary': 'Primary', '--color-primary-hover': 'Primary hover', '--color-primary-contrast': 'Primary text',
-  '--color-secondary': 'Secondary', '--color-secondary-hover': 'Secondary hover', '--color-secondary-contrast': 'Secondary text',
-  '--color-background': 'Page background', '--color-surface': 'Card surface', '--color-border': 'Border', '--color-divider': 'Divider',
-  '--color-sidebar-bg': 'Sidebar background', '--color-header-bg': 'Header background',
-  '--color-nav-active-bg': 'Active nav background', '--color-nav-active-text': 'Active nav text',
-  '--color-accent': 'Accent', '--color-success': 'Success', '--color-warning': 'Warning', '--color-error': 'Error',
-};
+

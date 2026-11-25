@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
@@ -11,13 +12,12 @@ import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard
 import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
+import { formatNumber } from '../utils/format';
+import { TranslateButton } from '../components/TranslationsTable';
+import { useTranslation } from 'react-i18next';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error',
-};
-
-const FREQUENCY_LABELS: Record<string, string> = {
-  weekly: 'Weekly', biweekly: 'Biweekly', monthly: 'Monthly', quarterly: 'Quarterly', annually: 'Annually',
 };
 
 interface MembershipPlan {
@@ -59,6 +59,7 @@ export function MembershipDetail() {
 }
 
 function MembershipDetailPage() {
+  const { t } = useTranslation('offerings');
   const { id } = useParams<{ id: string }>();
   const navigate = useGuardedNavigate();
   const [plan, setPlan] = useState<MembershipPlan | null>(null);
@@ -80,38 +81,38 @@ function MembershipDetailPage() {
       .finally(() => setLoading(false));
   }, [id, businessId]);
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
-  if (!plan) return <div style={styles.loading}>Membership plan not found</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
+  if (!plan) return <div style={styles.loading}>{t('membershipDetail.notFound')}</div>;
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
-        <button style={styles.back} onClick={() => navigate('/offers?tab=memberships')}>← Back to Offerings</button>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=memberships')}>{t('serviceCreate.backToOfferings')}</button>
 
         {/* Header Card */}
         <div style={styles.headerCard}>
           <div style={styles.headerInfo}>
             <h1 style={styles.name}>{plan.name}</h1>
-            <span style={styles.frequency}>{FREQUENCY_LABELS[plan.billing_frequency] || plan.billing_frequency}</span>
+            <span style={styles.frequency}>{t(`shared.billing.${plan.billing_frequency}`, { defaultValue: plan.billing_frequency })}</span>
           </div>
           <div style={styles.headerRight}>
             <div style={styles.saveRow}><SaveChanges /></div>
             <div style={styles.saveRow}>
-              <Badge variant={STATUS_VARIANTS[plan.status] || 'neutral'}>{plan.status}</Badge>
-              <span style={styles.price}>{formatCurrency(plan.price)}/period</span>
-              <span style={styles.enrolled}>{plan.active_enrollments} enrolled</span>
+              <Badge variant={STATUS_VARIANTS[plan.status] || 'neutral'}>{t(`shared.status.${plan.status}`, { defaultValue: plan.status })}</Badge>
+              <span style={styles.price}>{t('membershipDetail.perPeriod', { price: formatCurrency(plan.price) })}</span>
+              <span style={styles.enrolled}>{t('membershipDetail.enrolledCount', { count: Number(plan.active_enrollments) })}</span>
               <CopyWidgetSnippetButton
                 productId={plan.id}
                 productName={plan.name}
                 action="purchase"
                 enabled={plan.status === 'active'}
-                disabledReason="Activate this plan to get a widget snippet"
+                disabledReason={t('membershipDetail.snippetHint')}
               />
             </div>
           </div>
         </div>
-        <TabBar aria-label="Membership sections" tabs={[{ key: 'details' as const, label: 'Details' }, { key: 'people' as const, label: 'Enrolled' }].map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+        <TabBar aria-label={t('membershipDetail.sections')} tabs={[{ key: 'details' as const, label: t('membershipDetail.tabDetails') }, { key: 'people' as const, label: t('membershipDetail.tabEnrolled') }].map((tb) => ({ ...tb, changed: dirtySections.some((s) => s.tab === tb.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
 
       {/* Details stay mounted, so their edits survive switching tabs. */}
@@ -129,6 +130,7 @@ function MembershipDetailPage() {
 // --- Plan Form (always editable; saved with the page's Save changes) ---
 
 function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; businessId: string; onUpdate: (p: MembershipPlan) => void }) {
+  const { t } = useTranslation('offerings');
   const [statusChanging, setStatusChanging] = useState(false);
   const [taxCategories, setTaxCategories] = useState<any[]>([]);
   const fromPlan = (p: MembershipPlan) => ({
@@ -143,7 +145,7 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
     is_taxable: (p as any).is_taxable || false,
     tax_category_id: (p as any).tax_category_id || '',
   });
-  const draft = useDraft('plan-details', 'Plan details', fromPlan(plan), async (form) => {
+  const draft = useDraft('plan-details', t('membershipDetail.draftName'), fromPlan(plan), async (form) => {
     const res = await apiClient.put(`/v1/memberships/plans/${plan.id}?business_id=${businessId}`, form);
     const updated = { ...plan, ...res.data.data };
     onUpdate(updated);
@@ -166,7 +168,7 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
       await apiClient.put(`/v1/memberships/plans/${plan.id}/${action}?business_id=${businessId}`);
       const res = await apiClient.get(`/v1/memberships/plans/${plan.id}?business_id=${businessId}`);
       onUpdate(res.data.data);
-    } catch { alert(`Failed to ${action}`); }
+    } catch { void showMessage({ message: t(`membershipDetail.failedTo.${action}`, { defaultValue: `Failed to ${action}` }), tone: 'error' }); }
     finally { setStatusChanging(false); }
   };
 
@@ -174,64 +176,64 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
     <>
       {/* Actions bar */}
       <div style={styles.actionsBar}>
-        {plan.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>Pause</Button>}
-        {(plan.status === 'paused' || plan.status === 'draft') && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>Activate</Button>}
-        {plan.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>Archive</Button>}
+        {plan.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>{t('shared.pause')}</Button>}
+        {(plan.status === 'paused' || plan.status === 'draft') && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>{t('shared.activate')}</Button>}
+        {plan.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>{t('shared.archive')}</Button>}
       </div>
 
       {/* Plan Details Card */}
       <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Plan Details<UnsavedTag dirty={draft.dirty} /></h3>
-          <Button size="sm" variant="secondary" onClick={() => { /* TODO: translate */ }}>Translate</Button>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('membershipDetail.planDetails')}<UnsavedTag dirty={draft.dirty} /></h3>
+          <TranslateButton entityType="membership" entityId={plan.id} title={plan.name} label={t('serviceDetail.translate')} />
         </div>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
+            <label style={styles.label}>{t('shared.nameRequired')}</label>
             <input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Billing Frequency</label>
+            <label style={styles.label}>{t('membershipDetail.billingFrequency')}</label>
             <select style={{ ...styles.input, ...mark('billing_frequency') }} value={form.billing_frequency} onChange={(e) => setForm({ ...form, billing_frequency: e.target.value })}>
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Biweekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="annually">Annually</option>
+              <option value="weekly">{t('shared.billing.weekly')}</option>
+              <option value="biweekly">{t('shared.billing.biweekly')}</option>
+              <option value="monthly">{t('shared.billing.monthly')}</option>
+              <option value="quarterly">{t('shared.billing.quarterly')}</option>
+              <option value="annually">{t('shared.billing.annually')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Price per Period</label>
+            <label style={styles.label}>{t('membershipDetail.pricePerPeriod')}</label>
             <input style={{ ...styles.input, ...mark('price') }} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => { setPriceDisplay(e.target.value); setForm({ ...form, price: Math.round(parseFloat(e.target.value || '0') * 100) || 0 }); }}
               onBlur={() => setPriceDisplay((form.price / 100).toFixed(2))}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Trial Days</label>
+            <label style={styles.label}>{t('memberships.trialDays')}</label>
             <input style={{ ...styles.input, ...mark('trial_days') }} type="number" min={0} value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Discount on Services (%)</label>
+            <label style={styles.label}>{t('memberships.discountServices')}</label>
             <input style={{ ...styles.input, ...mark('discount_services_pct') }} type="number" min={0} max={100} value={form.discount_services_pct} onChange={(e) => setForm({ ...form, discount_services_pct: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Discount on Products (%)</label>
+            <label style={styles.label}>{t('memberships.discountProducts')}</label>
             <input style={{ ...styles.input, ...mark('discount_merchandise_pct') }} type="number" min={0} max={100} value={form.discount_merchandise_pct} onChange={(e) => setForm({ ...form, discount_merchandise_pct: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Tax Category</label>
+            <label style={styles.label}>{t('serviceDetail.taxCategory')}</label>
             <select style={{ ...styles.input, ...mark('tax_category_id') }} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
-              <option value="">No tax</option>
-              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+              <option value="">{t('serviceDetail.noTax')}</option>
+              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({formatNumber(tc.rate / 100, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)</option>)}
             </select>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Short Description</label>
+            <label style={styles.label}>{t('shared.shortDescription')}</label>
             <input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Description</label>
+            <label style={styles.label}>{t('shared.description')}</label>
             <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
         </div>
@@ -245,9 +247,10 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
 const itemChanges = (i: PlanItem) => ({ quantity_per_period: i.quantity_per_period, variant_id: i.variant_id || null, access_frequency: i.access_frequency });
 
 function PlanItemsCard({ planId }: { planId: string }) {
+  const { t } = useTranslation('offerings');
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ key?: string; item?: PlanItem } | null>(null);
-  const list = useDraftList<PlanItem>('plan-items', 'Included items', {
+  const list = useDraftList<PlanItem>('plan-items', t('membershipDetail.itemsDraftName'), {
     create: (i) => apiClient.post(`/v1/memberships/plans/${planId}/items`, {
       item_type: i.item_type,
       service_id: i.item_type === 'service' ? i.service_id : undefined,
@@ -274,12 +277,12 @@ function PlanItemsCard({ planId }: { planId: string }) {
   return (
     <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Included Items (per period)<UnsavedTag dirty={list.dirty} /></h3>
-        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Item</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('membershipDetail.itemsTitle')}<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>{t('membershipDetail.addItem')}</Button>
       </div>
 
-      {loading && <p style={styles.muted}>Loading...</p>}
-      {!loading && list.rows.length === 0 && <p style={styles.muted}>No items included in this plan. Add services or products that members receive each billing period.</p>}
+      {loading && <p style={styles.muted}>{t('common:loading')}</p>}
+      {!loading && list.rows.length === 0 && <p style={styles.muted}>{t('membershipDetail.noItems')}</p>}
       {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {list.rows.map((r) => {
@@ -288,16 +291,16 @@ function PlanItemsCard({ planId }: { planId: string }) {
             return (
               <div key={r.key} style={{ ...styles.itemRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
                 <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
-                  <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge>
-                  <strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong>
-                  {r.isNew && <> <RowTag>New</RowTag></>}
-                  {edited && <> <RowTag>Changed</RowTag></>}
-                  {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                  <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? t('membershipDetail.service') : t('membershipDetail.product')}</Badge>
+                  <strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || t('membershipDetail.unknown')}</strong>
+                  {r.isNew && <> <RowTag>{t('serviceDetail.rowNew')}</RowTag></>}
+                  {edited && <> <RowTag>{t('serviceDetail.rowChanged')}</RowTag></>}
+                  {r.deleted && <> <RowTag>{t('serviceDetail.rowDeleted')}</RowTag></>}
                 </div>
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.access_frequency === 'unlimited' ? 'Unlimited' : `×${item.quantity_per_period}/${item.access_frequency === 'daily' ? 'day' : item.access_frequency === 'weekly' ? 'week' : 'month'}`}</span>
-                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
-                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, item })} title="Edit">✏️</button>
-                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Remove">×</button>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.access_frequency === 'unlimited' ? t('membershipDetail.unlimited') : t('membershipDetail.quantityPer', { quantity: item.quantity_per_period, unit: item.access_frequency === 'daily' ? t('membershipDetail.unit.day') : item.access_frequency === 'weekly' ? t('membershipDetail.unit.week') : t('membershipDetail.unit.month') })}</span>
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('serviceDetail.undo')}</Button> : <>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, item })} title={t('common:edit')}>✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title={t('serviceDetail.remove')}>×</button>
                 </>}
               </div>
             );
@@ -323,6 +326,7 @@ function PlanItemsCard({ planId }: { planId: string }) {
 // --- Add Plan Item Modal ---
 
 function AddEditPlanItemModal({ item, onClose, onDone }: { item: PlanItem | null; onClose: () => void; onDone: (data: Partial<PlanItem>) => void }) {
+  const { t } = useTranslation('offerings');
   const businessId = localStorage.getItem('business_id') || '';
   const [itemType, setItemType] = useState<'service' | 'merchandise'>(item?.item_type as any || 'service');
   const [services, setServices] = useState<any[]>([]);
@@ -356,7 +360,7 @@ function AddEditPlanItemModal({ item, onClose, onDone }: { item: PlanItem | null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedId && !isEditing) { setError('Select an item'); return; }
+    if (!selectedId && !isEditing) { setError(t('membershipDetail.selectItem')); return; }
     if (isEditing) {
       onDone({ quantity_per_period: quantity, variant_id: selectedVariantId || undefined, access_frequency: accessFrequency });
       return;
@@ -378,53 +382,53 @@ function AddEditPlanItemModal({ item, onClose, onDone }: { item: PlanItem | null
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>{isEditing ? 'Edit Included Item' : 'Add Included Item'}</h3>
+          <h3 style={styles.modalTitle}>{isEditing ? t('membershipDetail.editItem') : t('membershipDetail.addIncludedItem')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Item Type</label>
+            <label style={styles.label}>{t('membershipDetail.itemType')}</label>
             <select style={styles.input} value={itemType} disabled={isEditing} onChange={(e) => { setItemType(e.target.value as 'service' | 'merchandise'); setSelectedId(''); setVariants([]); setSelectedVariantId(''); }}>
-              <option value="service">Service</option>
-              <option value="merchandise">Product</option>
+              <option value="service">{t('membershipDetail.service')}</option>
+              <option value="merchandise">{t('membershipDetail.product')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>{itemType === 'service' ? 'Service' : 'Product'} *</label>
+            <label style={styles.label}>{itemType === 'service' ? t('membershipDetail.service') : t('membershipDetail.product')} *</label>
             <select style={styles.input} value={selectedId} disabled={isEditing} onChange={(e) => setSelectedId(e.target.value)} required>
-              <option value="">Select...</option>
+              <option value="">{t('shared.select')}</option>
               {options.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
           </div>
           {variants.length > 0 && (
             <div style={styles.formGroup}>
-              <label style={styles.label}>Variant</label>
+              <label style={styles.label}>{t('membershipDetail.variant')}</label>
               <select style={styles.input} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>
-                <option value="">All variants / any</option>
-                {variants.map((v: any) => <option key={v.id} value={v.id}>{v.name}{v.price != null ? ` — ${formatCurrency(v.price)}` : ''}{v.duration ? ` — ${v.duration} min` : ''}</option>)}
+                <option value="">{t('membershipDetail.allVariants')}</option>
+                {variants.map((v: any) => <option key={v.id} value={v.id}>{v.name}{v.price != null ? ` — ${formatCurrency(v.price)}` : ''}{v.duration ? ` — ${t('services.minutes', { value: v.duration })}` : ''}</option>)}
               </select>
             </div>
           )}
           <div style={styles.formGroup}>
-            <label style={styles.label}>Access Frequency</label>
+            <label style={styles.label}>{t('membershipDetail.accessFrequency')}</label>
             <select style={styles.input} value={accessFrequency} onChange={(e) => setAccessFrequency(e.target.value)}>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="unlimited">Unlimited</option>
+              <option value="daily">{t('membershipDetail.daily')}</option>
+              <option value="weekly">{t('shared.billing.weekly')}</option>
+              <option value="monthly">{t('shared.billing.monthly')}</option>
+              <option value="unlimited">{t('membershipDetail.unlimited')}</option>
             </select>
-            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' }}>How often the allowance resets (use-it-or-lose-it)</span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' }}>{t('membershipDetail.resetHelp')}</span>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>{accessFrequency === 'unlimited' ? 'Unlimited' : `Quantity per ${accessFrequency === 'daily' ? 'day' : accessFrequency === 'weekly' ? 'week' : 'month'}`}</label>
+            <label style={styles.label}>{accessFrequency === 'unlimited' ? t('membershipDetail.unlimited') : t('membershipDetail.quantityPerUnit', { unit: accessFrequency === 'daily' ? t('membershipDetail.unit.day') : accessFrequency === 'weekly' ? t('membershipDetail.unit.week') : t('membershipDetail.unit.month') })}</label>
             {accessFrequency !== 'unlimited' && <input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />}
-            {accessFrequency === 'unlimited' && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '10px 0' }}>No limit on usage</span>}
+            {accessFrequency === 'unlimited' && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '10px 0' }}>{t('membershipDetail.noLimit')}</span>}
           </div>
-          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>{t('serviceDetail.savedWithPage')}</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit">{isEditing ? 'Done' : 'Add Item'}</Button>
+            <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+            <Button type="submit">{isEditing ? t('serviceDetail.done') : t('membershipDetail.addItem')}</Button>
           </div>
         </form>
       </div>

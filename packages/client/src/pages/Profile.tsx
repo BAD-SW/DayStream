@@ -1,4 +1,6 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import * as staffApi from '../api/staff';
 import * as clockApi from '../api/clock';
@@ -6,6 +8,8 @@ import type { NotificationPreferences } from '../api/staff';
 import type { MyPinStatus } from '../api/clock';
 
 export function Profile() {
+  const { t } = useTranslation('account');
+  const { t: tc } = useTranslation('common');
   const { user } = useAuth();
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
   const [loadingPrefs, setLoadingPrefs] = useState(true);
@@ -23,16 +27,16 @@ export function Profile() {
   }, []);
 
   const handleSavePin = async () => {
-    if (!/^\d{4}$/.test(pinValue)) { setPinMsg('PIN must be exactly 4 digits.'); return; }
+    if (!/^\d{4}$/.test(pinValue)) { setPinMsg(t('profile.pinInvalid')); return; }
     setPinSaving(true);
     setPinMsg(null);
     try {
       await clockApi.setMyPin(pinValue);
       setPinValue('');
-      setPinMsg('Clock PIN saved.');
+      setPinMsg(t('profile.pinSaved'));
       setPinStatus((s) => (s ? { ...s, hasPin: true } : s));
     } catch {
-      setPinMsg('Could not save PIN.');
+      setPinMsg(t('profile.pinSaveFailed'));
     } finally { setPinSaving(false); }
   };
 
@@ -47,47 +51,48 @@ export function Profile() {
       setPrefs(updated);
     } catch {
       setPrefs(previousPrefs); // Revert on failure
-      alert('Unable to save preference. You may not have a staff profile linked to your account.');
+      void showMessage({ message: t('profile.prefSaveFailed'), tone: 'error' });
     }
     setSaving(false);
   };
 
   const prefLabels: Record<keyof NotificationPreferences, string> = {
-    booking_confirmed: 'Booking confirmed',
-    booking_cancelled: 'Booking cancelled',
-    booking_reminder: 'Booking reminder',
-    schedule_changed: 'Schedule changed',
-    leave_approved: 'Leave approved',
-    leave_rejected: 'Leave rejected',
-    new_review: 'New review received',
-    payroll_ready: 'Payroll ready',
+    booking_confirmed: t('profile.pref.bookingConfirmed'),
+    booking_cancelled: t('profile.pref.bookingCancelled'),
+    booking_reminder: t('profile.pref.bookingReminder'),
+    schedule_changed: t('profile.pref.scheduleChanged'),
+    leave_approved: t('profile.pref.leaveApproved'),
+    leave_rejected: t('profile.pref.leaveRejected'),
+    new_review: t('profile.pref.newReview'),
+    payroll_ready: t('profile.pref.payrollReady'),
   };
 
   return (
     <div>
-      <h2 style={styles.heading}>Profile</h2>
+      <h2 style={styles.heading}>{tc('profile')}</h2>
       <div style={styles.card}>
         <div style={styles.field}>
-          <span style={styles.label}>Name</span>
+          <span style={styles.label}>{t('profile.name')}</span>
           <span style={styles.value}>{user?.first_name} {user?.last_name}</span>
         </div>
         <div style={styles.field}>
-          <span style={styles.label}>Email</span>
+          <span style={styles.label}>{t('profile.email')}</span>
           <span style={styles.value}>{user?.email}</span>
         </div>
         <div style={styles.field}>
-          <span style={styles.label}>Role</span>
+          <span style={styles.label}>{t('profile.role')}</span>
           <span style={styles.value}>{user?.role}</span>
         </div>
       </div>
 
       {pinStatus?.hasProfile && (
         <>
-          <h2 style={{ ...styles.heading, marginTop: '32px' }}>Time Clock PIN</h2>
+          <h2 style={{ ...styles.heading, marginTop: '32px' }}>{t('profile.pinHeading')}</h2>
           <div style={styles.card}>
             <p style={styles.hint}>
-              Use your staff number{pinStatus.staffRef ? ` (${pinStatus.staffRef})` : ''} and this 4-digit PIN at the Time Clock.
-              {pinStatus.hasPin ? ' A PIN is set — enter a new one to change it.' : ' No PIN is set yet.'}
+              {pinStatus.staffRef ? t('profile.pinHintRef', { ref: pinStatus.staffRef }) : t('profile.pinHint')}
+              {' '}
+              {pinStatus.hasPin ? t('profile.pinIsSet') : t('profile.pinNotSet')}
             </p>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
               <input
@@ -95,7 +100,7 @@ export function Profile() {
                 inputMode="numeric"
                 value={pinValue}
                 onChange={(e) => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="4 digits"
+                placeholder={t('profile.pinPlaceholder')}
                 style={{ width: '120px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }}
               />
               <button
@@ -103,7 +108,7 @@ export function Profile() {
                 disabled={pinSaving || pinValue.length !== 4}
                 style={{ padding: '8px 16px', border: 'none', borderRadius: 'var(--button-radius, 8px)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', cursor: pinValue.length === 4 ? 'pointer' : 'default', opacity: pinValue.length === 4 ? 1 : 0.6, fontFamily: 'var(--font-family)' }}
               >
-                {pinStatus.hasPin ? 'Change PIN' : 'Set PIN'}
+                {pinStatus.hasPin ? t('profile.changePin') : t('profile.setPin')}
               </button>
               {pinMsg && <span style={styles.hint}>{pinMsg}</span>}
             </div>
@@ -111,10 +116,10 @@ export function Profile() {
         </>
       )}
 
-      <h2 style={{ ...styles.heading, marginTop: '32px' }}>Notification Preferences</h2>
+      <h2 style={{ ...styles.heading, marginTop: '32px' }}>{t('profile.notificationPreferences')}</h2>
       <div style={styles.card}>
         {loadingPrefs ? (
-          <p style={styles.hint}>Loading preferences...</p>
+          <p style={styles.hint}>{t('profile.loadingPreferences')}</p>
         ) : prefs ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {(Object.keys(prefLabels) as Array<keyof NotificationPreferences>).map((key) => (
@@ -131,7 +136,7 @@ export function Profile() {
             ))}
           </div>
         ) : (
-          <p style={styles.hint}>Unable to load notification preferences.</p>
+          <p style={styles.hint}>{t('profile.prefLoadFailed')}</p>
         )}
       </div>
 

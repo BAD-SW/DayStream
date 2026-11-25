@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { lifecycleStageLabel } from '@daystream/shared';
 import { SegmentConditions, describeRules } from '../components/SegmentConditions';
 import type { Rule as SegRule } from '../components/SegmentConditions';
@@ -13,6 +14,7 @@ import type { Segment } from '../api/customers';
 type Rule = SegRule;
 
 export function Segments() {
+  const { t } = useTranslation('customers');
   const navigate = useNavigate();
   const [segments, setSegments] = useState<Segment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +49,7 @@ export function Segments() {
       if (selectedSegment === segmentId) { setSelectedSegment(null); setMembers([]); }
       setMessage('');
     } catch (err: any) {
-      setMessage(err.response?.data?.error || 'This segment could not be deleted');
+      setMessage(err.response?.data?.error || t('segments.deleteFailed'));
     }
   };
 
@@ -67,16 +69,16 @@ export function Segments() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
+      <button style={styles.back} onClick={() => navigate('/customers')}>{t('segments.back')}</button>
       <div style={styles.header}>
-        <h1 style={styles.title}>Segments</h1>
+        <h1 style={styles.title}>{t('segments.title')}</h1>
         <div style={styles.headerActions}>
-          <Button variant="outline" onClick={() => setEditing(editing === 'new-list' ? null : 'new-list')}>New fixed list</Button>
-          <Button onClick={() => setEditing(editing === 'new-rules' ? null : 'new-rules')}>New segment</Button>
+          <Button variant="outline" onClick={() => setEditing(editing === 'new-list' ? null : 'new-list')}>{t('segments.newFixedList')}</Button>
+          <Button onClick={() => setEditing(editing === 'new-rules' ? null : 'new-rules')}>{t('segments.newSegment')}</Button>
         </div>
       </div>
       <p style={styles.intro}>
-        A segment follows its rules: people enter and leave it on their own. A fixed list holds exactly the people you add to it from the People list.
+        {t('segments.intro')}
       </p>
 
       {message && <p style={styles.message} role="alert">{message}</p>}
@@ -91,8 +93,8 @@ export function Segments() {
       )}
 
       <div style={styles.segmentList}>
-        {loading && <p style={styles.empty}>Loading...</p>}
-        {!loading && segments.length === 0 && <p style={styles.empty}>No segments defined</p>}
+        {loading && <p style={styles.empty}>{t('common:loading')}</p>}
+        {!loading && segments.length === 0 && <p style={styles.empty}>{t('segments.none')}</p>}
         {segments.map((seg) => (
           editing === seg.id ? (
             <SegmentForm
@@ -108,27 +110,27 @@ export function Segments() {
               <div style={styles.segmentInfo}>
                 <div style={styles.segmentTitleRow}>
                   <span style={styles.segmentName}>{seg.name}</span>
-                  <Badge variant="neutral">{seg.kind === 'static' ? 'Fixed list' : 'Rules'}</Badge>
-                  {seg.is_predefined && <Badge variant="neutral">Starter</Badge>}
+                  <Badge variant="neutral">{seg.kind === 'static' ? t('segments.fixedList') : t('segments.rules')}</Badge>
+                  {seg.is_predefined && <Badge variant="neutral">{t('segments.starter')}</Badge>}
                 </div>
                 <span style={styles.segmentRules}>
                   {seg.kind === 'static'
-                    ? (seg.description || 'People added by hand')
-                    : describeRules(seg.rules as any)}
+                    ? (seg.description || t('segments.addedByHand'))
+                    : describeRules(seg.rules as any, t)}
                 </span>
               </div>
               <div style={styles.segmentActions}>
                 {confirmDelete === seg.id ? (
                   <>
-                    <span style={styles.segmentRules}>Delete this {seg.kind === 'static' ? 'list' : 'segment'}?</span>
-                    <button style={styles.actionBtn} onClick={() => setConfirmDelete(null)}>Keep</button>
-                    <button style={styles.actionBtn} onClick={() => handleDelete(seg.id)}>Delete</button>
+                    <span style={styles.segmentRules}>{seg.kind === 'static' ? t('segments.deleteList') : t('segments.deleteSegment')}</span>
+                    <button style={styles.actionBtn} onClick={() => setConfirmDelete(null)}>{t('segments.keep')}</button>
+                    <button style={styles.actionBtn} onClick={() => handleDelete(seg.id)}>{t('common:delete')}</button>
                   </>
                 ) : (
                   <>
-                    <button style={styles.actionBtn} onClick={() => loadMembers(seg.id)}>View people</button>
-                    <button style={styles.actionBtn} onClick={() => setEditing(seg.id)}>{seg.is_predefined ? 'Rename' : 'Edit'}</button>
-                    {!seg.is_predefined && <button style={styles.actionBtn} onClick={() => setConfirmDelete(seg.id)}>Delete</button>}
+                    <button style={styles.actionBtn} onClick={() => loadMembers(seg.id)}>{t('segments.viewPeople')}</button>
+                    <button style={styles.actionBtn} onClick={() => setEditing(seg.id)}>{seg.is_predefined ? t('segments.rename') : t('common:edit')}</button>
+                    {!seg.is_predefined && <button style={styles.actionBtn} onClick={() => setConfirmDelete(seg.id)}>{t('common:delete')}</button>}
                   </>
                 )}
               </div>
@@ -139,24 +141,24 @@ export function Segments() {
 
       {selected && (
         <div style={styles.membersSection}>
-          <h2 style={styles.subtitle}>{selected.name}: {memberCount} {memberCount === 1 ? 'person' : 'people'}</h2>
+          <h2 style={styles.subtitle}>{t('segments.memberCount', { name: selected.name, count: memberCount })}</h2>
           {selected.kind === 'static' && (
-            <p style={styles.intro}>To add people, tick them in the People list and choose "Add to a fixed list".</p>
+            <p style={styles.intro}>{t('segments.addPeopleHelp')}</p>
           )}
           <Table
             columns={[
-              { key: 'reference_number', header: 'Ref' },
-              { key: 'name', header: 'Name', render: (_: any, r: any) => `${r.first_name || ''} ${r.last_name || ''}`.trim() || r.email || r.phone || '—' },
-              { key: 'email', header: 'Email', render: (v: string | null) => v || '—' },
-              { key: 'lifecycle_stage', header: 'Stage', render: (v: string) => <Badge variant="neutral">{lifecycleStageLabel(v)}</Badge> },
+              { key: 'reference_number', header: t('segments.col.ref') },
+              { key: 'name', header: t('segments.col.name'), render: (_: any, r: any) => `${r.first_name || ''} ${r.last_name || ''}`.trim() || r.email || r.phone || '—' },
+              { key: 'email', header: t('segments.col.email'), render: (v: string | null) => v || '—' },
+              { key: 'lifecycle_stage', header: t('segments.col.stage'), render: (v: string) => <Badge variant="neutral">{t('stage.' + v, { defaultValue: lifecycleStageLabel(v) })}</Badge> },
               ...(selected.kind === 'static' ? [{
                 key: 'id', header: '',
-                render: (id: string) => <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); removeMember(id); }}>Remove</button>,
+                render: (id: string) => <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); removeMember(id); }}>{t('segments.remove')}</button>,
               }] : []),
             ]}
             data={members}
             onRowClick={(row: any) => navigate(`/customers/${row.id}`)}
-            emptyMessage={selected.kind === 'static' ? 'Nobody is on this list yet' : 'Nobody matches this segment right now'}
+            emptyMessage={selected.kind === 'static' ? t('segments.emptyList') : t('segments.emptySegment')}
           />
         </div>
       )}
@@ -168,6 +170,7 @@ export function Segments() {
 function SegmentForm({ businessId, kind, segment, onSaved, onCancel }: {
   businessId: string; kind: 'dynamic' | 'static'; segment?: Segment; onSaved: (seg: Segment) => void; onCancel: () => void;
 }) {
+  const { t } = useTranslation('customers');
   const [name, setName] = useState(segment?.name || '');
   const [description, setDescription] = useState(segment?.description || '');
   const [logic, setLogic] = useState<'AND' | 'OR'>(segment?.rules?.logic === 'OR' ? 'OR' : 'AND');
@@ -191,8 +194,8 @@ function SegmentForm({ businessId, kind, segment, onSaved, onCancel }: {
   }, [rules, logic, rulesEditable, businessId]);
 
   const save = async () => {
-    if (!name.trim()) { setError('Give it a name.'); return; }
-    if (rulesEditable && rules.length === 0) { setError('Add at least one rule.'); return; }
+    if (!name.trim()) { setError(t('segments.nameRequired')); return; }
+    if (rulesEditable && rules.length === 0) { setError(t('segments.ruleRequired')); return; }
     setSaving(true);
     setError('');
     try {
@@ -208,7 +211,7 @@ function SegmentForm({ businessId, kind, segment, onSaved, onCancel }: {
       }
       onSaved(saved);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Could not save');
+      setError(err.response?.data?.error || t('segments.saveFailed'));
       setSaving(false);
     }
   };
@@ -216,27 +219,27 @@ function SegmentForm({ businessId, kind, segment, onSaved, onCancel }: {
   return (
     <div style={styles.createForm}>
       <strong style={styles.formTitle}>
-        {segment ? `Edit ${segment.name}` : kind === 'static' ? 'New fixed list' : 'New segment'}
+        {segment ? t('segments.editTitle', { name: segment.name }) : kind === 'static' ? t('segments.newFixedList') : t('segments.newSegment')}
       </strong>
       <div style={styles.ruleBuilder}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" aria-label="Name" style={{ ...styles.input, flex: 1, minWidth: '180px' }} />
-        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" aria-label="Description" style={{ ...styles.input, flex: 2, minWidth: '220px' }} />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('segments.form.name')} aria-label={t('segments.form.name')} style={{ ...styles.input, flex: 1, minWidth: '180px' }} />
+        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('segments.form.descriptionOptional')} aria-label={t('segments.form.description')} style={{ ...styles.input, flex: 2, minWidth: '220px' }} />
       </div>
 
       {rulesEditable && (
         <>
           <SegmentConditions businessId={businessId} value={{ logic, rules }} onChange={(r) => { setLogic(r.logic); setRules(r.rules); }} />
           <span style={styles.segmentRules} aria-live="polite">
-            {rules.length > 0 && (count === null ? 'Counting…' : `${count} ${count === 1 ? 'person matches' : 'people match'} right now`)}
+            {rules.length > 0 && (count === null ? t('segments.counting') : t('segments.matchCount', { count }))}
           </span>
         </>
       )}
-      {segment?.is_predefined && <span style={styles.segmentRules}>Starter segments keep their rules; you can rename them.</span>}
+      {segment?.is_predefined && <span style={styles.segmentRules}>{t('segments.starterNote')}</span>}
 
       {error && <span style={styles.message} role="alert">{error}</span>}
       <div style={styles.formActions}>
-        <Button size="sm" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" loading={saving} onClick={save}>Save</Button>
+        <Button size="sm" variant="secondary" onClick={onCancel}>{t('common:cancel')}</Button>
+        <Button size="sm" loading={saving} onClick={save}>{t('common:save')}</Button>
       </div>
     </div>
   );

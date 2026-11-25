@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { Button } from '../../design-system/components/actions/Button';
 import { RadioGroup } from '../../design-system/components/forms/RadioGroup';
@@ -31,24 +33,25 @@ export function useNoShowPreview(bookingId: string | null, businessId: string) {
 export function NoShowFeeChoice({ preview, failed, charge, onChange }: {
   preview: NoShowPreview | null; failed: boolean; charge: boolean; onChange: (charge: boolean) => void;
 }) {
-  if (failed) return <p style={styles.text}>The no-show fee could not be checked. Marking the no-show still works.</p>;
-  if (!preview) return <p style={styles.text}>Checking the no-show fee…</p>;
-  if (preview.fee <= 0) return <p style={styles.text}>No no-show fee is set for this option, so nothing is charged. The time is freed.</p>;
+  const { t } = useTranslation('calendar');
+  if (failed) return <p style={styles.text}>{t('noShow.checkFailed')}</p>;
+  if (!preview) return <p style={styles.text}>{t('noShow.checking')}</p>;
+  if (preview.fee <= 0) return <p style={styles.text}>{t('noShow.noFee')}</p>;
 
   // Reserved with a membership or package: the no-show is charged to it, never to a card.
   if (preview.benefit) {
     const { name, kind } = preview.benefit;
     return (
       <>
-        <p style={styles.text}>This appointment was reserved with the {kind} {name}. A no-show is charged to it, not to a card. The time is freed.</p>
+        <p style={styles.text}>{t('noShow.benefitReserved', { kind: t(`noShow.kind.${kind}`), name })}</p>
         <RadioGroup
-          label="No-show charge"
+          label={t('noShow.chargeGroup')}
           name="no-show-fee"
           value={charge ? 'charge' : 'waive'}
           onChange={(v) => onChange(v === 'charge')}
           options={[
-            { value: 'charge', label: kind === 'package' ? `Charge to ${name}: the session held for it is used` : `Charge to ${name}: it counts as a visit` },
-            { value: 'waive', label: `No charge: ${name} is given back` },
+            { value: 'charge', label: kind === 'package' ? t('noShow.chargeToPackage', { name }) : t('noShow.chargeToMembership', { name }) },
+            { value: 'waive', label: t('noShow.benefitGivenBack', { name }) },
           ]}
         />
       </>
@@ -57,17 +60,17 @@ export function NoShowFeeChoice({ preview, failed, charge, onChange }: {
 
   const fee = formatCurrency(preview.fee);
   const chargeLabel = preview.card
-    ? `Charge ${fee} to ${preview.card.label}`
-    : `Charge ${fee}. There is no card on file, so it is left as an open order to collect at Checkout`;
+    ? t('noShow.chargeToCard', { fee, card: preview.card.label })
+    : t('noShow.chargeNoCard', { fee });
   return (
     <>
-      <p style={styles.text}>The no-show fee for this option is {fee}. The time is freed.</p>
+      <p style={styles.text}>{t('noShow.feeIs', { fee })}</p>
       <RadioGroup
-        label="No-show fee"
+        label={t('noShow.feeGroup')}
         name="no-show-fee"
         value={charge ? 'charge' : 'waive'}
         onChange={(v) => onChange(v === 'charge')}
-        options={[{ value: 'charge', label: chargeLabel }, { value: 'waive', label: 'No charge' }]}
+        options={[{ value: 'charge', label: chargeLabel }, { value: 'waive', label: t('noShow.noCharge') }]}
       />
     </>
   );
@@ -75,16 +78,17 @@ export function NoShowFeeChoice({ preview, failed, charge, onChange }: {
 
 /** What happened to the fee, in a sentence for staff. */
 export function noShowOutcomeText(fee: NoShowFeeOutcome | undefined): string {
-  if (!fee || fee.status === 'none') return 'Marked as no-show.';
-  if (fee.status === 'benefit') return `Marked as no-show. Charged to ${fee.benefit?.name || 'the membership or package'}; no card was charged.`;
-  if (fee.status === 'waived' && fee.benefit) return `Marked as no-show. Not charged: ${fee.benefit.name} was given back.`;
+  const t = (key: string, values?: Record<string, unknown>) => i18n.t(`calendar:${key}`, values) as string;
+  if (!fee || fee.status === 'none') return t('noShow.outcome.marked');
+  if (fee.status === 'benefit') return t('noShow.outcome.benefit', { name: fee.benefit?.name || t('noShow.outcome.benefitFallback') });
+  if (fee.status === 'waived' && fee.benefit) return t('noShow.outcome.benefitGivenBack', { name: fee.benefit.name });
   const amount = formatCurrency(fee.amount);
-  if (fee.status === 'waived') return `Marked as no-show. The ${amount} fee was not charged.`;
-  if (fee.status === 'charged') return `Marked as no-show. ${amount} charged${fee.card_label ? ` to ${fee.card_label}` : ''}.`;
+  if (fee.status === 'waived') return t('noShow.outcome.waived', { amount });
+  if (fee.status === 'charged') return fee.card_label ? t('noShow.outcome.chargedToCard', { amount, card: fee.card_label }) : t('noShow.outcome.charged', { amount });
   const why = fee.reason === 'declined'
-    ? `The card${fee.card_label ? ` (${fee.card_label})` : ''} was declined`
-    : fee.reason === 'no_customer' ? 'There is no customer to charge' : 'There is no card on file';
-  return `Marked as no-show. ${why}, so ${amount} was not charged. It is waiting${fee.order_number ? ` as order ${fee.order_number}` : ''} to collect at Checkout.`;
+    ? (fee.card_label ? t('noShow.outcome.declinedCard', { card: fee.card_label }) : t('noShow.outcome.declined'))
+    : fee.reason === 'no_customer' ? t('noShow.outcome.noCustomer') : t('noShow.outcome.noCard');
+  return fee.order_number ? t('noShow.outcome.unpaidOrder', { why, amount, order: fee.order_number }) : t('noShow.outcome.unpaid', { why, amount });
 }
 
 /** The Bookings list's No-show dialog. */
@@ -94,6 +98,7 @@ export function NoShowModal({ booking, businessId, onClose, onDone }: {
   onClose: () => void;
   onDone: (result: { ok: boolean; text: string; orderId?: string }) => void;
 }) {
+  const { t } = useTranslation('calendar');
   const { preview, failed } = useNoShowPreview(booking?.id ?? null, businessId);
   const [charge, setCharge] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -107,16 +112,16 @@ export function NoShowModal({ booking, businessId, onClose, onDone }: {
       const r = await bookingsApi.noShowBooking(booking.id, businessId, !hasFee || charge);
       onDone({ ok: r.fee?.status !== 'unpaid', text: noShowOutcomeText(r.fee), orderId: r.fee?.status === 'unpaid' ? r.fee.order_id : undefined });
     } catch (e: any) {
-      onDone({ ok: false, text: e?.response?.data?.error || 'The no-show could not be marked. Please try again.' });
+      onDone({ ok: false, text: e?.response?.data?.error || t('noShow.markFailed') });
     } finally { setSaving(false); onClose(); }
   };
 
   return (
-    <Modal open={!!booking} onClose={onClose} title="Mark as No-Show" size="sm"
+    <Modal open={!!booking} onClose={onClose} title={t('noShow.modalTitle')} size="sm"
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="ghost" onClick={onClose}>{t('common:cancel')}</Button>
         <Button variant="destructive" onClick={confirm} disabled={saving || (!preview && !failed)}>
-          {saving ? 'Working…' : hasFee && charge ? 'Charge & Mark No-Show' : 'Mark No-Show'}
+          {saving ? t('noShow.working') : hasFee && charge ? t('noShow.chargeAndMark') : t('noShow.mark')}
         </Button>
       </>}>
       <NoShowFeeChoice preview={preview} failed={failed} charge={charge} onChange={setCharge} />

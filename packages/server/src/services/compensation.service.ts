@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface CreateCompensationRuleInput {
   businessId: string;
@@ -104,7 +105,7 @@ export async function createRule(input: CreateCompensationRuleInput) {
     input.effectiveFrom, input.effectiveTo || null,
   );
   if (hasOverlap) {
-    throw new Error('An active compensation rule of this type already exists for this offering with overlapping dates');
+    throw new Error(msg('errors:compensation.anActiveCompensationRuleOfThis'));
   }
 
   const { rows } = await adminPool.query(
@@ -189,7 +190,7 @@ export async function updateRule(id: string, businessId: string, updates: Record
       id, // exclude self
     );
     if (hasOverlap) {
-      throw new Error('An active compensation rule of this type already exists for this offering with overlapping dates');
+      throw new Error(msg('errors:compensation.anActiveCompensationRuleOfThis'));
     }
   }
 

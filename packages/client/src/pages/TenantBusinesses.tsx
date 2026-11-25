@@ -1,4 +1,8 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { LANGUAGE_DETAILS } from '@daystream/shared';
+import type { SupportedLanguage } from '@daystream/shared';
 import { LanguageSelect } from '../components/LanguageSelect';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
@@ -7,6 +11,7 @@ import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
 import { formatDateOnly } from '../utils/date';
+import { formatDate, formatDateTime } from '../utils/format';
 import { CurrencyInput } from '../components/CurrencyInput';
 import { ThemeEditorFields, ThemeField } from '../design-system/components/forms/ThemeEditorFields';
 import { Tabs } from '../design-system/components/navigation/Tabs';
@@ -104,6 +109,7 @@ const EMPTY_FORM: BusinessForm = {
 };
 
 export function TenantBusinesses() {
+  const { t } = useTranslation('tenant');
   const { user } = useAuth();
   const tenantId = user?.tenant_id || '';
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -161,6 +167,7 @@ export function TenantBusinesses() {
       payment_card_last4: (biz as any).payment_card_last4 || '',
       payment_card_brand: (biz as any).payment_card_brand || '',
       payment_card_exp: (biz as any).payment_card_exp || '',
+      owner_email: '', owner_first_name: '', owner_last_name: '', owner_password: '',
     });
     setFormError(null);
   }
@@ -179,7 +186,7 @@ export function TenantBusinesses() {
         owner_password: form.owner_password,
       });
       setShowCreate(false); fetchBusinesses();
-    } catch (err: any) { setFormError(err.response?.data?.error || err.response?.data?.message || 'Failed to create'); }
+    } catch (err: any) { setFormError(err.response?.data?.error || err.response?.data?.message || t('businesses.createFailed')); }
     finally { setSaving(false); }
   }
 
@@ -194,44 +201,48 @@ export function TenantBusinesses() {
         next_billing_date: form.next_billing_date || null,
       });
       setSelectedBiz(res.data.data); fetchBusinesses();
-    } catch (err: any) { setFormError(err.response?.data?.message || 'Failed to update'); }
+    } catch (err: any) { setFormError(err.response?.data?.message || t('businesses.updateFailed')); }
     finally { setSaving(false); }
   }
 
   async function handleArchive(biz: Business) {
-    if (!confirm(`Archive "${biz.name}"? This will deactivate the business.`)) return;
+    if (!(await askConfirm({ message: t('businesses.archiveConfirm', { name: biz.name }), confirmLabel: t('common:action.archive'), destructive: true }))) return;
     try {
       await apiClient.delete(`/v1/admin/businesses/${biz.id}`);
       setSelectedBiz(null); fetchBusinesses();
-    } catch (err: any) { alert(err.response?.data?.message || 'Failed to archive'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.message || t('businesses.archiveFailed'), tone: 'error' }); }
   }
 
   async function handleActivate(biz: Business) {
     try {
       await apiClient.put(`/v1/admin/businesses/${biz.id}`, { status: 'active' });
       setSelectedBiz((prev) => prev ? { ...prev, status: 'active' } : null); fetchBusinesses();
-    } catch (err: any) { alert(err.response?.data?.message || 'Failed to activate'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.message || t('businesses.activateFailed'), tone: 'error' }); }
   }
 
+  // A stored status is shown through its key, never printed as stored.
+  const statusLabel = (s: string) => t(`businesses.status_${s}`, { defaultValue: s });
+  // A stored language code is shown as the language's own name.
+  const languageName = (code: string) => LANGUAGE_DETAILS[code as SupportedLanguage]?.label ?? code;
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
-    { key: 'slug', header: 'URL Alias', sortable: true },
-    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={val === 'active' ? 'success' : val === 'suspended' ? 'warning' : 'neutral'}>{val.charAt(0).toUpperCase() + val.slice(1)}</Badge> },
-    { key: 'currency', header: 'Currency', sortable: true },
-    { key: 'created_at', header: 'Created', sortable: true, render: (val: string) => new Date(val).toLocaleDateString() },
+    { key: 'name', header: t('businesses.name'), sortable: true },
+    { key: 'slug', header: t('businesses.urlAlias'), sortable: true },
+    { key: 'status', header: t('businesses.status'), sortable: true, render: (val: string) => <Badge variant={val === 'active' ? 'success' : val === 'suspended' ? 'warning' : 'neutral'}>{statusLabel(val)}</Badge> },
+    { key: 'currency', header: t('businesses.currency'), sortable: true },
+    { key: 'created_at', header: t('businesses.created'), sortable: true, render: (val: string) => formatDate(val) },
   ];
 
   return (
     <div>
       <div style={styles.header}>
-        <h2 style={styles.heading}>Businesses</h2>
-        <Button onClick={openCreate}>Create Business</Button>
+        <h2 style={styles.heading}>{t('businesses.title')}</h2>
+        <Button onClick={openCreate}>{t('businesses.create')}</Button>
       </div>
       <div style={{ marginBottom: '16px' }}>
-        <SearchInput value={search} onChange={setSearch} placeholder="Search businesses..." />
+        <SearchInput value={search} onChange={setSearch} placeholder={t('businesses.search')} />
       </div>
 
-      <Table columns={columns} data={filtered} loading={loading} emptyMessage="No businesses found." clientSort onRowClick={(row) => { setSelectedBiz(row); openEdit(row); }} mobileCardMode />
+      <Table columns={columns} data={filtered} loading={loading} emptyMessage={t('businesses.empty')} clientSort onRowClick={(row) => { setSelectedBiz(row); openEdit(row); }} mobileCardMode />
 
       {/* Detail Panel — tabbed (mirrors the Tenant window redesign) */}
       {selectedBiz && (
@@ -239,7 +250,7 @@ export function TenantBusinesses() {
           <div style={styles.detailPanel}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{selectedBiz.name}</h3>
-              <button style={styles.closeBtn} onClick={() => { setSelectedBiz(null); }}>&times;</button>
+              <button style={styles.closeBtn} onClick={() => { setSelectedBiz(null); }} aria-label={t('common:modal.close')}>{'\u00d7'}</button>
             </div>
             {formError && <div style={styles.formError}>{formError}</div>}
 
@@ -248,60 +259,60 @@ export function TenantBusinesses() {
               items={[
                 {
                   id: 'overview',
-                  label: 'Overview',
+                  label: t('businesses.tabOverview'),
                   content: (
                     <>
                       <div style={styles.detailBody}>
-                        <DetailRow label="URL Alias" value={selectedBiz.slug} />
-                        <DetailRow label="Status" value={selectedBiz.status.charAt(0).toUpperCase() + selectedBiz.status.slice(1)} />
-                        <DetailRow label="Email" value={selectedBiz.email || '—'} />
-                        <DetailRow label="Phone" value={selectedBiz.phone || '—'} />
-                        <DetailRow label="Address" value={selectedBiz.address || '—'} />
-                        <DetailRow label="Language" value={selectedBiz.default_language} />
-                        <DetailRow label="Currency" value={selectedBiz.currency} />
-                        <DetailRow label="Timezone" value={selectedBiz.timezone} />
-                        <DetailRow label="Brand Color" value={selectedBiz.primary_color || 'Inherited from tenant'} />
-                        <DetailRow label="Signup Date" value={selectedBiz.signup_date ? formatDateOnly(selectedBiz.signup_date) : '—'} />
-                        <DetailRow label="Created" value={new Date(selectedBiz.created_at).toLocaleString()} />
+                        <DetailRow label={t('businesses.urlAlias')} value={selectedBiz.slug} />
+                        <DetailRow label={t('businesses.status')} value={statusLabel(selectedBiz.status)} />
+                        <DetailRow label={t('businesses.email')} value={selectedBiz.email || '—'} />
+                        <DetailRow label={t('businesses.phone')} value={selectedBiz.phone || '—'} />
+                        <DetailRow label={t('businesses.address')} value={selectedBiz.address || '—'} />
+                        <DetailRow label={t('businesses.language')} value={languageName(selectedBiz.default_language)} />
+                        <DetailRow label={t('businesses.currency')} value={selectedBiz.currency} />
+                        <DetailRow label={t('businesses.timezone')} value={selectedBiz.timezone} />
+                        <DetailRow label={t('businesses.brandColor')} value={selectedBiz.primary_color || t('businesses.inheritedFromTenant')} />
+                        <DetailRow label={t('businesses.signupDate')} value={selectedBiz.signup_date ? formatDateOnly(selectedBiz.signup_date) : '—'} />
+                        <DetailRow label={t('businesses.created')} value={formatDateTime(selectedBiz.created_at)} />
                       </div>
                       <div style={styles.actions}>
-                        {selectedBiz.status === 'active' && <Button variant="destructive" size="sm" onClick={() => handleArchive(selectedBiz)}>Archive</Button>}
-                        {selectedBiz.status !== 'active' && <Button variant="primary" size="sm" onClick={() => handleActivate(selectedBiz)}>Activate</Button>}
+                        {selectedBiz.status === 'active' && <Button variant="destructive" size="sm" onClick={() => handleArchive(selectedBiz)}>{t('businesses.archive')}</Button>}
+                        {selectedBiz.status !== 'active' && <Button variant="primary" size="sm" onClick={() => handleActivate(selectedBiz)}>{t('businesses.activate')}</Button>}
                       </div>
                     </>
                   ),
                 },
                 {
                   id: 'settings',
-                  label: 'Settings',
+                  label: t('businesses.tabSettings'),
                   content: (
                     <BusinessFormFields form={form} setForm={setForm} saving={saving} onSave={handleSaveEdit} onCancel={() => { setSelectedBiz(null); setFormError(null); }} />
                   ),
                 },
                 {
                   id: 'billing',
-                  label: 'Billing',
+                  label: t('businesses.tabBilling'),
                   content: (
                     <BusinessBillingTab businessId={selectedBiz.id} tenantId={tenantId} currency={selectedBiz.currency} />
                   ),
                 },
                 {
                   id: 'charge-history',
-                  label: 'Charge History',
+                  label: t('businesses.tabChargeHistory'),
                   content: (
                     <BusinessChargeHistory businessId={selectedBiz.id} />
                   ),
                 },
                 {
                   id: 'audit-trail',
-                  label: 'Audit Trail',
+                  label: t('businesses.tabAuditTrail'),
                   content: (
                     <BusinessAuditTrail businessId={selectedBiz.id} />
                   ),
                 },
                 {
                   id: 'data-migration',
-                  label: 'Data Migration',
+                  label: t('businesses.tabDataMigration'),
                   content: (
                     <DataMigration businessId={selectedBiz.id} />
                   ),
@@ -317,8 +328,8 @@ export function TenantBusinesses() {
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Create Business</h3>
-              <button style={styles.closeBtn} onClick={() => setShowCreate(false)}>&times;</button>
+              <h3 style={styles.modalTitle}>{t('businesses.create')}</h3>
+              <button style={styles.closeBtn} onClick={() => setShowCreate(false)} aria-label={t('common:modal.close')}>{'\u00d7'}</button>
             </div>
             {formError && <div style={styles.formError}>{formError}</div>}
             <form onSubmit={handleCreate}>
@@ -336,6 +347,7 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
   form: BusinessForm; setForm: (f: BusinessForm) => void;
   saving: boolean; onSave: () => void; onCancel: () => void; isCreate?: boolean;
 }) {
+  const { t } = useTranslation('tenant');
   // Auto-calculate next billing date preview when frequency or signup date changes
   function recalcNextBilling(newForm: BusinessForm) {
     const ref = newForm.signup_date;
@@ -371,79 +383,79 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
   return (
     <div style={styles.formBody}>
       <div style={styles.formGroup}>
-        <label style={styles.label}>Name *</label>
-        <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="Business Name" />
+        <label style={styles.label}>{t('businesses.nameRequired')}</label>
+        <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder={t('businesses.namePlaceholder')} />
       </div>
       <div style={styles.formGroup}>
-        <label style={styles.label}>URL Alias</label>
-        <input style={styles.input} value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="auto-generated-from-name" />
-        <span style={styles.helper}>Lowercase, hyphens only. Leave blank to auto-generate.</span>
+        <label style={styles.label}>{t('businesses.urlAlias')}</label>
+        <input style={styles.input} value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder={t('businesses.slugPlaceholder')} />
+        <span style={styles.helper}>{t('businesses.slugHelp')}</span>
       </div>
 
       {isCreate && (
         <>
           <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
-            Owner Details
+            {t('businesses.ownerDetails')}
           </div>
           <div style={styles.formRow}>
             <div style={styles.formGroup}>
-              <label style={styles.label}>First Name *</label>
-              <input style={styles.input} value={form.owner_first_name} onChange={(e) => setForm({ ...form, owner_first_name: e.target.value })} required placeholder="First Name" />
+              <label style={styles.label}>{t('businesses.firstNameRequired')}</label>
+              <input style={styles.input} value={form.owner_first_name} onChange={(e) => setForm({ ...form, owner_first_name: e.target.value })} required placeholder={t('businesses.firstName')} />
             </div>
             <div style={styles.formGroup}>
-              <label style={styles.label}>Last Name *</label>
-              <input style={styles.input} value={form.owner_last_name} onChange={(e) => setForm({ ...form, owner_last_name: e.target.value })} required placeholder="Last Name" />
+              <label style={styles.label}>{t('businesses.lastNameRequired')}</label>
+              <input style={styles.input} value={form.owner_last_name} onChange={(e) => setForm({ ...form, owner_last_name: e.target.value })} required placeholder={t('businesses.lastName')} />
             </div>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Owner Email *</label>
-            <input style={styles.input} type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })} required placeholder="owner@business.com" />
+            <label style={styles.label}>{t('businesses.ownerEmailRequired')}</label>
+            <input style={styles.input} type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })} required placeholder={t('businesses.ownerEmailPlaceholder')} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Owner Password *</label>
-            <input style={styles.input} type="password" value={form.owner_password} onChange={(e) => setForm({ ...form, owner_password: e.target.value })} required minLength={10} placeholder="Minimum 10 characters" />
+            <label style={styles.label}>{t('businesses.ownerPasswordRequired')}</label>
+            <input style={styles.input} type="password" value={form.owner_password} onChange={(e) => setForm({ ...form, owner_password: e.target.value })} required minLength={10} placeholder={t('businesses.passwordHelp')} />
           </div>
         </>
       )}
 
       <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
-        Business Contact
+        {t('businesses.businessContact')}
       </div>
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Business Email</label>
-          <input style={styles.input} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="contact@business.com" />
+          <label style={styles.label}>{t('businesses.businessEmail')}</label>
+          <input style={styles.input} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t('businesses.contactEmailPlaceholder')} />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Phone</label>
-          <input style={styles.input} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 234 567 890" />
+          <label style={styles.label}>{t('businesses.phone')}</label>
+          <input style={styles.input} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('businesses.phonePlaceholder')} />
         </div>
       </div>
       <div style={styles.formGroup}>
-        <label style={styles.label}>Address</label>
-        <input style={styles.input} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="123 Main St, City" />
+        <label style={styles.label}>{t('businesses.address')}</label>
+        <input style={styles.input} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={t('businesses.addressPlaceholder')} />
       </div>
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Language</label>
+          <label style={styles.label}>{t('businesses.language')}</label>
           <LanguageSelect style={styles.input} value={form.default_language} onChange={(v) => setForm({ ...form, default_language: v })} />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Currency</label>
+          <label style={styles.label}>{t('businesses.currency')}</label>
           <select style={styles.input} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
-            <option value="USD">USD ($)</option>
-            <option value="EUR">EUR (€)</option>
+            <option value="USD">{t('businesses.currencyUSD')}</option>
+            <option value="EUR">{t('businesses.currencyEUR')}</option>
           </select>
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Timezone</label>
+          <label style={styles.label}>{t('businesses.timezone')}</label>
           <select style={styles.input} value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
             {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
           </select>
         </div>
       </div>
       <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
-        Appearance {isCreate && '(optional — leave blank to inherit the tenant’s theme)'}
+        {t('businesses.appearance')}{isCreate && ` ${t('businesses.appearanceOptional')}`}
       </div>
       <ThemeEditorFields
         values={{
@@ -460,88 +472,88 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
           setForm({ ...form, [formField]: value });
         }}
         inherited={{}}
-        inheritedLabel="tenant"
+        inheritedLabel={t('businesses.inheritedLabel')}
       />
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Billing Frequency</label>
+          <label style={styles.label}>{t('businesses.billingFrequency')}</label>
           <select style={styles.input} value={form.billing_frequency} onChange={(e) => handleFrequencyChange(e.target.value)}>
-            <option value="monthly">Monthly</option>
-            <option value="quarterly">Quarterly</option>
-            <option value="semi-annual">Semi-Annual</option>
-            <option value="annual">Annual</option>
+            <option value="monthly">{t('businesses.freqMonthly')}</option>
+            <option value="quarterly">{t('businesses.freqQuarterly')}</option>
+            <option value="semi-annual">{t('businesses.freqSemiAnnual')}</option>
+            <option value="annual">{t('businesses.freqAnnual')}</option>
           </select>
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Billing Amount</label>
+          <label style={styles.label}>{t('businesses.billingAmount')}</label>
           <CurrencyInput style={styles.input} value={form.billing_amount} onChange={(cents) => setForm({ ...form, billing_amount: cents })} />
         </div>
       </div>
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Signup Date</label>
+          <label style={styles.label}>{t('businesses.signupDate')}</label>
           <input style={styles.input} type="date" value={form.signup_date} onChange={(e) => handleSignupChange(e.target.value)} />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Next Billing Date</label>
+          <label style={styles.label}>{t('businesses.nextBillingDate')}</label>
           <input style={{ ...styles.input, opacity: 0.7, cursor: 'not-allowed' }} type="date" value={form.next_billing_date} disabled />
-          <span style={styles.helper}>Auto-calculated from last billing date and frequency.</span>
+          <span style={styles.helper}>{t('businesses.nextBillingHelp')}</span>
         </div>
       </div>
 
       <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
-        Payment Source (ACH/SEPA — primary)
+        {t('businesses.paymentSource')}
       </div>
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Bank Name</label>
-          <input style={styles.input} value={form.payment_bank_name} onChange={(e) => setForm({ ...form, payment_bank_name: e.target.value })} placeholder="Bank Name" />
+          <label style={styles.label}>{t('businesses.bankName')}</label>
+          <input style={styles.input} value={form.payment_bank_name} onChange={(e) => setForm({ ...form, payment_bank_name: e.target.value })} placeholder={t('businesses.bankName')} />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Account Holder</label>
-          <input style={styles.input} value={form.payment_account_holder} onChange={(e) => setForm({ ...form, payment_account_holder: e.target.value })} placeholder="Business Name LLC" />
+          <label style={styles.label}>{t('businesses.accountHolder')}</label>
+          <input style={styles.input} value={form.payment_account_holder} onChange={(e) => setForm({ ...form, payment_account_holder: e.target.value })} placeholder={t('businesses.accountHolderPlaceholder')} />
         </div>
       </div>
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Account Number</label>
-          <input style={styles.input} value={form.payment_account_number} onChange={(e) => setForm({ ...form, payment_account_number: e.target.value })} placeholder="••••••1234" />
+          <label style={styles.label}>{t('businesses.accountNumber')}</label>
+          <input style={styles.input} value={form.payment_account_number} onChange={(e) => setForm({ ...form, payment_account_number: e.target.value })} placeholder={t('businesses.accountNumberPlaceholder')} />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Routing / IBAN</label>
-          <input style={styles.input} value={form.payment_routing_number || form.payment_iban} onChange={(e) => setForm({ ...form, payment_routing_number: e.target.value })} placeholder="Routing or IBAN" />
+          <label style={styles.label}>{t('businesses.routingIban')}</label>
+          <input style={styles.input} value={form.payment_routing_number || form.payment_iban} onChange={(e) => setForm({ ...form, payment_routing_number: e.target.value })} placeholder={t('businesses.routingIbanPlaceholder')} />
         </div>
       </div>
 
       <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
-        Card on File (backup)
+        {t('businesses.cardOnFile')}
       </div>
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Last 4 Digits</label>
-          <input style={styles.input} value={form.payment_card_last4} onChange={(e) => setForm({ ...form, payment_card_last4: e.target.value })} maxLength={4} placeholder="4242" />
+          <label style={styles.label}>{t('businesses.last4')}</label>
+          <input style={styles.input} value={form.payment_card_last4} onChange={(e) => setForm({ ...form, payment_card_last4: e.target.value })} maxLength={4} placeholder={t('businesses.last4Placeholder')} />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Brand</label>
+          <label style={styles.label}>{t('businesses.brand')}</label>
           <select style={styles.input} value={form.payment_card_brand} onChange={(e) => setForm({ ...form, payment_card_brand: e.target.value })}>
-            <option value="">None</option>
-            <option value="visa">Visa</option>
-            <option value="mastercard">Mastercard</option>
-            <option value="amex">Amex</option>
-            <option value="discover">Discover</option>
+            <option value="">{t('businesses.none')}</option>
+            <option value="visa">{t('businesses.brandVisa')}</option>
+            <option value="mastercard">{t('businesses.brandMastercard')}</option>
+            <option value="amex">{t('businesses.brandAmex')}</option>
+            <option value="discover">{t('businesses.brandDiscover')}</option>
           </select>
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Expiry</label>
-          <input style={styles.input} value={form.payment_card_exp} onChange={(e) => setForm({ ...form, payment_card_exp: e.target.value })} placeholder="MM/YYYY" maxLength={7} />
+          <label style={styles.label}>{t('businesses.expiry')}</label>
+          <input style={styles.input} value={form.payment_card_exp} onChange={(e) => setForm({ ...form, payment_card_exp: e.target.value })} placeholder={t('businesses.expiryPlaceholder')} maxLength={7} />
         </div>
       </div>
 
       <div style={styles.formActions}>
-        <Button variant="outline" type="button" onClick={onCancel}>Cancel</Button>
+        <Button variant="outline" type="button" onClick={onCancel}>{t('common:cancel')}</Button>
         {isCreate
-          ? <Button type="submit" loading={saving}>Create Business</Button>
-          : <Button onClick={onSave} loading={saving}>Save Changes</Button>
+          ? <Button type="submit" loading={saving}>{t('businesses.create')}</Button>
+          : <Button onClick={onSave} loading={saving}>{t('businesses.saveChanges')}</Button>
         }
       </div>
     </div>

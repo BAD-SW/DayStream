@@ -6,6 +6,7 @@ import { tenantQuery } from '../db/tenant-query';
 import { logger } from '../middleware/logger';
 import { JwtPayload } from '../auth/middleware';
 import { findOrCreatePerson, recordLogin } from './person-identity.service';
+import { msg } from '../i18n';
 
 const SALT_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRY = '24h';
@@ -16,7 +17,7 @@ const PASSWORD_HISTORY_COUNT = 5;
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET environment variable is not set');
+  if (!secret) throw new Error(msg('errors:auth.jwtSecretEnvironmentVariableIsNot'));
   return secret;
 }
 
@@ -284,7 +285,7 @@ export async function registerUser(
   // Check existing
   const existing = await findUserByEmail(email, tenantId);
   if (existing) {
-    throw new Error('A user with this email already exists');
+    throw new Error(msg('errors:auth.aUserWithThisEmailAlready'));
   }
 
   const passwordHash = await hashPassword(password);
@@ -358,9 +359,9 @@ export async function accountBlockReason(user: { id: string; status?: string; ro
  */
 async function assertAccountUsable(user: any): Promise<void> {
   const reason = await accountBlockReason(user);
-  if (reason === 'inactive') throw new Error('Invalid credentials');
-  if (reason === 'tenant_suspended') throw Object.assign(new Error('This organisation\'s account is suspended. Please contact DayStream.'), { code: 'TENANT_SUSPENDED' });
-  if (reason === 'business_archived') throw Object.assign(new Error('This business is no longer active. Please contact your organisation\'s administrator.'), { code: 'BUSINESS_ARCHIVED' });
+  if (reason === 'inactive') throw new Error(msg('errors:auth.invalidCredentials'));
+  if (reason === 'tenant_suspended') throw Object.assign(new Error(msg('errors:auth.thisOrganisationSAccountIsSuspended')), { code: 'TENANT_SUSPENDED' });
+  if (reason === 'business_archived') throw Object.assign(new Error(msg('errors:auth.thisBusinessIsNoLongerActive')), { code: 'BUSINESS_ARCHIVED' });
 }
 
 export async function loginUser(
@@ -372,7 +373,7 @@ export async function loginUser(
 ): Promise<{ user: any; accessToken: string; refreshToken: string; requiresMfa: boolean }> {
   // Check lockout
   if (await isAccountLocked(email, tenantId)) {
-    throw new Error('Account is locked. Please try again later.');
+    throw new Error(msg('errors:auth.accountIsLockedPleaseTryAgain'));
   }
 
   const user = await findUserByEmail(email, tenantId);
@@ -384,20 +385,20 @@ export async function loginUser(
     );
     if (fallbackRows.length === 0) {
       await recordLoginAttempt(email, tenantId, ip, false);
-      throw new Error('Invalid credentials');
+      throw new Error(msg('errors:auth.invalidCredentials'));
     }
     // Use the found user and their actual tenant
     const foundUser = fallbackRows[0];
     const effectiveTenantId = foundUser.tenant_id;
 
     if (!foundUser.password_hash) {
-      throw new Error('Invalid credentials');
+      throw new Error(msg('errors:auth.invalidCredentials'));
     }
 
     const valid = await verifyPassword(password, foundUser.password_hash);
     if (!valid) {
       await recordLoginAttempt(email, effectiveTenantId, ip, false);
-      throw new Error('Invalid credentials');
+      throw new Error(msg('errors:auth.invalidCredentials'));
     }
 
     await assertAccountUsable(foundUser);
@@ -423,13 +424,13 @@ export async function loginUser(
   }
 
   if (!user.password_hash) {
-    throw new Error('Invalid credentials');
+    throw new Error(msg('errors:auth.invalidCredentials'));
   }
 
   const valid = await verifyPassword(password, user.password_hash);
   if (!valid) {
     await recordLoginAttempt(email, tenantId, ip, false);
-    throw new Error('Invalid credentials');
+    throw new Error(msg('errors:auth.invalidCredentials'));
   }
 
   await assertAccountUsable(user);
@@ -469,15 +470,15 @@ export async function refreshAccessToken(
 ): Promise<{ accessToken: string; refreshToken: string }> {
   const stored = await validateRefreshToken(token);
   if (!stored) {
-    throw new Error('Invalid or expired refresh token');
+    throw new Error(msg('errors:auth.invalidOrExpiredRefreshToken'));
   }
 
   const user = await findUserById(stored.user_id);
   if (!user || user.status !== 'active') {
-    throw new Error('User not found or inactive');
+    throw new Error(msg('errors:auth.userNotFoundOrInactive'));
   }
   if (await accountBlockReason(user)) {
-    throw new Error('User not found or inactive');
+    throw new Error(msg('errors:auth.userNotFoundOrInactive'));
   }
 
   // Revoke old, issue new (rotation)

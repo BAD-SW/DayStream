@@ -1,3 +1,4 @@
+import { askConfirm } from '../../design-system/components/feedback/dialogs';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Badge } from '../../design-system/components/data/Badge';
@@ -14,6 +15,7 @@ import * as inventoryApi from '../../api/inventory';
 import type { PurchaseOrder, PoInput, PoLine } from '../../api/purchase-orders';
 import { formatCurrency } from '../../utils/currency';
 import { formatDateOnly } from '../../utils/date';
+import { useTranslation } from 'react-i18next';
 
 /**
  * One purchase order (spec 51, gap 7; design 7.7). A draft is edited here (vendor, where it is
@@ -43,6 +45,7 @@ const fromPo = (po: PurchaseOrder): Draft => ({
 });
 
 export function PurchaseOrderPage() {
+  const { t } = useTranslation('inventory');
   const { id } = useParams<{ id: string }>();
   const routeIsNew = !id || id === 'new';
   const navigate = useGuardedNavigate();
@@ -102,9 +105,9 @@ export function PurchaseOrderPage() {
 
   // Saved: a new order is created and opened; a draft is updated.
   const saveDraft = async (): Promise<PurchaseOrder | null> => {
-    if (!draft.vendor_id) { setMessage({ text: 'Choose a vendor.', error: true }); return null; }
-    if (!draft.location_id) { setMessage({ text: 'Choose where it is delivered.', error: true }); return null; }
-    if (!draft.lines.some((l) => l.merchandise_id)) { setMessage({ text: 'Add at least one product.', error: true }); return null; }
+    if (!draft.vendor_id) { setMessage({ text: t('po.chooseVendor'), error: true }); return null; }
+    if (!draft.location_id) { setMessage({ text: t('po.chooseLocation'), error: true }); return null; }
+    if (!draft.lines.some((l) => l.merchandise_id)) { setMessage({ text: t('po.addProduct'), error: true }); return null; }
     if (isNew) {
       const created = await poApi.createPurchaseOrder(businessId, toInput(draft));
       setSaved(JSON.stringify(toInput(draft)));
@@ -122,26 +125,26 @@ export function PurchaseOrderPage() {
   const run = async (key: string, fn: () => Promise<string | null>) => {
     setBusy(key); setMessage(null);
     try { const text = await fn(); if (text) setMessage({ text }); }
-    catch (e) { setMessage({ text: errorText(e, 'Something went wrong.'), error: true }); }
+    catch (e) { setMessage({ text: errorText(e, t('po.wentWrong')), error: true }); }
     finally { setBusy(null); }
   };
 
-  const handleSave = () => run('save', async () => ((await saveDraft()) ? 'Saved.' : null));
+  const handleSave = () => run('save', async () => ((await saveDraft()) ? t('po.saved') : null));
   const handleSend = (email: boolean) => run(email ? 'email' : 'mark', async () => {
     const p = await saveDraft();
     if (!p) return null;
     const out = await poApi.sendPurchaseOrder(businessId, p.id, email);
     fill(await poApi.getPurchaseOrder(businessId, p.id));
-    return out.emailedTo ? `Emailed to ${out.emailedTo}.` : 'Marked as sent.';
+    return out.emailedTo ? t('po.emailedTo', { email: out.emailedTo }) : t('po.markedSent');
   });
-  const handleClose = () => {
+  const handleClose = async () => {
     if (!po) return;
     const cancel = po.status === 'draft' || po.status === 'sent';
-    if (!confirm(cancel ? 'Cancel this purchase order?' : 'Close this purchase order? What has not arrived is no longer expected.')) return;
+    if (!(await askConfirm({ message: cancel ? t('po.cancelConfirm') : t('po.closeConfirm'), confirmLabel: cancel ? t('common:action.cancelOrder') : t('common:action.continue'), destructive: cancel }))) return;
     run('close', async () => {
       await poApi.closePurchaseOrder(businessId, po.id);
       fill(await poApi.getPurchaseOrder(businessId, po.id));
-      return cancel ? 'Cancelled.' : 'Closed.';
+      return cancel ? t('po.cancelled') : t('po.closed');
     });
   };
 
@@ -150,41 +153,41 @@ export function PurchaseOrderPage() {
   const toBill = po ? po.lines.reduce((t, l) => t + (l.qty_received - l.qty_billed) * l.unit_cost_cents, 0) : 0;
   const canReceive = po && (po.status === 'sent' || po.status === 'partly_received');
 
-  if (loading) return <div style={styles.page}><p style={styles.muted}>Loading…</p></div>;
-  if (!isNew && !po) return <div style={styles.page}><p style={styles.muted}>Purchase order not found.</p></div>;
+  if (loading) return <div style={styles.page}><p style={styles.muted}>{t('po.loading')}</p></div>;
+  if (!isNew && !po) return <div style={styles.page}><p style={styles.muted}>{t('po.notFound')}</p></div>;
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirty} />
-      <button style={styles.back} onClick={() => navigate('/accounting?tab=purchase_orders')}>← Back to Purchase Orders</button>
+      <button style={styles.back} onClick={() => navigate('/accounting?tab=purchase_orders')}>{t('po.back')}</button>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>{po ? `Purchase Order ${po.po_number}` : 'New Purchase Order'}</h1>
+          <h1 style={styles.title}>{po ? t('po.title', { number: po.po_number }) : t('po.list.new')}</h1>
           {po && (
             <span style={styles.muted}>
-              Created {formatDateOnly(po.created_at)}{po.created_by_name ? ` by ${po.created_by_name}` : ''}
-              {po.sent_at && ` · sent ${formatDateOnly(po.sent_at)}`}
+              {po.created_by_name ? t('po.createdBy', { date: formatDateOnly(po.created_at), name: po.created_by_name }) : t('po.created', { date: formatDateOnly(po.created_at) })}
+              {po.sent_at && ` · ${t('po.sentOn', { date: formatDateOnly(po.sent_at) })}`}
             </span>
           )}
         </div>
-        {po && <Badge variant={poApi.PO_STATUS[po.status].variant}>{poApi.PO_STATUS[po.status].label}</Badge>}
+        {po && <Badge variant={poApi.PO_STATUS[po.status].variant}>{t(poApi.PO_STATUS[po.status].label)}</Badge>}
       </div>
 
       {/* Order details */}
       <div style={styles.card}>
         <div style={styles.grid}>
           <div style={styles.group}>
-            <label style={styles.label}>Vendor {editable && <span style={styles.req}>*</span>}</label>
+            <label style={styles.label}>{t('po.list.vendor')} {editable && <span style={styles.req}>*</span>}</label>
             {editable ? (
               <select style={styles.input} value={draft.vendor_id} onChange={(e) => setDraft({ ...draft, vendor_id: e.target.value })}>
-                <option value="">Choose…</option>
+                <option value="">{t('stock.choose')}</option>
                 {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             ) : <span style={styles.value}>{po?.vendor_name}{po?.vendor_email ? ` · ${po.vendor_email}` : ''}</span>}
-            {editable && vendors.length === 0 && <span style={styles.hint}>Add the vendor first, in Accounting &gt; Vendors.</span>}
+            {editable && vendors.length === 0 && <span style={styles.hint}>{t('po.addVendorFirst')}</span>}
           </div>
           <div style={styles.group}>
-            <label style={styles.label}>Deliver to {editable && <span style={styles.req}>*</span>}</label>
+            <label style={styles.label}>{t('po.list.deliverTo')} {editable && <span style={styles.req}>*</span>}</label>
             {editable && locations.length > 1 ? (
               <select style={styles.input} value={draft.location_id} onChange={(e) => setDraft({ ...draft, location_id: e.target.value })}>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -192,15 +195,15 @@ export function PurchaseOrderPage() {
             ) : <span style={styles.value}>{po?.location_name || locations.find((l) => l.id === draft.location_id)?.name || '—'}</span>}
           </div>
           <div style={styles.group}>
-            <label style={styles.label}>Expected</label>
+            <label style={styles.label}>{t('po.list.expected')}</label>
             {editable
               ? <input style={styles.input} type="date" value={draft.expected_on} onChange={(e) => setDraft({ ...draft, expected_on: e.target.value })} />
               : <span style={styles.value}>{po?.expected_on ? formatDateOnly(po.expected_on) : '—'}</span>}
           </div>
           <div style={{ ...styles.group, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Note for the vendor</label>
+            <label style={styles.label}>{t('po.vendorNote')}</label>
             {editable
-              ? <input style={styles.input} value={draft.note} maxLength={1000} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder="Optional" />
+              ? <input style={styles.input} value={draft.note} maxLength={1000} onChange={(e) => setDraft({ ...draft, note: e.target.value })} placeholder={t('stock.optional')} />
               : <span style={styles.value}>{po?.note || '—'}</span>}
           </div>
         </div>
@@ -208,27 +211,27 @@ export function PurchaseOrderPage() {
 
       {/* Products */}
       <div style={styles.card}>
-        <h3 style={styles.cardTitle}>Products</h3>
+        <h3 style={styles.cardTitle}>{t('po.products')}</h3>
         {editable ? (
           <DraftLines draft={draft} setDraft={setDraft} products={products} vendorId={draft.vendor_id} businessId={businessId} />
         ) : (
           <LinesTable lines={po!.lines} />
         )}
-        <div style={styles.totalRow}><span>Total</span><strong>{formatCurrency(editable ? total : po!.lines.reduce((t, l) => t + l.qty_ordered * l.unit_cost_cents, 0))}</strong></div>
+        <div style={styles.totalRow}><span>{t('po.total')}</span><strong>{formatCurrency(editable ? total : po!.lines.reduce((t, l) => t + l.qty_ordered * l.unit_cost_cents, 0))}</strong></div>
       </div>
 
       {/* Bills */}
       {po && po.bills.length > 0 && (
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Bills</h3>
+          <h3 style={styles.cardTitle}>{t('po.bills')}</h3>
           {po.bills.map((b) => (
             <div key={b.id} style={styles.billRow}>
-              <span>{b.invoice_number ? `Invoice ${b.invoice_number}` : 'Bill'} · {formatDateOnly(b.created_at)}</span>
-              <span style={styles.muted}>due {formatDateOnly(b.due_date)} · {b.status}</span>
+              <span>{b.invoice_number ? t('po.invoiceNumber', { number: b.invoice_number }) : t('po.bill')} · {formatDateOnly(b.created_at)}</span>
+              <span style={styles.muted}>{t('po.dueOn', { date: formatDateOnly(b.due_date) })} · {t(`po.billStatus.${b.status}`, { defaultValue: b.status })}</span>
               <strong>{formatCurrency(b.amount)}</strong>
             </div>
           ))}
-          <button style={styles.link} onClick={() => navigate('/accounting?tab=bills')}>Open Bills</button>
+          <button style={styles.link} onClick={() => navigate('/accounting?tab=bills')}>{t('po.openBills')}</button>
         </div>
       )}
 
@@ -237,21 +240,21 @@ export function PurchaseOrderPage() {
       <div style={styles.actions}>
         {po && ['draft', 'sent', 'partly_received'].includes(po.status) && (
           <Button variant="destructive" onClick={handleClose} loading={busy === 'close'} disabled={!!busy}>
-            {po.status === 'partly_received' ? 'Close order' : 'Cancel order'}
+            {po.status === 'partly_received' ? t('po.closeOrder') : t('po.cancelOrder')}
           </Button>
         )}
         <div style={{ flex: 1 }} />
-        {editable && <Button variant="secondary" onClick={handleSave} loading={busy === 'save'} disabled={!!busy || (!dirty && !isNew)}>Save draft</Button>}
-        {editable && <Button variant="secondary" onClick={() => handleSend(false)} loading={busy === 'mark'} disabled={!!busy}>Mark as sent</Button>}
+        {editable && <Button variant="secondary" onClick={handleSave} loading={busy === 'save'} disabled={!!busy || (!dirty && !isNew)}>{t('po.saveDraft')}</Button>}
+        {editable && <Button variant="secondary" onClick={() => handleSend(false)} loading={busy === 'mark'} disabled={!!busy}>{t('po.markAsSent')}</Button>}
         {editable && (
           <Button onClick={() => handleSend(true)} loading={busy === 'email'} disabled={!!busy || !vendor?.email}
-            title={vendor && !vendor.email ? 'The vendor has no email address' : undefined}>
-            Email to vendor
+            title={vendor && !vendor.email ? t('po.noVendorEmail') : undefined}>
+            {t('po.emailVendor')}
           </Button>
         )}
-        {po?.status === 'sent' && <Button variant="secondary" onClick={() => handleSend(true)} loading={busy === 'email'} disabled={!!busy || !po.vendor_email}>Email again</Button>}
-        {canReceive && <Button onClick={() => setReceiving(true)} disabled={!!busy}>Receive</Button>}
-        {po && toBill > 0 && <Button variant="secondary" onClick={() => setBilling(true)} disabled={!!busy}>Create bill ({formatCurrency(toBill)})</Button>}
+        {po?.status === 'sent' && <Button variant="secondary" onClick={() => handleSend(true)} loading={busy === 'email'} disabled={!!busy || !po.vendor_email}>{t('po.emailAgain')}</Button>}
+        {canReceive && <Button onClick={() => setReceiving(true)} disabled={!!busy}>{t('po.receive')}</Button>}
+        {po && toBill > 0 && <Button variant="secondary" onClick={() => setBilling(true)} disabled={!!busy}>{t('po.createBill', { amount: formatCurrency(toBill) })}</Button>}
       </div>
 
       {receiving && po && (
@@ -277,6 +280,7 @@ const padRows = (lines: DraftLine[]) => [...lines, ...Array.from({ length: Math.
 function DraftLines({ draft, setDraft, products, vendorId, businessId }: {
   draft: Draft; setDraft: React.Dispatch<React.SetStateAction<Draft>>; products: Product[]; vendorId: string; businessId: string;
 }) {
+  const { t } = useTranslation('inventory');
   const [variantsOf, setVariantsOf] = useState<Record<string, Variant[]>>({});
   // The quantity starts at the reorder quantity set for the product (or variant) at the delivery
   // location (owner, 19 Nov 2026); 1 when none is set. Staff can change it.
@@ -332,11 +336,11 @@ function DraftLines({ draft, setDraft, products, vendorId, businessId }: {
         </colgroup>
         <thead>
           <tr>
-            <th style={styles.th}>Product</th>
-            <th style={styles.th}>Variant</th>
-            <th style={{ ...styles.th, textAlign: 'right' }}>Quantity</th>
-            <th style={{ ...styles.th, textAlign: 'right' }}>Unit cost</th>
-            <th style={{ ...styles.th, textAlign: 'right' }}>Total</th>
+            <th style={styles.th}>{t('po.product')}</th>
+            <th style={styles.th}>{t('po.variant')}</th>
+            <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.quantity')}</th>
+            <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.unitCost')}</th>
+            <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.total')}</th>
             <th style={styles.th} />
           </tr>
         </thead>
@@ -349,16 +353,16 @@ function DraftLines({ draft, setDraft, products, vendorId, businessId }: {
             return (
               <tr key={row.key}>
                 <td style={styles.td}>
-                  <select style={styles.cell} value={row.merchandise_id} onChange={(e) => pickProduct(row, e.target.value)} aria-label={`Product, row ${i + 1}`}>
+                  <select style={styles.cell} value={row.merchandise_id} onChange={(e) => pickProduct(row, e.target.value)} aria-label={t('po.productRow', { row: i + 1 })}>
                     {/* the prompt shows in the box but is not one of the choices */}
-                    <option value="" disabled hidden>{products.length ? 'Choose a product…' : 'No products track stock yet'}</option>
+                    <option value="" disabled hidden>{products.length ? t('po.chooseProduct') : t('po.noTrackedProducts')}</option>
                     {[...fromVendor, ...others].map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </td>
                 <td style={styles.td}>
                   <select style={{ ...styles.cell, ...(missingOption ? styles.cellMissing : {}) }} value={row.variant_id || ''} disabled={!hasOptions}
-                    onChange={(e) => pickVariant(row, e.target.value)} aria-label={`Variant, row ${i + 1}`}>
-                    <option value="">{!row.merchandise_id ? '' : hasOptions ? 'Choose…' : 'No variants'}</option>
+                    onChange={(e) => pickVariant(row, e.target.value)} aria-label={t('po.variantRow', { row: i + 1 })}>
+                    <option value="">{!row.merchandise_id ? '' : hasOptions ? t('stock.choose') : t('po.noVariants')}</option>
                     {(options || []).map((v) => (
                       <option key={v.id} value={v.id} disabled={taken.has(lineKey(row.merchandise_id, v.id))}>{v.name}</option>
                     ))}
@@ -366,7 +370,7 @@ function DraftLines({ draft, setDraft, products, vendorId, businessId }: {
                 </td>
                 <td style={styles.td}>
                   <input style={{ ...styles.cell, textAlign: 'right' }} type="number" min={1} step={1} value={row.qty_ordered} disabled={!row.merchandise_id}
-                    aria-label={`Quantity, row ${i + 1}`} onChange={(e) => setRow(row.key, { qty_ordered: Math.max(1, parseInt(e.target.value, 10) || 1) })} />
+                    aria-label={t('po.quantityRow', { row: i + 1 })} onChange={(e) => setRow(row.key, { qty_ordered: Math.max(1, parseInt(e.target.value, 10) || 1) })} />
                 </td>
                 <td style={styles.td}>
                   <CurrencyInput value={row.unit_cost_cents} onChange={(v) => setRow(row.key, { unit_cost_cents: Math.max(0, v) })} disabled={!row.merchandise_id}
@@ -374,7 +378,7 @@ function DraftLines({ draft, setDraft, products, vendorId, businessId }: {
                 </td>
                 <td style={{ ...styles.td, textAlign: 'right' }}>{row.merchandise_id ? formatCurrency(row.qty_ordered * row.unit_cost_cents) : ''}</td>
                 <td style={{ ...styles.td, textAlign: 'center' }}>
-                  {row.merchandise_id && <button style={styles.remove} aria-label={`Clear row ${i + 1}`} onClick={() => clearRow(row)}>✕</button>}
+                  {row.merchandise_id && <button style={styles.remove} aria-label={t('po.clearRow', { row: i + 1 })} onClick={() => clearRow(row)}>✕</button>}
                 </td>
               </tr>
             );
@@ -382,24 +386,25 @@ function DraftLines({ draft, setDraft, products, vendorId, businessId }: {
         </tbody>
       </table>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-        <Button size="sm" variant="secondary" onClick={() => setDraft({ ...draft, lines: [...draft.lines, emptyRow()] })}>Add row</Button>
-        <p style={{ ...styles.hint, margin: 0 }}>Only products that track stock can be ordered. The unit cost starts at the product's (or variant's) cost price.</p>
+        <Button size="sm" variant="secondary" onClick={() => setDraft({ ...draft, lines: [...draft.lines, emptyRow()] })}>{t('po.addRow')}</Button>
+        <p style={{ ...styles.hint, margin: 0 }}>{t('po.addRowHelp')}</p>
       </div>
     </>
   );
 }
 function LinesTable({ lines }: { lines: PoLine[] }) {
+  const { t } = useTranslation('inventory');
   return (
     <table style={styles.table}>
       <thead>
         <tr>
-          <th style={styles.th}>Product</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Ordered</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Received</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Still to come</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Unit cost</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Billed</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>On hand</th>
+          <th style={styles.th}>{t('po.product')}</th>
+          <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.ordered')}</th>
+          <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.receivedCol')}</th>
+          <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.stillToCome')}</th>
+          <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.unitCost')}</th>
+          <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.billed')}</th>
+          <th style={{ ...styles.th, textAlign: 'right' }}>{t('stock.onHand')}</th>
         </tr>
       </thead>
       <tbody>
@@ -422,6 +427,7 @@ function LinesTable({ lines }: { lines: PoLine[] }) {
 // --- Receiving and billing ---
 
 function ReceiveModal({ po, businessId, onClose, onDone }: { po: PurchaseOrder; businessId: string; onClose: () => void; onDone: (text: string) => void }) {
+  const { t } = useTranslation('inventory');
   const open = po.lines.filter((l) => l.qty_received < l.qty_ordered);
   const [qty, setQty] = useState<Record<string, number>>(Object.fromEntries(open.map((l) => [l.id, l.qty_ordered - l.qty_received])));
   const [cost, setCost] = useState<Record<string, number>>(Object.fromEntries(open.map((l) => [l.id, l.unit_cost_cents])));
@@ -435,26 +441,26 @@ function ReceiveModal({ po, businessId, onClose, onDone }: { po: PurchaseOrder; 
     try {
       const out = await poApi.receivePurchaseOrder(businessId, po.id,
         open.filter((l) => (qty[l.id] || 0) > 0).map((l) => ({ line_id: l.id, qty: qty[l.id], unit_cost_cents: cost[l.id] ?? null })), note || null);
-      onDone(out.status === 'received' ? `${units} received. Everything on the order has arrived.` : `${units} received. The rest is still to come.`);
-    } catch (e) { setErr(errorText(e, 'Could not receive the order.')); }
+      onDone(out.status === 'received' ? t('po.receivedAll', { units }) : t('po.receivedPart', { units }));
+    } catch (e) { setErr(errorText(e, t('po.receiveFailed'))); }
     finally { setBusy(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Receive ${po.po_number} at ${po.location_name}`} size="lg"
+    <Modal open onClose={onClose} title={t('po.receiveTitle', { number: po.po_number, location: po.location_name })} size="lg"
       footer={<>
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit} loading={busy} disabled={units === 0}>Receive {units || ''}</Button>
+        <Button variant="secondary" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button onClick={submit} loading={busy} disabled={units === 0}>{t('po.receive')} {units || ''}</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-        <p style={styles.muted}>Enter how many arrived. Stock goes up by that much, at the cost entered (it moves the average cost).</p>
+        <p style={styles.muted}>{t('po.receiveHelp')}</p>
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>Product</th>
-              <th style={{ ...styles.th, textAlign: 'right' }}>Still to come</th>
-              <th style={{ ...styles.th, textAlign: 'right' }}>Arrived</th>
-              <th style={{ ...styles.th, textAlign: 'right' }}>Unit cost</th>
+              <th style={styles.th}>{t('po.product')}</th>
+              <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.stillToCome')}</th>
+              <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.arrived')}</th>
+              <th style={{ ...styles.th, textAlign: 'right' }}>{t('po.unitCost')}</th>
             </tr>
           </thead>
           <tbody>
@@ -465,7 +471,7 @@ function ReceiveModal({ po, businessId, onClose, onDone }: { po: PurchaseOrder; 
                   <td style={styles.td}>{lineName(l)}</td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>{left}</td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>
-                    <input style={styles.num} type="number" min={0} max={left} step={1} value={qty[l.id] ?? 0} aria-label={`Arrived ${lineName(l)}`}
+                    <input style={styles.num} type="number" min={0} max={left} step={1} value={qty[l.id] ?? 0} aria-label={t('po.arrivedAria', { name: lineName(l) })}
                       onChange={(e) => setQty((p) => ({ ...p, [l.id]: Math.min(left, Math.max(0, parseInt(e.target.value, 10) || 0)) }))} />
                   </td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>
@@ -477,8 +483,8 @@ function ReceiveModal({ po, businessId, onClose, onDone }: { po: PurchaseOrder; 
           </tbody>
         </table>
         <div style={styles.group}>
-          <label style={styles.label}>Note</label>
-          <input style={styles.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="Optional, e.g. delivery note number" />
+          <label style={styles.label}>{t('stock.note')}</label>
+          <input style={styles.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder={t('stock.optionalDelivery')} />
         </div>
         {err && <p style={styles.error}>{err}</p>}
       </div>
@@ -487,6 +493,7 @@ function ReceiveModal({ po, businessId, onClose, onDone }: { po: PurchaseOrder; 
 }
 
 function BillModal({ po, amount, businessId, onClose, onDone }: { po: PurchaseOrder; amount: number; businessId: string; onClose: () => void; onDone: (text: string) => void }) {
+  const { t } = useTranslation('inventory');
   const terms = Number(po.vendor_payment_terms) || 0;
   const [invoice, setInvoice] = useState('');
   const [due, setDue] = useState(new Date(Date.now() + terms * 86400000).toISOString().slice(0, 10));
@@ -498,19 +505,19 @@ function BillModal({ po, amount, businessId, onClose, onDone }: { po: PurchaseOr
     setBusy(true); setErr('');
     try {
       const out = await poApi.billPurchaseOrder(businessId, po.id, { invoice_number: invoice || null, due_date: due || null });
-      onDone(`Bill for ${formatCurrency(out.amount)} created and approved. Pay it from Accounting > Bills.`);
-    } catch (e) { setErr(errorText(e, 'Could not create the bill.')); }
+      onDone(t('po.billCreated', { amount: formatCurrency(out.amount) }));
+    } catch (e) { setErr(errorText(e, t('po.billFailed'))); }
     finally { setBusy(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Bill ${po.po_number} from ${po.vendor_name}`} size="md"
+    <Modal open onClose={onClose} title={t('po.billTitle', { number: po.po_number, vendor: po.vendor_name })} size="md"
       footer={<>
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit} loading={busy}>Create bill for {formatCurrency(amount)}</Button>
+        <Button variant="secondary" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button onClick={submit} loading={busy}>{t('po.createBillFor', { amount: formatCurrency(amount) })}</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-        <p style={styles.muted}>A bill for what was received and not yet billed. It is approved at once, ready to pay, and recorded to Inventory (1300) and Accounts Payable.</p>
+        <p style={styles.muted}>{t('po.billHelp')}</p>
         <table style={styles.table}>
           <tbody>
             {lines.map((l) => (
@@ -524,13 +531,13 @@ function BillModal({ po, amount, businessId, onClose, onDone }: { po: PurchaseOr
         </table>
         <div style={styles.grid}>
           <div style={styles.group}>
-            <label style={styles.label}>Vendor invoice number</label>
-            <input style={styles.input} value={invoice} maxLength={100} onChange={(e) => setInvoice(e.target.value)} placeholder="Optional" />
+            <label style={styles.label}>{t('po.vendorInvoiceNumber')}</label>
+            <input style={styles.input} value={invoice} maxLength={100} onChange={(e) => setInvoice(e.target.value)} placeholder={t('stock.optional')} />
           </div>
           <div style={styles.group}>
-            <label style={styles.label}>Due</label>
+            <label style={styles.label}>{t('po.due')}</label>
             <input style={styles.input} type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-            {terms > 0 && <span style={styles.hint}>The vendor's terms: {terms} days.</span>}
+            {terms > 0 && <span style={styles.hint}>{t('po.terms', { count: terms })}</span>}
           </div>
         </div>
         {err && <p style={styles.error}>{err}</p>}

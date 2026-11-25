@@ -8,6 +8,7 @@ import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import { SUPPORTED_LANGUAGES } from '@daystream/shared';
 import * as texts from '../services/checkin-texts.service';
+import { msg } from '../i18n';
 
 /**
  * The wording of the customer check-in screens (spec 51, gap 3), edited in Business Setup > Templates >
@@ -32,14 +33,14 @@ checkInTextsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const businessId = String(req.query.business_id || '');
     const language = String(req.query.language || '');
-    if (!UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(SUPPORTED_LANGUAGES as readonly string[]).includes(language)) { error(res, 'Choose a supported language.', 'INVALID_LANGUAGE', 400); return; }
-    if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(businessId)) { error(res, msg('errors:checkinTexts.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(SUPPORTED_LANGUAGES as readonly string[]).includes(language)) { error(res, msg('errors:checkinTexts.chooseASupportedLanguage'), 'INVALID_LANGUAGE', 400); return; }
+    if (!(await ownBusiness(req, businessId))) { error(res, msg('errors:checkinTexts.businessNotFound'), 'NOT_FOUND', 404); return; }
     // defaults: what each piece says when the business has not changed it (the platform's wording).
     success(res, { language, overrides: await texts.getOverrides(businessId, language), defaults: await texts.platformTexts(language) });
   } catch (e) {
     console.error('Failed to load check-in wording', (e as Error).message);
-    error(res, 'Failed to load the wording', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:checkinTexts.failedToLoadTheWording'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -54,13 +55,13 @@ checkInTextsRouter.put('/', validate(saveSchema), async (req: Request, res: Resp
   try {
     const authReq = req as AuthenticatedRequest;
     const b = req.body;
-    if (!(await ownBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownBusiness(req, b.business_id))) { error(res, msg('errors:checkinTexts.businessNotFound'), 'NOT_FOUND', 404); return; }
     const saved = await texts.saveOverrides(b.business_id, authReq.tenantId, authReq.user.sub, b.language, b.texts);
     success(res, { language: b.language, overrides: saved });
   } catch (e) {
     const err = e as { code?: string; message?: string };
     if (err.code === 'INVALID_TEXT' || err.code === 'INVALID_LANGUAGE') { error(res, err.message ?? 'Invalid wording', err.code, 400); return; }
     console.error('Failed to save check-in wording', err.message);
-    error(res, 'Failed to save the wording', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:checkinTexts.failedToSaveTheWording'), 'INTERNAL_ERROR', 500);
   }
 });

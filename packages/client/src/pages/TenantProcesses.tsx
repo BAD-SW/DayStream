@@ -1,5 +1,6 @@
 import { TenantBillingScheduleCard } from '../components/TenantBillingScheduleCard';
 import { TenantHistoryStorageCard } from '../components/TenantHistoryStorageCard';
+import { useTranslation } from 'react-i18next';
 
 /**
  * TenantProcesses — tenant-level scheduled jobs / processes (tenant persona).
@@ -8,10 +9,11 @@ import { TenantHistoryStorageCard } from '../components/TenantHistoryStorageCard
  * tenant's business billing run schedule + run-now.
  */
 export function TenantProcesses() {
+  const { t } = useTranslation('tenantOps');
   return (
     <div>
-      <h2 style={styles.heading}>Processes</h2>
-      <p style={styles.subtext}>Scheduled jobs and background processes for your businesses.</p>
+      <h2 style={styles.heading}>{t('processes.title')}</h2>
+      <p style={styles.subtext}>{t('processes.subtitle')}</p>
 
       <section style={styles.section}>
         <TenantBillingScheduleCard />

@@ -4,6 +4,7 @@ import { resolveConnectedAccount } from './payment-methods.service';
 import { getDecryptedSecrets } from './processor-config.service';
 import { getConfiguredAdapter, StripeAdapter } from './payments';
 import { generateReference } from './customer-payment.service';
+import { msg } from '../i18n';
 
 /**
  * Walk-in (customerless) one-time card payments.
@@ -66,12 +67,12 @@ export async function beginOneTimeOrderCharge(
     [orderId, businessId],
   );
   const order = orderRows[0];
-  if (!order) throw new WalkinPaymentError('Order not found', 'ORDER_NOT_FOUND');
-  if (order.status !== 'open') throw new WalkinPaymentError('Order is not open', 'ORDER_NOT_OPEN');
-  if (order.total_amount <= 0) throw new WalkinPaymentError('Order total must be greater than zero', 'INVALID_AMOUNT');
+  if (!order) throw new WalkinPaymentError(msg('errors:walkinPayment.orderNotFound'), 'ORDER_NOT_FOUND');
+  if (order.status !== 'open') throw new WalkinPaymentError(msg('errors:walkinPayment.orderIsNotOpen'), 'ORDER_NOT_OPEN');
+  if (order.total_amount <= 0) throw new WalkinPaymentError(msg('errors:walkinPayment.orderTotalMustBeGreaterThan'), 'INVALID_AMOUNT');
 
   const account = await resolveConnectedAccount({ ownerLevel: 'customer', businessId });
-  if (!account) throw new WalkinPaymentError('Business has no active payment processor connection', 'NO_CONNECTION');
+  if (!account) throw new WalkinPaymentError(msg('errors:walkinPayment.businessHasNoActivePaymentProcessor'), 'NO_CONNECTION');
 
   const secrets = await getDecryptedSecrets({ ownerLevel: 'business', businessId });
   const adapter = getConfiguredAdapter(account.provider, secrets);
@@ -125,10 +126,10 @@ export async function finalizeOneTimeOrderCharge(args: {
     [orderId, businessId],
   );
   const order = orderRows[0];
-  if (!order) throw new WalkinPaymentError('Order not found', 'ORDER_NOT_FOUND');
+  if (!order) throw new WalkinPaymentError(msg('errors:walkinPayment.orderNotFound'), 'ORDER_NOT_FOUND');
 
   const account = await resolveConnectedAccount({ ownerLevel: 'customer', businessId });
-  if (!account) throw new WalkinPaymentError('Business has no active payment processor connection', 'NO_CONNECTION');
+  if (!account) throw new WalkinPaymentError(msg('errors:walkinPayment.businessHasNoActivePaymentProcessor'), 'NO_CONNECTION');
   const secrets = await getDecryptedSecrets({ ownerLevel: 'business', businessId });
   const adapter = getConfiguredAdapter(account.provider, secrets);
 
@@ -142,7 +143,7 @@ export async function finalizeOneTimeOrderCharge(args: {
   // tampered client sending a cheaper intent). A failed/pending intent skips this.
   if (status === 'completed' && res.amount !== order.total_amount) {
     logger.warn(`Walk-in charge ${reference}: intent amount ${res.amount} != order total ${order.total_amount} for order ${orderId}`);
-    throw new WalkinPaymentError('Payment amount does not match the order total', 'AMOUNT_MISMATCH');
+    throw new WalkinPaymentError(msg('errors:walkinPayment.paymentAmountDoesNotMatchThe'), 'AMOUNT_MISMATCH');
   }
 
   // Charge row linked to the order, with the order's customer (none for a walk-in). No

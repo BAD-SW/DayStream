@@ -1,3 +1,4 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { Button } from '../design-system/components/actions/Button';
@@ -34,7 +35,7 @@ export function ProspectCategories() {
 
   const handleAdd = async () => {
     if (!addForm.ui_category_name.trim() || !addForm.google_search_strings.trim()) {
-      alert('Category name and at least one search string required');
+      void showMessage({ message: 'Category name and at least one search string required', tone: 'error' });
       return;
     }
     try {
@@ -47,7 +48,7 @@ export function ProspectCategories() {
       setAddForm({ ui_category_name: '', google_search_strings: '', api_exclusion_types: '', overture_taxonomy: [] });
       setShowAdd(false);
       fetchCategories();
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to add category'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || 'Failed to add category', tone: 'error' }); }
   };
 
   const handleEdit = (cat: CategoryMapping) => {
@@ -71,22 +72,22 @@ export function ProspectCategories() {
       });
       setEditingId(null);
       fetchCategories();
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to update'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || 'Failed to update', tone: 'error' }); }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this category?')) return;
+    if (!(await askConfirm({ message: 'Delete this category?', confirmLabel: 'Delete', destructive: true }))) return;
     try {
       await apiClient.delete(`/v1/prospects/categories/${id}`);
       fetchCategories();
-    } catch { alert('Failed to delete'); }
+    } catch { void showMessage({ message: 'Failed to delete', tone: 'error' }); }
   };
 
   const handleToggleActive = async (id: string, active: boolean) => {
     try {
       await apiClient.put(`/v1/prospects/categories/${id}`, { active });
       setCategories(cats => cats.map(c => c.id === id ? { ...c, active } : c));
-    } catch { alert('Failed to update'); }
+    } catch { void showMessage({ message: 'Failed to update', tone: 'error' }); }
   };
 
   if (loading) return <div style={styles.page}><p style={styles.muted}>Loading...</p></div>;

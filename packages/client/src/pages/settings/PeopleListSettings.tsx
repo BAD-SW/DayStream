@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { useDraft, draftBox, UnsavedTag } from '../../components/unsaved/DraftSections';
 import { getColumnOrder, saveColumnOrder } from '../../api/inbox';
@@ -10,8 +11,9 @@ import { ORDERABLE_COLUMNS, DEFAULT_ORDER, fullOrder, forgetColumnOrder } from '
  * page's Save changes.
  */
 export function PeopleListSettings() {
+  const { t } = useTranslation('settings');
   const [loaded, setLoaded] = useState(false);
-  const draft = useDraft<string[]>('people-columns', 'People lists › Column order', DEFAULT_ORDER, async (order) => {
+  const draft = useDraft<string[]>('people-columns', t('peopleList.draftName'), DEFAULT_ORDER, async (order) => {
     const saved = await saveColumnOrder(order);
     forgetColumnOrder();
     return fullOrder(saved);
@@ -29,28 +31,27 @@ export function PeopleListSettings() {
   return (
     <div style={{ display: 'grid', gap: 'var(--space-md)', maxWidth: 680 }}>
       <div>
-        <h3 style={{ margin: '0 0 4px', fontSize: 'var(--font-size-lg)' }}>Column order<UnsavedTag dirty={draft.dirty} /></h3>
+        <h3 style={{ margin: '0 0 4px', fontSize: 'var(--font-size-lg)' }}>{t('peopleList.title')}<UnsavedTag dirty={draft.dirty} /></h3>
         <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-          One order for the whole business, used by People and Leads (each list shows only its own columns, in this order).
-          The selection box and the name always come first, and the action buttons last. Each user can still hide columns on People.
+          {t('peopleList.intro')}
         </p>
       </div>
       {loaded && (
-        <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6, ...draftBox(draft.dirty) }} aria-label="Column order">
-          <li style={row(true)}><span>Selection box · Name</span><small>Fixed, first</small></li>
+        <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6, ...draftBox(draft.dirty) }} aria-label={t('peopleList.title')}>
+          <li style={row(true)}><span>{t('peopleList.fixedFirstColumns')}</span><small>{t('peopleList.fixedFirst')}</small></li>
           {order.map((k, i) => (
             <li key={k} style={row(false, draft.changed((v) => v[i]))}>
               <span style={{ display: 'grid' }}><b style={{ fontWeight: 600 }}>{label(k)?.label || k}</b><small style={{ color: 'var(--color-text-secondary)' }}>{label(k)?.lists}</small></span>
               <span style={{ display: 'flex', gap: 4 }}>
-                <Button size="sm" variant="ghost" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${label(k)?.label} up`}>↑</Button>
-                <Button size="sm" variant="ghost" onClick={() => move(i, 1)} disabled={i === order.length - 1} aria-label={`Move ${label(k)?.label} down`}>↓</Button>
+                <Button size="sm" variant="ghost" onClick={() => move(i, -1)} disabled={i === 0} aria-label={t('peopleList.moveUp', { column: label(k)?.label })}>↑</Button>
+                <Button size="sm" variant="ghost" onClick={() => move(i, 1)} disabled={i === order.length - 1} aria-label={t('peopleList.moveDown', { column: label(k)?.label })}>↓</Button>
               </span>
             </li>
           ))}
-          <li style={row(true)}><span>Actions (Edit, Archive…)</span><small>Fixed, last</small></li>
+          <li style={row(true)}><span>{t('peopleList.fixedLastColumns')}</span><small>{t('peopleList.fixedLast')}</small></li>
         </ol>
       )}
-      <div><Button size="sm" variant="ghost" onClick={() => draft.setValue(DEFAULT_ORDER)}>Back to the default order</Button></div>
+      <div><Button size="sm" variant="ghost" onClick={() => draft.setValue(DEFAULT_ORDER)}>{t('peopleList.backToDefault')}</Button></div>
     </div>
   );
 }

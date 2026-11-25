@@ -12,6 +12,7 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces",
+    "translate": "npm run translate --workspace=packages/server --",
     "migrate:dev": "npm run migrate:dev --workspace=packages/server",
     "seed:dev": "npm run seed:dev --workspace=packages/server",
     "storage:relayout": "npm run storage:relayout --workspace=packages/server --"

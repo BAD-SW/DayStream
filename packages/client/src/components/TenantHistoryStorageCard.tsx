@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatDateTime } from '../utils/format';
 import { Button } from '../design-system/components/actions/Button';
 import { TIMEZONES } from '../utils/timezones';
 import * as bookingsApi from '../api/bookings';
@@ -11,6 +13,7 @@ import type { HistoryStorageSchedule } from '../api/bookings';
  * on the tenant Processes page beside the billing run.
  */
 export function TenantHistoryStorageCard() {
+  const { t } = useTranslation('tenantOps');
   const [time, setTime] = useState('03:00');
   const [tz, setTz] = useState('UTC');
   const [months, setMonths] = useState('12');
@@ -33,10 +36,10 @@ export function TenantHistoryStorageCard() {
 
   const handleSave = async () => {
     const m = Number(months);
-    if (!Number.isInteger(m) || m < 1 || m > 120) { setMessage({ text: 'Enter a whole number of months from 1 to 120.', error: true }); return; }
+    if (!Number.isInteger(m) || m < 1 || m > 120) { setMessage({ text: t('history.monthsInvalid'), error: true }); return; }
     setSaving(true); setMessage(null);
-    try { show(await bookingsApi.saveHistoryStorage({ scheduleTime: time, scheduleTimezone: tz, enabled, months: m })); setMessage({ text: 'Schedule saved.', error: false }); }
-    catch (err) { setMessage({ text: errText(err, 'Failed to save the schedule'), error: true }); }
+    try { show(await bookingsApi.saveHistoryStorage({ scheduleTime: time, scheduleTimezone: tz, enabled, months: m })); setMessage({ text: t('history.saved'), error: false }); }
+    catch (err) { setMessage({ text: errText(err, t('history.saveFailed')), error: true }); }
     finally { setSaving(false); }
   };
 
@@ -46,61 +49,59 @@ export function TenantHistoryStorageCard() {
       const r = await bookingsApi.runHistoryStorageNow();
       setMessage({
         text: r.archived === 0 && r.failed === 0
-          ? 'Nothing to move: no appointment is old enough yet.'
-          : `Moved the history of ${r.archived} appointment${r.archived === 1 ? '' : 's'} (${r.entries} entries)${r.failed ? `; ${r.failed} could not be moved and will be tried again` : ''}.`,
+          ? t('history.nothingToMove')
+          : r.failed
+            ? t('history.movedWithFailed', { count: r.archived, entries: r.entries, failed: r.failed })
+            : t('history.moved', { count: r.archived, entries: r.entries }),
         error: r.failed > 0,
       });
       show(await bookingsApi.getHistoryStorage());
-    } catch (err) { setMessage({ text: errText(err, 'Failed to run'), error: true }); }
+    } catch (err) { setMessage({ text: errText(err, t('history.runFailed')), error: true }); }
     finally { setRunning(false); }
   };
 
   if (loading) return null;
   return (
     <div style={styles.panel}>
-      <h3 style={styles.title}>Appointment History Storage</h3>
-      <p style={styles.subtext}>
-        Each appointment&apos;s history (who changed what, and when) is kept in the database while it is recent. Once an
-        appointment is long past, its history moves to file storage, so the database does not keep growing. It still shows
-        on the appointment as before. One daily run for all your businesses, at a quiet time in your time zone.
-      </p>
+      <h3 style={styles.title}>{t('history.title')}</h3>
+      <p style={styles.subtext}>{t('history.subtitle')}</p>
       {message && <div style={{ ...styles.message, color: message.error ? 'var(--color-error)' : 'var(--color-success)' }} role="status">{message.text}</div>}
       <div style={styles.section}>
         <div style={styles.row}>
           <div style={styles.group}>
-            <label style={styles.label} htmlFor="history-storage-time">Run time</label>
+            <label style={styles.label} htmlFor="history-storage-time">{t('schedule.runTime')}</label>
             <input id="history-storage-time" style={styles.input} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
           <div style={styles.group}>
-            <label style={styles.label} htmlFor="history-storage-tz">Timezone</label>
+            <label style={styles.label} htmlFor="history-storage-tz">{t('schedule.timezone')}</label>
             <select id="history-storage-tz" style={styles.input} value={tz} onChange={(e) => setTz(e.target.value)}>
-              {!TIMEZONES.some((t) => t.value === tz) && <option value={tz}>{tz}</option>}
-              {TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              {!TIMEZONES.some((zone) => zone.value === tz) && <option value={tz}>{tz}</option>}
+              {TIMEZONES.map((zone) => <option key={zone.value} value={zone.value}>{zone.label}</option>)}
             </select>
           </div>
           <div style={styles.group}>
-            <label style={styles.label} htmlFor="history-storage-months">Move after (months)</label>
+            <label style={styles.label} htmlFor="history-storage-months">{t('history.moveAfter')}</label>
             <input id="history-storage-months" style={styles.input} type="number" min={1} max={120} step={1} value={months} onChange={(e) => setMonths(e.target.value)} />
           </div>
         </div>
         <div style={styles.group}>
           <label style={{ ...styles.label, display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            Enabled
+            {t('schedule.enabled')}
           </label>
         </div>
         {schedule && (
           <p style={styles.subtext}>
-            Next run: {schedule.nextRunAt ? new Date(schedule.nextRunAt).toLocaleString() : '—'}
-            {schedule.lastRunAt && ` · Last run: ${new Date(schedule.lastRunAt).toLocaleString()} (${schedule.lastRunStatus || '—'})`}
-            {` · ${schedule.inTable} appointment${schedule.inTable === 1 ? '' : 's'} with history in the database, ${schedule.archived} in file storage`}
+            {t('schedule.nextRun', { date: schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : '—' })}
+            {schedule.lastRunAt && ` · ${t('schedule.lastRun', { date: formatDateTime(schedule.lastRunAt), status: schedule.lastRunStatus ? t(`schedule.runStatus.${schedule.lastRunStatus}`, { defaultValue: schedule.lastRunStatus }) : '—' })}`}
+            {` · ${t('history.counts', { count: schedule.inTable, archived: schedule.archived })}`}
           </p>
         )}
-        {schedule?.lastError && <p style={{ ...styles.subtext, color: 'var(--color-error)' }}>Last error: {schedule.lastError}</p>}
+        {schedule?.lastError && <p style={{ ...styles.subtext, color: 'var(--color-error)' }}>{t('history.lastError', { error: schedule.lastError })}</p>}
       </div>
       <div style={styles.actions}>
-        <Button onClick={handleSave} loading={saving}>Save Schedule</Button>
-        <Button variant="outline" onClick={handleRunNow} loading={running}>Run now</Button>
+        <Button onClick={handleSave} loading={saving}>{t('schedule.save')}</Button>
+        <Button variant="outline" onClick={handleRunNow} loading={running}>{t('schedule.runNow')}</Button>
       </div>
     </div>
   );

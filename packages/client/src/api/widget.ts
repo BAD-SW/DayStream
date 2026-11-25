@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { currentLanguage } from '../i18n';
 
 /**
  * Dedicated, isolated API client for the /booking-widget page — deliberately NOT the
@@ -31,10 +32,12 @@ export function clearWidgetToken(): void {
 
 widgetHttp.interceptors.request.use((config) => {
   const token = getWidgetToken();
+  config.headers = config.headers ?? {};
   if (token) {
-    config.headers = config.headers ?? {};
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // The language being shown, so the server answers in it (Phase 44, design section 6.1).
+  config.headers['Accept-Language'] = currentLanguage();
   return config;
 });
 
@@ -84,6 +87,8 @@ export interface WidgetBusinessInfo {
   tenant_id: string;
   theme: ResolvedWidgetTheme;
   require_payment_before_confirmation: boolean;
+  /** The business's languages (Phase 44, requirement 8), its default first. */
+  languages?: string[];
 }
 
 export interface WidgetProductVariant {

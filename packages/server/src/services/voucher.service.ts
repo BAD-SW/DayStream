@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * Section C — Vouchers (spec 10-payment-platform, task 4.8 / Requirement C8).
@@ -47,13 +48,13 @@ export interface CreateVoucherInput {
 
 export async function createVoucher(input: CreateVoucherInput): Promise<any> {
   if (!['free', 'fixed', 'percentage'].includes(input.discountType)) {
-    throw new VoucherError('Invalid discount type', 'INVALID_TYPE');
+    throw new VoucherError(msg('errors:voucher.invalidDiscountType'), 'INVALID_TYPE');
   }
   if (input.discountType !== 'free' && (input.discountValue == null || input.discountValue <= 0)) {
-    throw new VoucherError('A positive discount value is required for fixed/percentage vouchers', 'INVALID_VALUE');
+    throw new VoucherError(msg('errors:voucher.aPositiveDiscountValueIsRequired'), 'INVALID_VALUE');
   }
   if (input.discountType === 'percentage' && (input.discountValue ?? 0) > 10000) {
-    throw new VoucherError('Percentage discount cannot exceed 100% (10000 basis points)', 'INVALID_VALUE');
+    throw new VoucherError(msg('errors:voucher.percentageDiscountCannotExceed10010000'), 'INVALID_VALUE');
   }
 
   let voucher: any = null;
@@ -79,7 +80,7 @@ export async function createVoucher(input: CreateVoucherInput): Promise<any> {
       throw e;
     }
   }
-  if (!voucher) throw new VoucherError('Could not allocate a unique voucher code', 'CODE_ALLOCATION_FAILED');
+  if (!voucher) throw new VoucherError(msg('errors:voucher.couldNotAllocateAUniqueVoucher'), 'CODE_ALLOCATION_FAILED');
 
   await logAudit({
     tenantId: input.tenantId, userId: input.createdBy, action: 'voucher.created',

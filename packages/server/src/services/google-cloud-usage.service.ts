@@ -1,6 +1,7 @@
 import { GoogleAuth, Impersonated } from 'google-auth-library';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 /**
  * Google Cloud usage service — reads the AUTHORITATIVE Places API call count for the
@@ -102,7 +103,7 @@ async function getAccessToken(impersonate?: string): Promise<string> {
       lifetime: 3600,
     });
     const { token } = await impersonated.getAccessToken();
-    if (!token) throw new Error('Impersonated credential returned no access token');
+    if (!token) throw new Error(msg('errors:googleCloudUsage.impersonatedCredentialReturnedNoAccessToken'));
     return token;
   }
 
@@ -211,7 +212,7 @@ async function fetchCallCount(
     const resp = await timedFetch(pagedUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new Error(`Monitoring API HTTP ${resp.status}: ${text.slice(0, 300)}`);
+      throw new Error(msg('errors:googleCloudUsage.monitoringApiHttp', { status: resp.status, text: text.slice(0, 300) }));
     }
     const json: any = await resp.json();
     for (const series of json.timeSeries || []) {

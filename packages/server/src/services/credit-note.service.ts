@@ -5,6 +5,7 @@ import { resolveBusinessCurrency } from './customer-payment.service';
 import { buildRevenueCreditLines, sumCreditLines, RevenueLine } from './revenue-mapping.service';
 import type { SaleItemType } from './revenue-mapping.service';
 import * as journal from './journal.service';
+import { msg } from '../i18n';
 
 /**
  * Credit notes — the "credit" side of an Adjustment (spec 10, Requirement C4/C5).
@@ -78,10 +79,10 @@ async function accountIds(businessId: string, codes: string[]): Promise<Map<stri
  */
 export async function issueCreditNote(input: IssueCreditNoteInput): Promise<any> {
   if (!input.reason || !input.reason.trim()) {
-    throw new CreditNoteError('A reason is required for a credit note', 'REASON_REQUIRED');
+    throw new CreditNoteError(msg('errors:creditNote.aReasonIsRequiredForA'), 'REASON_REQUIRED');
   }
   if (!input.lineItems || input.lineItems.length === 0) {
-    throw new CreditNoteError('A credit note needs at least one line item', 'NO_LINE_ITEMS');
+    throw new CreditNoteError(msg('errors:creditNote.aCreditNoteNeedsAtLeast'), 'NO_LINE_ITEMS');
   }
 
   const currency = await resolveBusinessCurrency(input.businessId);
@@ -97,7 +98,7 @@ export async function issueCreditNote(input: IssueCreditNoteInput): Promise<any>
   const subtotalCents = lines.reduce((n, l) => n + l.amountCents, 0);
   const taxCents = lines.reduce((n, l) => n + l.taxCents, 0);
   const totalCents = subtotalCents + taxCents;
-  if (totalCents <= 0) throw new CreditNoteError('Credit note total must be greater than zero', 'INVALID_TOTAL');
+  if (totalCents <= 0) throw new CreditNoteError(msg('errors:creditNote.creditNoteTotalMustBeGreater'), 'INVALID_TOTAL');
 
   const client = await adminPool.connect();
   let creditNote: any;
@@ -270,7 +271,7 @@ export async function renderCreditNotePdf(id: string, businessId: string): Promi
     currency: cn.currency as string,
   };
 
-  const branding = await resolvePdfBranding(businessId, 'invoice.issued', {
+  const branding = await resolvePdfBranding(businessId, 'invoice.issued', { customer_id: cn.customer_id ?? null,
     invoice_number: `CN-${cn.credit_note_number}`,
     total_cents: cn.total_cents,
     amount_due_cents: cn.total_cents,

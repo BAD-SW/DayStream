@@ -51,10 +51,10 @@ const updateCompRuleSchema = Joi.object({
 payrollRouter.get('/compensation-rules', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const rules = await compensationService.getRules(businessId, req.query.user_id as string);
     success(res, rules);
-  } catch (err: any) { console.error('Failed to list rules', err?.message || err); error(res, 'Failed to list rules', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list rules', err?.message || err); error(res, msg('errors:payroll.failedToListRules'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/compensation-rules
@@ -70,8 +70,8 @@ payrollRouter.post('/compensation-rules', requirePermission('staff:*'), validate
     });
     success(res, rule, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('overlapping')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to create rule', 'INTERNAL_ERROR', 500); }
+    if ((isMessage(err.message, 'errors:compensation.anActiveCompensationRuleOfThis') || err.message.includes('overlapping'))) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:payroll.failedToCreateRule'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -79,13 +79,13 @@ payrollRouter.post('/compensation-rules', requirePermission('staff:*'), validate
 payrollRouter.put('/compensation-rules/:id', requirePermission('staff:*'), validate(updateCompRuleSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const rule = await compensationService.updateRule(req.params.id, businessId, req.body);
-    if (!rule) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    if (!rule) { error(res, msg('errors:payroll.ruleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rule);
   } catch (err: any) {
-    if (err.message.includes('overlapping')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to update rule', 'INTERNAL_ERROR', 500); }
+    if ((isMessage(err.message, 'errors:compensation.anActiveCompensationRuleOfThis') || err.message.includes('overlapping'))) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:payroll.failedToUpdateRule'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -93,11 +93,11 @@ payrollRouter.put('/compensation-rules/:id', requirePermission('staff:*'), valid
 payrollRouter.delete('/compensation-rules/:id', requirePermission('staff:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const deleted = await compensationService.deleteRule(req.params.id, businessId);
-    if (!deleted) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:payroll.ruleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to delete rule', err?.message || err); error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete rule', err?.message || err); error(res, msg('errors:payroll.failedToDeleteRule'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -119,7 +119,7 @@ const createTimeEntrySchema = Joi.object({
 payrollRouter.get('/time-entries', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const entries = await timeService.getTimeEntries(businessId, {
       userId: req.query.user_id as string,
       dateFrom: req.query.date_from as string,
@@ -127,7 +127,7 @@ payrollRouter.get('/time-entries', requirePermission('staff:read'), async (req: 
       approved: req.query.approved === 'true' ? true : req.query.approved === 'false' ? false : undefined,
     });
     success(res, entries);
-  } catch (err: any) { console.error('Failed to list time entries', err?.message || err); error(res, 'Failed to list time entries', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list time entries', err?.message || err); error(res, msg('errors:payroll.failedToListTimeEntries'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/time-entries
@@ -139,7 +139,7 @@ payrollRouter.post('/time-entries', requirePermission('staff:*'), validate(creat
       hours: req.body.hours, description: req.body.description, bookingId: req.body.booking_id,
     });
     success(res, entry, undefined, 201);
-  } catch (err: any) { console.error('Failed to create time entry', err?.message || err); error(res, 'Failed to create time entry', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create time entry', err?.message || err); error(res, msg('errors:payroll.failedToCreateTimeEntry'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/time-entries/:id/approve
@@ -147,11 +147,11 @@ payrollRouter.put('/time-entries/:id/approve', requirePermission('staff:*'), asy
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const approved = await timeService.approveTimeEntry(req.params.id, businessId, authReq.user.sub);
-    if (!approved) { error(res, 'Entry not found', 'NOT_FOUND', 404); return; }
+    if (!approved) { error(res, msg('errors:payroll.entryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { approved: true });
-  } catch (err: any) { console.error('Failed to approve', err?.message || err); error(res, 'Failed to approve', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to approve', err?.message || err); error(res, msg('errors:payroll.failedToApprove'), 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -171,10 +171,10 @@ const openPeriodSchema = Joi.object({
 payrollRouter.get('/periods', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const periods = await payrollService.getPayPeriods(businessId);
     success(res, periods);
-  } catch (err: any) { console.error('Failed to list periods', err?.message || err); error(res, 'Failed to list periods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list periods', err?.message || err); error(res, msg('errors:payroll.failedToListPeriods'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/periods
@@ -185,8 +185,8 @@ payrollRouter.post('/periods', requirePermission('staff:*'), validate(openPeriod
     });
     success(res, period, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('already exists')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to create period', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'already exists')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:payroll.failedToCreatePeriod'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -195,12 +195,12 @@ payrollRouter.post('/periods/:id/run', requirePermission('staff:*'), async (req:
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await payrollService.runPayroll(req.params.id, businessId, authReq.tenantId);
     success(res, result);
   } catch (err: any) {
-    if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'VALIDATION_ERROR', 400); }
-    else { console.error('Failed to run payroll', err?.message || err); error(res, 'Failed to run payroll', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'not found') || (isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open'))) { error(res, err.message, 'VALIDATION_ERROR', 400); }
+    else { console.error('Failed to run payroll', err?.message || err); error(res, msg('errors:payroll.failedToRunPayroll'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -209,21 +209,21 @@ payrollRouter.put('/periods/:id/finalize', requirePermission('staff:*'), async (
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const finalized = await payrollService.finalizePayroll(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
-    if (!finalized) { error(res, 'Period not found or not in processing status', 'VALIDATION_ERROR', 400); return; }
+    if (!finalized) { error(res, msg('errors:payroll.periodNotFoundOrNotIn'), 'VALIDATION_ERROR', 400); return; }
     success(res, { finalized: true });
-  } catch (err: any) { console.error('Failed to finalize', err?.message || err); error(res, 'Failed to finalize', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to finalize', err?.message || err); error(res, msg('errors:payroll.failedToFinalize'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/payroll/periods/:id/entries
 payrollRouter.get('/periods/:id/entries', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const entries = await payrollService.getPayrollEntries(req.params.id, businessId);
     success(res, entries);
-  } catch (err: any) { console.error('Failed to get entries', err?.message || err); error(res, 'Failed to get entries', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get entries', err?.message || err); error(res, msg('errors:payroll.failedToGetEntries'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -253,7 +253,7 @@ const updateDeductionSchema = Joi.object({
 payrollRouter.get('/deductions', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const userId = req.query.user_id as string;
     const userFilter = userId ? `AND user_id = '${userId}'` : '';
     const { rows } = await adminPool.query(
@@ -263,7 +263,7 @@ payrollRouter.get('/deductions', requirePermission('staff:read'), async (req: Re
       [businessId],
     );
     success(res, rows);
-  } catch (err: any) { console.error('Failed to list deductions', err?.message || err); error(res, 'Failed to list deductions', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list deductions', err?.message || err); error(res, msg('errors:payroll.failedToListDeductions'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/deductions
@@ -275,14 +275,14 @@ payrollRouter.post('/deductions', requirePermission('staff:*'), validate(createD
       [req.body.business_id, req.body.user_id, req.body.name, req.body.deduction_type, req.body.calculation_type, req.body.value, req.body.is_recurring, req.body.effective_from, req.body.effective_to || null],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { console.error('Failed to create deduction', err?.message || err); error(res, 'Failed to create deduction', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create deduction', err?.message || err); error(res, msg('errors:payroll.failedToCreateDeduction'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/deductions/:id
 payrollRouter.put('/deductions/:id', requirePermission('staff:*'), validate(updateDeductionSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const fields: string[] = [];
     const values: any[] = [];
@@ -291,15 +291,15 @@ payrollRouter.put('/deductions/:id', requirePermission('staff:*'), validate(upda
     for (const [key, val] of Object.entries(req.body)) {
       if (allowed[key]) { fields.push(`${allowed[key]} = $${idx++}`); values.push(val); }
     }
-    if (fields.length === 0) { error(res, 'No valid fields', 'VALIDATION_ERROR', 400); return; }
+    if (fields.length === 0) { error(res, msg('errors:payroll.noValidFields'), 'VALIDATION_ERROR', 400); return; }
     values.push(req.params.id); values.push(businessId);
 
     const { rows } = await adminPool.query(
       `UPDATE fin_payroll_deductions SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`, values,
     );
-    if (rows.length === 0) { error(res, 'Deduction not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:payroll.deductionNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to update deduction', err?.message || err); error(res, 'Failed to update deduction', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update deduction', err?.message || err); error(res, msg('errors:payroll.failedToUpdateDeduction'), 'INTERNAL_ERROR', 500); }
 });
 
 import { adminPool } from '../db/pool';
@@ -317,24 +317,24 @@ payrollRouter.post('/tax-documents/generate', requirePermission('staff:*'), asyn
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string || req.body.business_id;
     const taxYear = parseInt(req.body.tax_year || req.query.tax_year as string, 10);
-    if (!businessId || !taxYear) { error(res, 'business_id and tax_year required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId || !taxYear) { error(res, msg('errors:payroll.businessIdAndTaxYearRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await taxDocsService.generateTaxDocuments(businessId, taxYear, authReq.user.sub);
     success(res, result);
-  } catch (err: any) { console.error('Failed to generate tax documents', err?.message || err); error(res, 'Failed to generate tax documents', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to generate tax documents', err?.message || err); error(res, msg('errors:payroll.failedToGenerateTaxDocuments'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/payroll/tax-documents
 payrollRouter.get('/tax-documents', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const docs = await taxDocsService.getTaxDocuments(businessId, {
       taxYear: req.query.tax_year ? parseInt(req.query.tax_year as string, 10) : undefined,
       documentType: req.query.document_type as string,
       userId: req.query.user_id as string,
     });
     success(res, docs);
-  } catch (err: any) { console.error('Failed to list tax documents', err?.message || err); error(res, 'Failed to list tax documents', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list tax documents', err?.message || err); error(res, msg('errors:payroll.failedToListTaxDocuments'), 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -348,7 +348,7 @@ import { getEmployeeTaxProfile, upsertEmployeeTaxProfile } from '../services/tax
 payrollRouter.get('/tax-profiles', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     // Get all active staff and their tax profiles
     const { rows } = await adminPool.query(
@@ -363,25 +363,25 @@ payrollRouter.get('/tax-profiles', requirePermission('staff:read'), async (req: 
       [businessId],
     );
     success(res, rows);
-  } catch (err: any) { console.error('Failed to list tax profiles', err?.message || err); error(res, 'Failed to list tax profiles', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list tax profiles', err?.message || err); error(res, msg('errors:payroll.failedToListTaxProfiles'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/tax-profiles/:userId — Create or update an employee's tax profile
 payrollRouter.put('/tax-profiles/:userId', requirePermission('staff:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.body.business_id;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { country_code: cc, allowances: al, additional_withholding: aw } = req.body;
-    if (!/^[A-Za-z]{2}$/.test(cc || '')) { error(res, 'country_code must be a two-letter country code', 'VALIDATION_ERROR', 400); return; }
+    if (!/^[A-Za-z]{2}$/.test(cc || '')) { error(res, msg('errors:payroll.countryCodeMustBeATwo'), 'VALIDATION_ERROR', 400); return; }
     if ((al !== undefined && al !== null && (!Number.isInteger(al) || al < 0)) || (aw !== undefined && aw !== null && (!Number.isInteger(aw) || aw < 0))) {
-      error(res, 'allowances and additional_withholding must be whole numbers, zero or more', 'VALIDATION_ERROR', 400); return;
+      error(res, msg('errors:payroll.allowancesAndAdditionalWithholdingMustBe'), 'VALIDATION_ERROR', 400); return;
     }
     const { rows: member } = await adminPool.query(
       `SELECT 1 FROM usr_users u WHERE u.id = $1 AND (u.business_id = $2 OR EXISTS (SELECT 1 FROM stf_profiles p WHERE p.user_id = u.id))
           AND u.tenant_id = (SELECT tenant_id FROM sys_businesses WHERE id = $2)`,
       [/^[0-9a-f-]{36}$/i.test(req.params.userId) ? req.params.userId : null, businessId],
     );
-    if (member.length === 0) { error(res, 'Staff member not found', 'NOT_FOUND', 404); return; }
+    if (member.length === 0) { error(res, msg('errors:payroll.staffMemberNotFound'), 'NOT_FOUND', 404); return; }
     const profile = await upsertEmployeeTaxProfile(businessId, req.params.userId, {
       country_code: req.body.country_code,
       state_code: req.body.state_code,
@@ -391,7 +391,7 @@ payrollRouter.put('/tax-profiles/:userId', requirePermission('staff:*'), async (
       exempt: req.body.exempt,
     });
     success(res, profile);
-  } catch (err: any) { console.error('Failed to update tax profile', err?.message || err); error(res, 'Failed to update tax profile', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update tax profile', err?.message || err); error(res, msg('errors:payroll.failedToUpdateTaxProfile'), 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -403,23 +403,23 @@ payrollRouter.put('/tax-profiles/:userId', requirePermission('staff:*'), async (
 payrollRouter.get('/settings', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
       'SELECT pay_frequency, pay_period_start_date FROM sys_businesses WHERE id = $1',
       [businessId],
     );
     success(res, rows[0] || { pay_frequency: 'monthly', pay_period_start_date: null });
-  } catch (err: any) { console.error('Failed to get payroll settings', err?.message || err); error(res, 'Failed to get payroll settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get payroll settings', err?.message || err); error(res, msg('errors:payroll.failedToGetPayrollSettings'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/settings — Update payroll settings
 payrollRouter.put('/settings', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { pay_frequency, pay_period_start_date } = req.body;
     if (pay_frequency && !['weekly', 'biweekly', 'semi_monthly', 'monthly'].includes(pay_frequency)) {
-      error(res, 'pay_frequency must be weekly, biweekly, semi_monthly or monthly', 'VALIDATION_ERROR', 400); return;
+      error(res, msg('errors:payroll.payFrequencyMustBeWeeklyBiweekly'), 'VALIDATION_ERROR', 400); return;
     }
     // Periods that were generated ahead but never run follow the new setting: they are
     // generated again. Periods with payroll lines, and finalized ones, are left as they are.
@@ -433,27 +433,27 @@ payrollRouter.put('/settings', requirePermission('settings:*'), async (req: Requ
       [pay_frequency || 'monthly', pay_period_start_date || null, businessId],
     );
     success(res, { saved: true });
-  } catch (err: any) { console.error('Failed to save payroll settings', err?.message || err); error(res, 'Failed to save payroll settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save payroll settings', err?.message || err); error(res, msg('errors:payroll.failedToSavePayrollSettings'), 'INTERNAL_ERROR', 500); }
 });
 
 // Commission after a refund (THE-21): take it back (default) or keep it.
 payrollRouter.get('/settings/commission-refunds', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { isRefundClawbackEnabled } = await import('../services/commission.service');
     success(res, { take_back: await isRefundClawbackEnabled(businessId) });
-  } catch (err: any) { console.error('Failed to read the commission refund setting', err?.message || err); error(res, 'Failed to read the commission refund setting', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read the commission refund setting', err?.message || err); error(res, msg('errors:payroll.failedToReadTheCommissionRefund'), 'INTERNAL_ERROR', 500); }
 });
 
 payrollRouter.put('/settings/commission-refunds', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (typeof req.body.take_back !== 'boolean') { error(res, 'take_back must be true or false', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (typeof req.body.take_back !== 'boolean') { error(res, msg('errors:payroll.takeBackMustBeTrueOr'), 'VALIDATION_ERROR', 400); return; }
     const { setRefundClawbackEnabled } = await import('../services/commission.service');
     success(res, { take_back: await setRefundClawbackEnabled(businessId, req.body.take_back) });
-  } catch (err: any) { console.error('Failed to save the commission refund setting', err?.message || err); error(res, 'Failed to save the commission refund setting', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save the commission refund setting', err?.message || err); error(res, msg('errors:payroll.failedToSaveTheCommissionRefund'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -461,23 +461,24 @@ payrollRouter.put('/settings/commission-refunds', requirePermission('settings:*'
 // ============================================================
 
 import { getUnprocessedPeriods, getFinalizedPeriods } from '../services/pay-period.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 // GET /api/v1/payroll/periods/unprocessed — Get pending periods (auto-generates if needed)
 payrollRouter.get('/periods/unprocessed', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const periods = await getUnprocessedPeriods(businessId);
     success(res, periods);
-  } catch (err: any) { console.error('Failed to get unprocessed periods', err?.message || err); error(res, 'Failed to get unprocessed periods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get unprocessed periods', err?.message || err); error(res, msg('errors:payroll.failedToGetUnprocessedPeriods'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/payroll/periods/history — Get finalized periods
 payrollRouter.get('/periods/history', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payroll.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const periods = await getFinalizedPeriods(businessId);
     success(res, periods);
-  } catch (err: any) { console.error('Failed to get finalized periods', err?.message || err); error(res, 'Failed to get finalized periods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get finalized periods', err?.message || err); error(res, msg('errors:payroll.failedToGetFinalizedPeriods'), 'INTERNAL_ERROR', 500); }
 });

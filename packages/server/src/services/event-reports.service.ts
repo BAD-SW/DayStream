@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Get a detailed report for a single event.
@@ -11,7 +12,7 @@ export async function getEventReport(eventId: string) {
      WHERE e.id = $1`,
     [eventId],
   );
-  if (eventRows.length === 0) throw new Error('Event not found');
+  if (eventRows.length === 0) throw new Error(msg('errors:eventReports.eventNotFound'));
 
   const event = eventRows[0];
 
@@ -139,7 +140,7 @@ export async function exportAttendeeList(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
     `SELECT title FROM evt_events WHERE id = $1`, [eventId],
   );
-  if (eventRows.length === 0) throw new Error('Event not found');
+  if (eventRows.length === 0) throw new Error(msg('errors:eventReports.eventNotFound'));
 
   const { rows } = await adminPool.query(
     `SELECT

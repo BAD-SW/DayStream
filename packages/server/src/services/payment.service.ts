@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
+import { msg } from '../i18n';
 
 interface CreateTransactionInput {
   businessId: string;
@@ -46,7 +47,7 @@ export async function createTransaction(input: CreateTransactionInput) {
       'SELECT amount FROM pay_transactions WHERE id = $1 AND type = $2',
       [input.refundOfId, 'charge'],
     );
-    if (originalRows.length === 0) throw new Error('Original transaction not found');
+    if (originalRows.length === 0) throw new Error(msg('errors:payment.originalTransactionNotFound'));
     const originalAmount = originalRows[0].amount;
 
     // Sum all existing refunds against this transaction
@@ -58,7 +59,7 @@ export async function createTransaction(input: CreateTransactionInput) {
     const remainingRefundable = originalAmount - totalRefunded;
 
     if (input.amount > remainingRefundable) {
-      throw new Error(`Refund amount exceeds remaining refundable balance. Original: ${originalAmount}, already refunded: ${totalRefunded}, remaining: ${remainingRefundable}`);
+      throw new Error(msg('errors:payment.refundAmountExceedsRemainingRefundableBalance', { originalAmount, totalRefunded, remainingRefundable }));
     }
   }
 

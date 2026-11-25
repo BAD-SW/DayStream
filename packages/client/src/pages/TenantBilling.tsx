@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { formatDateOnly } from '../utils/date';
@@ -30,6 +31,7 @@ interface PaymentForm {
 }
 
 export function TenantBilling() {
+  const { t } = useTranslation('tenant');
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -65,44 +67,44 @@ export function TenantBilling() {
     setSaving(true); setMessage(null);
     try {
       await apiClient.put('/v1/admin/my-billing/payment-method', form);
-      setMessage('Payment method updated successfully.');
+      setMessage(t('tenantBilling.updated'));
       setEditing(false);
     } catch (err: any) {
-      setMessage(err.response?.data?.message || 'Failed to save');
+      setMessage(err.response?.data?.message || t('tenantBilling.saveFailed'));
     } finally { setSaving(false); }
   };
 
-  if (loading) return <p style={styles.loading}>Loading...</p>;
-  if (!billing) return <p style={styles.loading}>Unable to load billing information.</p>;
+  if (loading) return <p style={styles.loading}>{t('common:loading')}</p>;
+  if (!billing) return <p style={styles.loading}>{t('tenantBilling.loadFailed')}</p>;
 
   return (
     <div>
-      <h2 style={styles.heading}>Billing</h2>
-      <p style={styles.subtext}>Your subscription to DayStream.</p>
+      <h2 style={styles.heading}>{t('tenantBilling.title')}</h2>
+      <p style={styles.subtext}>{t('tenantBilling.subtitle')}</p>
 
       {/* Plan Summary - Read Only */}
       <div style={styles.card}>
-        <h3 style={styles.cardTitle}>Plan Summary</h3>
+        <h3 style={styles.cardTitle}>{t('tenantBilling.planSummary')}</h3>
         <div style={styles.summaryGrid}>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Billing</span>
-            <span style={styles.summaryValue}>Monthly</span>
+            <span style={styles.summaryLabel}>{t('tenantBilling.billing')}</span>
+            <span style={styles.summaryValue}>{t('tenantBilling.monthly')}</span>
           </div>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Contract Start</span>
+            <span style={styles.summaryLabel}>{t('tenantBilling.contractStart')}</span>
             <span style={styles.summaryValue}>{billing.contract_start_date ? formatDateOnly(billing.contract_start_date) : '—'}</span>
           </div>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Contract Expires</span>
+            <span style={styles.summaryLabel}>{t('tenantBilling.contractExpires')}</span>
             <span style={styles.summaryValue}>{billing.contract_expire_date ? formatDateOnly(billing.contract_expire_date) : '—'}</span>
           </div>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Last Payment</span>
-            <span style={styles.summaryValue}>{billing.last_billing_date ? formatDateOnly(billing.last_billing_date) : 'Never'}</span>
+            <span style={styles.summaryLabel}>{t('tenantBilling.lastPayment')}</span>
+            <span style={styles.summaryValue}>{billing.last_billing_date ? formatDateOnly(billing.last_billing_date) : t('tenantBilling.never')}</span>
           </div>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Status</span>
-            <span style={{ ...styles.summaryValue, color: 'var(--color-success)' }}>Active</span>
+            <span style={styles.summaryLabel}>{t('tenantBilling.status')}</span>
+            <span style={{ ...styles.summaryValue, color: 'var(--color-success)' }}>{t('tenantBilling.active')}</span>
           </div>
         </div>
       </div>
@@ -110,66 +112,66 @@ export function TenantBilling() {
       {/* Payment Method - Editable */}
       <div style={styles.card}>
         <div style={styles.cardHeader}>
-          <h3 style={styles.cardTitle}>Payment Method</h3>
-          {!editing && <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>Edit</Button>}
+          <h3 style={styles.cardTitle}>{t('tenantBilling.paymentMethod')}</h3>
+          {!editing && <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>{t('common:edit')}</Button>}
         </div>
         {message && <div style={styles.message}>{message}</div>}
 
         {editing ? (
           <div style={styles.formBody}>
-            <div style={styles.sectionLabel}>Primary — ACH/SEPA (Direct Debit)</div>
+            <div style={styles.sectionLabel}>{t('tenantBilling.primaryEdit')}</div>
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Bank Name</label>
-                <input style={styles.input} value={form.payment_bank_name} onChange={(e) => setForm({ ...form, payment_bank_name: e.target.value })} placeholder="Bank Name" />
+                <label style={styles.label}>{t('tenantBilling.bankName')}</label>
+                <input style={styles.input} value={form.payment_bank_name} onChange={(e) => setForm({ ...form, payment_bank_name: e.target.value })} placeholder={t('tenantBilling.bankName')} />
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Account Holder</label>
-                <input style={styles.input} value={form.payment_account_holder} onChange={(e) => setForm({ ...form, payment_account_holder: e.target.value })} placeholder="Account Holder Name" />
+                <label style={styles.label}>{t('tenantBilling.accountHolder')}</label>
+                <input style={styles.input} value={form.payment_account_holder} onChange={(e) => setForm({ ...form, payment_account_holder: e.target.value })} placeholder={t('tenantBilling.accountHolderPlaceholder')} />
               </div>
             </div>
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Account Number</label>
-                <input style={styles.input} value={form.payment_account_number} onChange={(e) => setForm({ ...form, payment_account_number: e.target.value })} placeholder="••••••1234" />
+                <label style={styles.label}>{t('tenantBilling.accountNumber')}</label>
+                <input style={styles.input} value={form.payment_account_number} onChange={(e) => setForm({ ...form, payment_account_number: e.target.value })} placeholder={t('tenantBilling.accountNumberPlaceholder')} />
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Routing / IBAN</label>
-                <input style={styles.input} value={form.payment_routing_number || form.payment_iban} onChange={(e) => setForm({ ...form, payment_routing_number: e.target.value })} placeholder="Routing or IBAN" />
+                <label style={styles.label}>{t('tenantBilling.routingIban')}</label>
+                <input style={styles.input} value={form.payment_routing_number || form.payment_iban} onChange={(e) => setForm({ ...form, payment_routing_number: e.target.value })} placeholder={t('tenantBilling.routingIbanPlaceholder')} />
               </div>
             </div>
 
-            <div style={styles.sectionLabel}>Backup — Credit Card</div>
+            <div style={styles.sectionLabel}>{t('tenantBilling.backupCard')}</div>
             <div style={styles.formRow}>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Last 4 Digits</label>
-                <input style={styles.input} value={form.payment_card_last4} onChange={(e) => setForm({ ...form, payment_card_last4: e.target.value })} maxLength={4} placeholder="4242" />
+                <label style={styles.label}>{t('tenantBilling.last4')}</label>
+                <input style={styles.input} value={form.payment_card_last4} onChange={(e) => setForm({ ...form, payment_card_last4: e.target.value })} maxLength={4} placeholder={t('tenantBilling.last4Placeholder')} />
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Brand</label>
+                <label style={styles.label}>{t('tenantBilling.brand')}</label>
                 <select style={styles.input} value={form.payment_card_brand} onChange={(e) => setForm({ ...form, payment_card_brand: e.target.value })}>
-                  <option value="">None</option>
-                  <option value="visa">Visa</option>
-                  <option value="mastercard">Mastercard</option>
-                  <option value="amex">Amex</option>
-                  <option value="discover">Discover</option>
+                  <option value="">{t('tenantBilling.none')}</option>
+                  <option value="visa">{t('tenantBilling.brandVisa')}</option>
+                  <option value="mastercard">{t('tenantBilling.brandMastercard')}</option>
+                  <option value="amex">{t('tenantBilling.brandAmex')}</option>
+                  <option value="discover">{t('tenantBilling.brandDiscover')}</option>
                 </select>
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Expiry</label>
-                <input style={styles.input} value={form.payment_card_exp} onChange={(e) => setForm({ ...form, payment_card_exp: e.target.value })} placeholder="MM/YYYY" maxLength={7} />
+                <label style={styles.label}>{t('tenantBilling.expiry')}</label>
+                <input style={styles.input} value={form.payment_card_exp} onChange={(e) => setForm({ ...form, payment_card_exp: e.target.value })} placeholder={t('tenantBilling.expiryPlaceholder')} maxLength={7} />
               </div>
             </div>
 
             <div style={styles.formActions}>
-              <Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
-              <Button onClick={handleSave} loading={saving}>Save Payment Method</Button>
+              <Button variant="outline" onClick={() => setEditing(false)}>{t('common:cancel')}</Button>
+              <Button onClick={handleSave} loading={saving}>{t('tenantBilling.savePaymentMethod')}</Button>
             </div>
           </div>
         ) : (
           <div style={styles.methodSummary}>
             <div style={styles.methodSection}>
-              <div style={styles.methodLabel}>Primary — ACH/SEPA</div>
+              <div style={styles.methodLabel}>{t('tenantBilling.primaryView')}</div>
               {billing.payment_bank_name ? (
                 <div style={styles.methodDetail}>
                   <span>{billing.payment_bank_name}</span>
@@ -177,18 +179,18 @@ export function TenantBilling() {
                   <span style={styles.methodMuted}>••••{billing.payment_account_number?.slice(-4) || '—'}</span>
                 </div>
               ) : (
-                <span style={styles.methodMuted}>Not configured</span>
+                <span style={styles.methodMuted}>{t('tenantBilling.notConfigured')}</span>
               )}
             </div>
             <div style={styles.methodSection}>
-              <div style={styles.methodLabel}>Backup — Credit Card</div>
+              <div style={styles.methodLabel}>{t('tenantBilling.backupCard')}</div>
               {billing.payment_card_last4 ? (
                 <div style={styles.methodDetail}>
                   <span>{(billing.payment_card_brand || '').charAt(0).toUpperCase() + (billing.payment_card_brand || '').slice(1)} ••••{billing.payment_card_last4}</span>
-                  <span style={styles.methodMuted}>Expires {billing.payment_card_exp}</span>
+                  <span style={styles.methodMuted}>{t('tenantBilling.expires', { date: billing.payment_card_exp })}</span>
                 </div>
               ) : (
-                <span style={styles.methodMuted}>Not configured</span>
+                <span style={styles.methodMuted}>{t('tenantBilling.notConfigured')}</span>
               )}
             </div>
           </div>
@@ -197,8 +199,8 @@ export function TenantBilling() {
 
       {/* Invoice History - Placeholder */}
       <div style={styles.card}>
-        <h3 style={styles.cardTitle}>Invoice History</h3>
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', margin: 0 }}>No invoices yet. Invoices will appear here once billing is active.</p>
+        <h3 style={styles.cardTitle}>{t('tenantBilling.invoiceHistory')}</h3>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', margin: 0 }}>{t('tenantBilling.noInvoices')}</p>
       </div>
     </div>
   );

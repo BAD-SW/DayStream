@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * List dependencies for a resource.
@@ -23,13 +24,13 @@ export async function addDependency(resourceId: string, input: {
   durationMinutes?: number;
 }) {
   // Prevent circular dependencies
-  if (resourceId === input.dependsOnId) throw new Error('Resource cannot depend on itself');
+  if (resourceId === input.dependsOnId) throw new Error(msg('errors:resourceDependencies.resourceCannotDependOnItself'));
 
   // Check if the dependency already depends on this resource (circular)
   const { rows: reverse } = await adminPool.query(
     `SELECT id FROM res_dependencies WHERE resource_id = $1 AND depends_on_id = $2`,
     [input.dependsOnId, resourceId]);
-  if (reverse.length > 0) throw new Error('Circular dependency detected');
+  if (reverse.length > 0) throw new Error(msg('errors:resourceDependencies.circularDependencyDetected'));
 
   const { rows } = await adminPool.query(
     `INSERT INTO res_dependencies (resource_id, depends_on_id, offset_minutes, duration_minutes)

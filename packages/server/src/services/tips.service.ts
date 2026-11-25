@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Tips (spec 51, gap 14; design 14). A tip is charged with the sale (fin_orders.tip_amount, next to
@@ -166,7 +167,7 @@ function allocate(total: number, weights: number[]): number[] {
  */
 export async function sharesFor(orderId: string, db: Db = adminPool): Promise<{ shares: TipShare[]; byHand: boolean; staff: Array<{ user_id: string; name: string }> }> {
   const { rows } = await db.query('SELECT business_id, tip_amount, tip_split FROM fin_orders WHERE id = $1', [orderId]);
-  if (!rows[0]) throw new TipError('Order not found', 'NOT_FOUND');
+  if (!rows[0]) throw new TipError(msg('errors:tips.orderNotFound'), 'NOT_FOUND');
   const tip = Number(rows[0].tip_amount) || 0;
   const staff = await staffOnOrder(orderId, db);
   const plain = staff.map(({ user_id, name }) => ({ user_id, name }));
@@ -223,26 +224,26 @@ export async function setOrderTip(args: {
   businessId: string; orderId: string; tipCents: number; percent?: number | null; split?: Array<{ user_id: string; amount_cents: number }> | null;
 }): Promise<void> {
   const { rows } = await adminPool.query('SELECT status FROM fin_orders WHERE id = $1 AND business_id = $2', [args.orderId, args.businessId]);
-  if (!rows[0]) throw new TipError('Order not found', 'NOT_FOUND');
-  if (rows[0].status !== 'open') throw new TipError('The order is already paid.', 'CONFLICT');
+  if (!rows[0]) throw new TipError(msg('errors:tips.orderNotFound'), 'NOT_FOUND');
+  if (rows[0].status !== 'open') throw new TipError(msg('errors:tips.theOrderIsAlreadyPaid'), 'CONFLICT');
   // 0 is a choice too (the slider at no tip), kept so the default is not put back.
   const percent = args.percent != null && args.percent >= 0 ? args.percent : null;
   if (percent !== null) {
-    if (!(percent <= 100)) throw new TipError('Enter a percentage up to 100.', 'INVALID');
+    if (!(percent <= 100)) throw new TipError(msg('errors:tips.enterAPercentageUpTo100'), 'INVALID');
     const base = await tipBaseOf(args.orderId);
     args = { ...args, tipCents: tipFromPercent(await getTipSettings(args.businessId), base.total, base.tax, percent) };
   }
-  if (!Number.isInteger(args.tipCents) || args.tipCents < 0) throw new TipError('Enter a tip of 0 or more.', 'INVALID');
-  if (args.tipCents > 0 && !(await getTipSettings(args.businessId)).enabled) throw new TipError('Tipping is switched off for this business.', 'INVALID');
+  if (!Number.isInteger(args.tipCents) || args.tipCents < 0) throw new TipError(msg('errors:tips.enterATipOf0Or'), 'INVALID');
+  if (args.tipCents > 0 && !(await getTipSettings(args.businessId)).enabled) throw new TipError(msg('errors:tips.tippingIsSwitchedOffForThis'), 'INVALID');
   let split: Array<{ user_id: string; amount_cents: number }> | null = null;
   if (args.split && args.split.length > 0 && args.tipCents > 0) {
-    if (args.split.some((s) => !Number.isInteger(s.amount_cents) || s.amount_cents < 0)) throw new TipError('Each share is a whole amount of 0 or more.', 'INVALID');
-    if (args.split.reduce((t, s) => t + s.amount_cents, 0) !== args.tipCents) throw new TipError('The shares must add up to the tip.', 'INVALID');
+    if (args.split.some((s) => !Number.isInteger(s.amount_cents) || s.amount_cents < 0)) throw new TipError(msg('errors:tips.eachShareIsAWholeAmount'), 'INVALID');
+    if (args.split.reduce((t, s) => t + s.amount_cents, 0) !== args.tipCents) throw new TipError(msg('errors:tips.theSharesMustAddUpTo'), 'INVALID');
     const ids = [...new Set(args.split.map((s) => s.user_id))];
-    if (ids.length !== args.split.length) throw new TipError('Each staff member can have one share.', 'INVALID');
+    if (ids.length !== args.split.length) throw new TipError(msg('errors:tips.eachStaffMemberCanHaveOne'), 'INVALID');
     const { rows: ok } = await adminPool.query(
       `SELECT id FROM usr_users WHERE id = ANY($1::uuid[]) AND business_id = $2 AND persona = 'business'`, [ids, args.businessId]);
-    if (ok.length !== ids.length) throw new TipError('A share is for someone who is not staff of this business.', 'INVALID');
+    if (ok.length !== ids.length) throw new TipError(msg('errors:tips.aShareIsForSomeoneWho'), 'INVALID');
     split = args.split.filter((s) => s.amount_cents > 0);
   }
   await adminPool.query(
@@ -436,10 +437,10 @@ export async function planPool(args: {
 
   if (args.mode === 'hand') {
     const wanted = (args.amounts || []).filter((a) => a.amount_cents > 0);
-    if (wanted.some((a) => !nameOf.has(a.user_id))) throw new TipError('A share is for someone who is not staff of this business.', 'INVALID');
-    if (wanted.some((a) => !Number.isInteger(a.amount_cents))) throw new TipError('Each share is a whole amount.', 'INVALID');
+    if (wanted.some((a) => !nameOf.has(a.user_id))) throw new TipError(msg('errors:tips.aShareIsForSomeoneWho'), 'INVALID');
+    if (wanted.some((a) => !Number.isInteger(a.amount_cents))) throw new TipError(msg('errors:tips.eachShareIsAWholeAmount2'), 'INVALID');
     unassigned = total - wanted.reduce((t, a) => t + a.amount_cents, 0);
-    if (unassigned < 0) throw new TipError('The shares come to more than is in the pool for these dates.', 'INVALID');
+    if (unassigned < 0) throw new TipError(msg('errors:tips.theSharesComeToMoreThan'), 'INVALID');
     // Fill each tip in turn from the staff still to be given their amount, so the totals are exact.
     const need = wanted.map((a) => ({ ...a }));
     for (const s of shares) {
@@ -482,8 +483,8 @@ export async function sharePool(args: {
   businessId: string; start: string | null; end: string; mode: PoolMode; amounts?: Array<{ user_id: string; amount_cents: number }>; userId: string;
 }): Promise<{ shared_cents: number; left_cents: number; staff: PoolPlan['staff'] }> {
   const plan = await planPool(args);
-  if (plan.unassigned_cents !== 0) throw new TipError('The shares must add up to what is in the pool for these dates.', 'INVALID');
-  if (plan.total_cents - plan.left_cents <= 0) throw new TipError('There is nothing in the pool to share for these dates, or nobody was clocked in on those days.', 'INVALID');
+  if (plan.unassigned_cents !== 0) throw new TipError(msg('errors:tips.theSharesMustAddUpTo2'), 'INVALID');
+  if (plan.total_cents - plan.left_cents <= 0) throw new TipError(msg('errors:tips.thereIsNothingInThePool'), 'INVALID');
   const client = await adminPool.connect();
   let cash = 0; let shared = 0;
   try {
@@ -495,7 +496,7 @@ export async function sharePool(args: {
       const s = rows[0];
       const sum = list.reduce((t, x) => t + x.cents, 0);
       if (!s || s.left !== sum || sum === 0) {
-        if (s && sum > 0) throw new TipError('The pool changed while it was being shared (a tip was refunded). Try again.', 'CONFLICT');
+        if (s && sum > 0) throw new TipError(msg('errors:tips.thePoolChangedWhileItWas'), 'CONFLICT');
         continue;
       }
       for (const x of list) {

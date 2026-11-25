@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadStripe, Stripe } from '@stripe/stripe-js';
 import { Button } from '../design-system/components/actions/Button';
 import * as payApi from '../api/payments';
@@ -41,11 +42,12 @@ interface Props {
 }
 
 export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
+  const { t } = useTranslation('tenant');
   const [schemas, setSchemas] = useState<ProviderDefinition[]>([]);
   const [saved, setSaved] = useState<SavedConfigView | null>(null);
   // The provider and its field values as edited; compared with what is stored to mark changes.
   const draft = useDraft<{ provider: string; values: Record<string, string> }>(
-    sharedSave?.id || 'processor-config', sharedSave?.label || 'Payment processor', { provider: '', values: {} },
+    sharedSave?.id || 'processor-config', sharedSave?.label || t('processor.draftLabel'), { provider: '', values: {} },
     async (d) => {
       const view = await payApi.saveProcessorConfig(owner, d.provider, d.values);
       setSaved(view);
@@ -76,7 +78,7 @@ export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
       // Seed form with saved non-secret values; secrets stay blank (shown via placeholder).
       draft.load({ provider: activeProvider, values: { ...(current?.config || {}) } });
     } catch {
-      setMessage({ ok: false, text: 'Failed to load provider configuration.' });
+      setMessage({ ok: false, text: t('processor.loadFailed') });
     } finally { setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner.owner_level, owner.tenant_id, owner.business_id]);
@@ -99,7 +101,7 @@ export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
       // Stripe, returns a throwaway SetupIntent client_secret + publishable key.
       const probe = await payApi.prepareConnectionProbe(owner, provider, values);
       if (!probe.ok) {
-        setMessage({ ok: false, text: `✗ ${probe.message || 'Connection test failed.'}` });
+        setMessage({ ok: false, text: `✗ ${probe.message || t('processor.testFailed')}` });
         return;
       }
 
@@ -109,29 +111,29 @@ export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
       // as the secret key — catching bogus, corrupted, or mismatched keys.
       if (probe.provider === 'stripe' && probe.clientSecret) {
         if (!probe.publishableKey) {
-          setMessage({ ok: false, text: '✗ Enter the publishable key so it can be verified.' });
+          setMessage({ ok: false, text: `✗ ${t('processor.enterPublishable')}` });
           return;
         }
         const stripe = await stripeFor(probe.publishableKey);
         if (!stripe) {
-          setMessage({ ok: false, text: '✗ The publishable key was rejected by Stripe (it could not initialize). Check for typos.' });
+          setMessage({ ok: false, text: `✗ ${t('processor.publishableRejected')}` });
           return;
         }
         const result = await stripe.retrieveSetupIntent(probe.clientSecret);
         if (result.error || !result.setupIntent) {
-          const raw = result.error?.message || 'The publishable key could not verify against Stripe. Check that it matches your secret key and mode.';
+          const raw = result.error?.message || t('processor.publishableUnverified');
           setMessage({ ok: false, text: `✗ ${cleanStripeError(raw)}` });
           return;
         }
-        const modeText = probe.mode ? ` (${probe.mode} mode)` : '';
-        setMessage({ ok: true, text: `✓ Both keys are valid and connected to Stripe${modeText}. Card capture will work.` });
+        const modeText = probe.mode ? t('processor.modeSuffix', { mode: probe.mode }) : '';
+        setMessage({ ok: true, text: `✓ ${t('processor.bothValid', { mode: modeText })}` });
         return;
       }
 
       // Non-Stripe (mock) or no client-side step needed.
-      setMessage({ ok: true, text: `✓ ${probe.message || 'Connection verified.'}` });
+      setMessage({ ok: true, text: `✓ ${probe.message || t('processor.verified')}` });
     } catch (err: any) {
-      setMessage({ ok: false, text: err?.response?.data?.error || 'Could not test the connection.' });
+      setMessage({ ok: false, text: err?.response?.data?.error || t('processor.testError') });
     } finally { setTesting(false); }
   }
 
@@ -140,19 +142,19 @@ export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
     setSaving(true); setMessage(null);
     try {
       await draft.save();
-      setMessage({ ok: true, text: 'Configuration saved.' });
+      setMessage({ ok: true, text: t('processor.saved') });
     } catch (err: any) {
       const details = err?.response?.data?.details;
-      setMessage({ ok: false, text: err?.response?.data?.error || (details ? `Missing: ${details.join(', ')}` : 'Failed to save configuration.') });
+      setMessage({ ok: false, text: err?.response?.data?.error || (details ? t('processor.missing', { fields: details.join(', ') }) : t('processor.saveFailed')) });
     } finally { setSaving(false); }
   }
 
-  if (loading) return <p style={styles.muted}>Loading…</p>;
+  if (loading) return <p style={styles.muted}>{t('processor.loading')}</p>;
 
   return (
     <div style={{ ...styles.wrap, ...(sharedSave ? draftBox(draft.dirty) : {}) }}>
       <div style={styles.field}>
-        <label style={styles.label}>Provider</label>
+        <label style={styles.label}>{t('processor.provider')}</label>
         <select style={{ ...styles.input, ...(sharedSave ? fieldMark(draft.changed((v) => v.provider)) : {}) }} value={provider} onChange={(e) => onProviderChange(e.target.value)}>
           {schemas.map((s) => <option key={s.name} value={s.name}>{s.label}</option>)}
         </select>
@@ -161,7 +163,7 @@ export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
       {def?.fields.map((f) => {
         const isSetSecret = f.secret && saved?.provider === provider && saved?.secretsSet?.[f.key];
         const placeholder = isSetSecret
-          ? `${saved?.secretsMasked?.[f.key] ?? '••••'} (leave blank to keep)`
+          ? t('processor.keepBlank', { masked: saved?.secretsMasked?.[f.key] ?? '••••' })
           : (f.placeholder || '');
         const mark = sharedSave ? fieldMark((values[f.key] ?? '') !== (draft.saved.values[f.key] ?? '')) : {};
         return (
@@ -175,7 +177,7 @@ export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
                 value={values[f.key] ?? ''}
                 onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
               >
-                <option value="" disabled>Select…</option>
+                <option value="" disabled>{t('processor.select')}</option>
                 {f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             ) : (
@@ -203,8 +205,8 @@ export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
       )}
 
       <div style={styles.actions}>
-        <Button variant="outline" loading={testing} onClick={handleTest}>Test connection</Button>
-        {!sharedSave && <Button variant="primary" loading={saving} onClick={handleSave}>Save configuration</Button>}
+        <Button variant="outline" loading={testing} onClick={handleTest}>{t('processor.testConnection')}</Button>
+        {!sharedSave && <Button variant="primary" loading={saving} onClick={handleSave}>{t('processor.saveConfiguration')}</Button>}
       </div>
     </div>
   );

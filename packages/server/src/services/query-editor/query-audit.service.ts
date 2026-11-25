@@ -1,5 +1,6 @@
 import { logAuditStrict } from '../audit.service';
 import { logger } from '../../middleware/logger';
+import { msg } from '../../i18n';
 
 /**
  * Query editor audit event types.
@@ -195,7 +196,7 @@ export class QueryAuditService {
         tenantId: entry.tenantId,
         error: error.message,
       });
-      throw new Error(`Audit logging failed: unable to process query at this time`);
+      throw new Error(msg('errors:queryAudit.auditLoggingFailedUnableToProcess'));
     }
   }
 

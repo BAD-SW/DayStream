@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export interface MultiSelectOption {
   id: string;
@@ -14,7 +15,10 @@ interface MultiSelectProps {
   emptyMessage?: string;
 }
 
-export function MultiSelect({ label, options, selected, onChange, placeholder = 'Select...', emptyMessage = 'No options available' }: MultiSelectProps) {
+export function MultiSelect({ label, options, selected, onChange, placeholder, emptyMessage }: MultiSelectProps) {
+  const { t } = useTranslation('common');
+  const shownPlaceholder = placeholder ?? t('multiSelect.placeholder');
+  const shownEmptyMessage = emptyMessage ?? t('multiSelect.noOptions');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,13 +52,13 @@ export function MultiSelect({ label, options, selected, onChange, placeholder = 
     <div style={styles.wrapper} ref={containerRef}>
       <label style={styles.label}>{label}</label>
       <div style={styles.inputBox} onClick={() => setOpen(!open)}>
-        {selectedLabels.length === 0 && <span style={styles.placeholder}>{placeholder}</span>}
+        {selectedLabels.length === 0 && <span style={styles.placeholder}>{shownPlaceholder}</span>}
         {selectedLabels.length > 0 && (
           <div style={styles.tags}>
             {selectedLabels.slice(0, 3).map((name, i) => (
               <span key={i} style={styles.tag}>{name}</span>
             ))}
-            {selectedLabels.length > 3 && <span style={styles.tag}>+{selectedLabels.length - 3} more</span>}
+            {selectedLabels.length > 3 && <span style={styles.tag}>{t('multiSelect.more', { count: selectedLabels.length - 3 })}</span>}
           </div>
         )}
         <span style={styles.arrow}>{open ? '▲' : '▼'}</span>
@@ -66,13 +70,13 @@ export function MultiSelect({ label, options, selected, onChange, placeholder = 
             style={styles.search}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
+            placeholder={t('multiSelect.search')}
             autoFocus
             onClick={(e) => e.stopPropagation()}
           />
           <div style={styles.optionsList}>
-            {options.length === 0 && <p style={styles.empty}>{emptyMessage}</p>}
-            {filtered.length === 0 && options.length > 0 && <p style={styles.empty}>No matches</p>}
+            {options.length === 0 && <p style={styles.empty}>{shownEmptyMessage}</p>}
+            {filtered.length === 0 && options.length > 0 && <p style={styles.empty}>{t('multiSelect.noMatches')}</p>}
             {filtered.map((option) => (
               <label key={option.id} style={styles.option}>
                 <input
@@ -86,7 +90,7 @@ export function MultiSelect({ label, options, selected, onChange, placeholder = 
             ))}
           </div>
           {selected.length > 0 && (
-            <button type="button" style={styles.clearBtn} onClick={() => onChange([])}>Clear all</button>
+            <button type="button" style={styles.clearBtn} onClick={() => onChange([])}>{t('multiSelect.clearAll')}</button>
           )}
         </div>
       )}

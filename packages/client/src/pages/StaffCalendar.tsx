@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatDay } from '../utils/format';
 import { Button } from '../design-system/components/actions/Button';
 import { ListEmpty } from '../design-system/components/data/ListRow';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
@@ -6,6 +8,7 @@ import './WeekGrid.css';
 import * as staffApi from '../api/staff';
 
 export function StaffCalendar() {
+  const { t } = useTranslation('calendar');
   const [teamData, setTeamData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(() => {
@@ -49,30 +52,29 @@ export function StaffCalendar() {
   };
 
   const days = getDaysInRange();
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
     <div>
       <PageHeader
-        title="Team Calendar"
+        title={t('staffCalendar.title')}
         actions={<div className="wg-nav">
-          <Button variant="ghost" onClick={prevWeek}>← Prev</Button>
+          <Button variant="ghost" onClick={prevWeek}>{t('weekCalendar.prev')}</Button>
           <span className="wg-range">{startDate} — {endDate}</span>
-          <Button variant="ghost" onClick={nextWeek}>Next →</Button>
+          <Button variant="ghost" onClick={nextWeek}>{t('weekCalendar.next')}</Button>
         </div>}
       />
 
       {loading ? (
-        <ListEmpty>Loading...</ListEmpty>
+        <ListEmpty>{t('weekCalendar.loading')}</ListEmpty>
       ) : (
         <div className="wg-scroll">
           <table className="wg-table">
             <thead>
               <tr>
-                <th className="wg-first">Staff</th>
-                {days.map((d, i) => (
+                <th className="wg-first">{t('staffCalendar.staff')}</th>
+                {days.map((d) => (
                   <th key={d}>
-                    {dayLabels[i]}<span className="wg-date">{d.slice(5)}</span>
+                    {formatDay(d, { weekday: 'short' })}<span className="wg-date">{d.slice(5)}</span>
                   </th>
                 ))}
               </tr>
@@ -88,9 +90,9 @@ export function StaffCalendar() {
                     const hasLeave = member.leave.some((l: any) => l.startDate <= day && l.endDate >= day);
                     const avail = member.availability[day] || [];
                     const state = hasLeave ? 'leave' : dayBookings.length > 0 ? 'booked' : avail.length > 0 ? 'available' : 'off';
-                    const label = state === 'leave' ? 'Leave'
-                      : state === 'booked' ? `${dayBookings.length} booking${dayBookings.length > 1 ? 's' : ''}`
-                      : state === 'available' ? 'Available' : 'Off';
+                    const label = state === 'leave' ? t('staffCalendar.leave')
+                      : state === 'booked' ? t('weekCalendar.booking', { count: dayBookings.length })
+                      : state === 'available' ? t('weekCalendar.available') : t('staffCalendar.off');
 
                     return (
                       <td key={day} className={`wg-cell wg-cell--${state}`}>{label}</td>
@@ -100,7 +102,7 @@ export function StaffCalendar() {
               ))}
               {teamData.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="wg-empty">No staff found</td>
+                  <td colSpan={8} className="wg-empty">{t('staffCalendar.noStaff')}</td>
                 </tr>
               )}
             </tbody>

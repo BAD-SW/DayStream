@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as plansService from '../services/membership-plans.service';
 import * as membershipService from '../services/membership.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 export const membershipsRouter = Router();
 
@@ -71,7 +72,7 @@ const updatePlanSchema = Joi.object({
 membershipsRouter.get('/plans', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await membershipService.getPlans({
       businessId,
       status: req.query.status as string,
@@ -80,7 +81,7 @@ membershipsRouter.get('/plans', requirePermission('services:read'), async (req: 
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 50,
     });
     success(res, result.plans, { total: result.total, page: result.page, limit: result.limit });
-  } catch (err: any) { console.error('Failed to list plans', err?.message || err); error(res, 'Failed to list plans', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list plans', err?.message || err); error(res, msg('errors:memberships.failedToListPlans'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/memberships/plans
@@ -99,62 +100,62 @@ membershipsRouter.post('/plans', requirePermission('services:*'), async (req: Re
       displayOrder: req.body.display_order,
     });
     success(res, plan, undefined, 201);
-  } catch (err: any) { console.error('Failed to create plan', err?.message || err); error(res, 'Failed to create plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create plan', err?.message || err); error(res, msg('errors:memberships.failedToCreatePlan'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/memberships/plans/:id
 membershipsRouter.get('/plans/:id', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const plan = await membershipService.getPlanById(req.params.id, businessId);
-    if (!plan) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
+    if (!plan) { error(res, msg('errors:memberships.planNotFound'), 'NOT_FOUND', 404); return; }
     success(res, plan);
-  } catch (err: any) { console.error('Failed to get plan', err?.message || err); error(res, 'Failed to get plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get plan', err?.message || err); error(res, msg('errors:memberships.failedToGetPlan'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/plans/:id
 membershipsRouter.put('/plans/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const plan = await membershipService.updatePlan(req.params.id, businessId, req.body);
-    if (!plan) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
+    if (!plan) { error(res, msg('errors:memberships.planNotFound'), 'NOT_FOUND', 404); return; }
     success(res, plan);
-  } catch (err: any) { console.error('Failed to update plan', err?.message || err); error(res, 'Failed to update plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update plan', err?.message || err); error(res, msg('errors:memberships.failedToUpdatePlan'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/plans/:id/archive
 membershipsRouter.put('/plans/:id/archive', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const archived = await membershipService.archivePlan(req.params.id, businessId);
-    if (!archived) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
+    if (!archived) { error(res, msg('errors:memberships.planNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
-  } catch (err: any) { console.error('Failed to archive plan', err?.message || err); error(res, 'Failed to archive plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to archive plan', err?.message || err); error(res, msg('errors:memberships.failedToArchivePlan'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/plans/:id/activate
 membershipsRouter.put('/plans/:id/activate', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const activated = await membershipService.activatePlan(req.params.id, businessId);
-    if (!activated) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
+    if (!activated) { error(res, msg('errors:memberships.planNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { activated: true });
-  } catch (err: any) { console.error('Failed to activate plan', err?.message || err); error(res, 'Failed to activate plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to activate plan', err?.message || err); error(res, msg('errors:memberships.failedToActivatePlan'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/plans/:id/pause
 membershipsRouter.put('/plans/:id/pause', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const paused = await membershipService.pausePlan(req.params.id, businessId);
-    if (!paused) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
+    if (!paused) { error(res, msg('errors:memberships.planNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
-  } catch (err: any) { console.error('Failed to pause plan', err?.message || err); error(res, 'Failed to pause plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to pause plan', err?.message || err); error(res, msg('errors:memberships.failedToPausePlan'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -179,13 +180,13 @@ membershipsRouter.post('/', requirePermission('services:*'), validate(createMemb
     });
     success(res, enrollment, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('not found')) {
+    if (messageHas(err.message, 'not found')) {
       error(res, err.message, 'NOT_FOUND', 404);
     } else if (err.code === 'PLAN_NOT_ACTIVE') {
       error(res, err.message, 'PLAN_NOT_ACTIVE', 409);
     } else if (err.code === 'ALREADY_ENROLLED_IN_PLAN') {
       error(res, err.message, 'ALREADY_ENROLLED_IN_PLAN', 409);
-    } else { error(res, 'Failed to enroll customer', 'INTERNAL_ERROR', 500); }
+    } else { error(res, msg('errors:memberships.failedToEnrollCustomer'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -193,62 +194,62 @@ membershipsRouter.post('/', requirePermission('services:*'), validate(createMemb
 membershipsRouter.get('/', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const enrollments = await membershipService.getEnrollments(businessId, {
       customerId: req.query.customer_id as string,
       planId: req.query.plan_id as string,
       status: req.query.status as string,
     });
     success(res, enrollments);
-  } catch (err: any) { console.error('Failed to list enrollments', err?.message || err); error(res, 'Failed to list enrollments', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list enrollments', err?.message || err); error(res, msg('errors:memberships.failedToListEnrollments'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/memberships/:id
 membershipsRouter.get('/:id', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const enrollment = await membershipService.getEnrollmentById(req.params.id, businessId);
-    if (!enrollment) { error(res, 'Enrollment not found', 'NOT_FOUND', 404); return; }
+    if (!enrollment) { error(res, msg('errors:memberships.enrollmentNotFound'), 'NOT_FOUND', 404); return; }
     success(res, enrollment);
-  } catch (err: any) { console.error('Failed to get enrollment', err?.message || err); error(res, 'Failed to get enrollment', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get enrollment', err?.message || err); error(res, msg('errors:memberships.failedToGetEnrollment'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/:id/pause
 membershipsRouter.put('/:id/pause', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const maxPauseDays = req.body.max_pause_days ? parseInt(req.body.max_pause_days) : undefined;
     const paused = await membershipService.pauseEnrollment(req.params.id, businessId, maxPauseDays);
-    if (!paused) { error(res, 'Enrollment not found or not active', 'NOT_FOUND', 404); return; }
+    if (!paused) { error(res, msg('errors:memberships.enrollmentNotFoundOrNotActive'), 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
-  } catch (err: any) { console.error('Failed to pause enrollment', err?.message || err); error(res, 'Failed to pause enrollment', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to pause enrollment', err?.message || err); error(res, msg('errors:memberships.failedToPauseEnrollment'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/:id/resume
 membershipsRouter.put('/:id/resume', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const resumed = await membershipService.resumeEnrollment(req.params.id, businessId);
-    if (!resumed) { error(res, 'Enrollment not found or not paused', 'NOT_FOUND', 404); return; }
+    if (!resumed) { error(res, msg('errors:memberships.enrollmentNotFoundOrNotPaused'), 'NOT_FOUND', 404); return; }
     success(res, { resumed: true });
-  } catch (err: any) { console.error('Failed to resume enrollment', err?.message || err); error(res, 'Failed to resume enrollment', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to resume enrollment', err?.message || err); error(res, msg('errors:memberships.failedToResumeEnrollment'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/:id/change-plan
 membershipsRouter.put('/:id/change-plan', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { plan_id } = req.body;
-    if (!plan_id) { error(res, 'plan_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!plan_id) { error(res, msg('errors:memberships.planIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await membershipService.changePlan(req.params.id, businessId, plan_id);
     success(res, result);
   } catch (err: any) {
-    if (err.message.includes('not found') || err.message.includes('Already on')) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
-    error(res, 'Failed to change plan', 'INTERNAL_ERROR', 500);
+    if (messageHas(err.message, 'not found') || (isMessage(err.message, 'errors:membership.alreadyOnThisPlan', 'errors:waitlist.alreadyOnTheWaitlistForThis') || err.message.includes('Already on'))) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    error(res, msg('errors:memberships.failedToChangePlan'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -256,11 +257,11 @@ membershipsRouter.put('/:id/change-plan', requirePermission('services:*'), async
 membershipsRouter.put('/:id/cancel', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const cancelled = await membershipService.cancelEnrollment(req.params.id, businessId);
-    if (!cancelled) { error(res, 'Enrollment not found', 'NOT_FOUND', 404); return; }
+    if (!cancelled) { error(res, msg('errors:memberships.enrollmentNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { cancelled: true });
-  } catch (err: any) { console.error('Failed to cancel enrollment', err?.message || err); error(res, 'Failed to cancel enrollment', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to cancel enrollment', err?.message || err); error(res, msg('errors:memberships.failedToCancelEnrollment'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/:id/payment-method — set/change/clear the card the
@@ -268,7 +269,7 @@ membershipsRouter.put('/:id/cancel', requirePermission('services:*'), async (req
 membershipsRouter.put('/:id/payment-method', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:memberships.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await membershipService.setEnrollmentPaymentMethod(
       req.params.id, businessId, req.body.payment_method_id ?? null,
     );
@@ -277,7 +278,7 @@ membershipsRouter.put('/:id/payment-method', requirePermission('services:*'), as
     const codes: Record<string, number> = { ENROLLMENT_NOT_FOUND: 404, METHOD_NOT_FOUND: 404, METHOD_NOT_CUSTOMER: 409 };
     if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
     console.error('Failed to set enrollment payment method', err?.message || err);
-    error(res, 'Failed to set payment method', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:memberships.failedToSetPaymentMethod'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -288,7 +289,7 @@ membershipsRouter.get('/plans/:id/items', requirePermission('services:read'), as
   try {
     const items = await membershipService.getPlanItems(req.params.id);
     success(res, items);
-  } catch (err: any) { console.error('Failed to get plan items', err?.message || err); error(res, 'Failed to get plan items', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get plan items', err?.message || err); error(res, msg('errors:memberships.failedToGetPlanItems'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/memberships/plans/:id/items
@@ -304,16 +305,16 @@ membershipsRouter.post('/plans/:id/items', requirePermission('services:*'), asyn
       accessFrequency: req.body.access_frequency,
     });
     success(res, item, undefined, 201);
-  } catch (err: any) { console.error('Failed to add plan item', err?.message || err); error(res, 'Failed to add plan item', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add plan item', err?.message || err); error(res, msg('errors:memberships.failedToAddPlanItem'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/memberships/plans/:id/items/:itemId
 membershipsRouter.delete('/plans/:id/items/:itemId', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const deleted = await membershipService.removePlanItem(req.params.itemId);
-    if (!deleted) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:memberships.itemNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to remove plan item', err?.message || err); error(res, 'Failed to remove plan item', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to remove plan item', err?.message || err); error(res, msg('errors:memberships.failedToRemovePlanItem'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/plans/:id/items/:itemId
@@ -324,7 +325,7 @@ membershipsRouter.put('/plans/:id/items/:itemId', requirePermission('services:*'
       variantId: req.body.variant_id,
       accessFrequency: req.body.access_frequency,
     });
-    if (!updated) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
+    if (!updated) { error(res, msg('errors:memberships.itemNotFound'), 'NOT_FOUND', 404); return; }
     success(res, updated);
-  } catch (err: any) { console.error('Failed to update plan item', err?.message || err); error(res, 'Failed to update plan item', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update plan item', err?.message || err); error(res, msg('errors:memberships.failedToUpdatePlanItem'), 'INTERNAL_ERROR', 500); }
 });

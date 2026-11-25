@@ -1,3 +1,4 @@
+import { askConfirm } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
@@ -97,10 +98,7 @@ export function TenantProspectsPanel({ tenantId }: Props) {
 
   const [clearing, setClearing] = useState(false);
   async function handleClearAll() {
-    const ok = window.confirm(
-      'Delete ALL prospects for this tenant?\n\nThis permanently removes every prospect ' +
-      '(any status, any source, active or not). This cannot be undone.',
-    );
+    const ok = await askConfirm({ message: 'Delete ALL prospects for this tenant?\n\nThis permanently removes every prospect ' + '(any status, any source, active or not). This cannot be undone.', confirmLabel: 'Delete all', destructive: true });
     if (!ok) return;
     setClearing(true);
     setMsg(null);

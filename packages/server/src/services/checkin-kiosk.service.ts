@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * Register a new kiosk device, creating a session with a unique token.
@@ -53,7 +54,7 @@ export async function deactivateKiosk(id: string, tenantId: string) {
     [id, tenantId],
   );
 
-  if (rows.length === 0) throw new Error('Kiosk session not found');
+  if (rows.length === 0) throw new Error(msg('errors:checkinKiosk.kioskSessionNotFound'));
 
   await logAudit({
     tenantId,
@@ -96,7 +97,7 @@ export async function activateKiosk(id: string, tenantId: string) {
     `UPDATE apt_kiosk_sessions SET is_active = true WHERE id = $1 AND tenant_id = $2 RETURNING *`,
     [id, tenantId],
   );
-  if (rows.length === 0) throw new Error('Kiosk session not found');
+  if (rows.length === 0) throw new Error(msg('errors:checkinKiosk.kioskSessionNotFound'));
   await logAudit({ tenantId, action: 'checkin.kiosk_activated', resourceType: 'kiosk_session', resourceId: id });
   return rows[0];
 }
@@ -107,7 +108,7 @@ export async function deleteKiosk(id: string, tenantId: string): Promise<void> {
     `DELETE FROM apt_kiosk_sessions WHERE id = $1 AND tenant_id = $2 RETURNING id, device_name`,
     [id, tenantId],
   );
-  if (rows.length === 0) throw new Error('Kiosk session not found');
+  if (rows.length === 0) throw new Error(msg('errors:checkinKiosk.kioskSessionNotFound'));
   await logAudit({
     tenantId, action: 'checkin.kiosk_deleted', resourceType: 'kiosk_session', resourceId: id,
     details: { device_name: rows[0].device_name },

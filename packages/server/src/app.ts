@@ -1,3 +1,4 @@
+import { requestLanguage } from './i18n';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -103,6 +104,8 @@ app.use(express.json({ limit: '1mb' }));
 // Each request carries who made it and where it came from, for an appointment's history
 // (spec 51, gap 18): read when a change is recorded, after sign-in.
 app.use(historyContext);
+// The language the browser is showing, for the server's messages (Phase 44, design section 6.1).
+app.use(requestLanguage);
 
 // Serve the embeddable booking widget script — Requirement 1.1: publicly accessible,
 // unauthenticated, cacheable. Lives outside src/ (packages/server/static/) so it needs

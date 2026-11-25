@@ -8,6 +8,7 @@ import { queueNotification } from './booking-notifications.service';
 import type { MethodOwner } from './payment-methods.service';
 import type { SaleItemType } from './revenue-mapping.service';
 import { resolvePdfBranding, renderTemplateDocumentPdf } from './document-pdf';
+import { msg } from '../i18n';
 
 /**
  * Section C — Invoicing (spec 10-payment-platform, task 4.7 / Requirement C5).
@@ -74,12 +75,12 @@ export async function setInvoicingEnabled(businessId: string, enabled: boolean, 
  */
 export async function issueInvoice(input: IssueInvoiceInput): Promise<any> {
   if (!(await isInvoicingEnabled(input.businessId))) {
-    throw new InvoiceError('Invoicing is not enabled for this business', 'INVOICING_DISABLED');
+    throw new InvoiceError(msg('errors:invoice.invoicingIsNotEnabledForThis'), 'INVOICING_DISABLED');
   }
   if (!input.lineItems || input.lineItems.length === 0) {
-    throw new InvoiceError('An invoice needs at least one line item', 'NO_LINE_ITEMS');
+    throw new InvoiceError(msg('errors:invoice.anInvoiceNeedsAtLeastOne'), 'NO_LINE_ITEMS');
   }
-  if (!input.dueDate) throw new InvoiceError('A due date is required', 'DUE_DATE_REQUIRED');
+  if (!input.dueDate) throw new InvoiceError(msg('errors:invoice.aDueDateIsRequired'), 'DUE_DATE_REQUIRED');
 
   const currency = await resolveBusinessCurrency(input.businessId);
 
@@ -94,7 +95,7 @@ export async function issueInvoice(input: IssueInvoiceInput): Promise<any> {
   const subtotalCents = lines.reduce((n, l) => n + l.amountCents, 0);
   const taxCents = lines.reduce((n, l) => n + l.taxCents, 0);
   const totalCents = subtotalCents + taxCents;
-  if (totalCents <= 0) throw new InvoiceError('Invoice total must be greater than zero', 'INVALID_TOTAL');
+  if (totalCents <= 0) throw new InvoiceError(msg('errors:invoice.invoiceTotalMustBeGreaterThan'), 'INVALID_TOTAL');
 
   const client = await adminPool.connect();
   try {
@@ -177,13 +178,13 @@ export interface IssueImportedInvoiceInput extends IssueInvoiceInput {
  */
 export async function issueImportedInvoice(input: IssueImportedInvoiceInput): Promise<any> {
   if (!(await isInvoicingEnabled(input.businessId))) {
-    throw new InvoiceError('Invoicing is not enabled for this business', 'INVOICING_DISABLED');
+    throw new InvoiceError(msg('errors:invoice.invoicingIsNotEnabledForThis'), 'INVOICING_DISABLED');
   }
   if (!input.lineItems || input.lineItems.length === 0) {
-    throw new InvoiceError('An invoice needs at least one line item', 'NO_LINE_ITEMS');
+    throw new InvoiceError(msg('errors:invoice.anInvoiceNeedsAtLeastOne'), 'NO_LINE_ITEMS');
   }
-  if (!input.issueDate) throw new InvoiceError('An issue date is required', 'ISSUE_DATE_REQUIRED');
-  if (!input.dueDate) throw new InvoiceError('A due date is required', 'DUE_DATE_REQUIRED');
+  if (!input.issueDate) throw new InvoiceError(msg('errors:invoice.anIssueDateIsRequired'), 'ISSUE_DATE_REQUIRED');
+  if (!input.dueDate) throw new InvoiceError(msg('errors:invoice.aDueDateIsRequired'), 'DUE_DATE_REQUIRED');
 
   const currency = await resolveBusinessCurrency(input.businessId);
 
@@ -197,7 +198,7 @@ export async function issueImportedInvoice(input: IssueImportedInvoiceInput): Pr
   const subtotalCents = lines.reduce((n, l) => n + l.amountCents, 0);
   const taxCents = lines.reduce((n, l) => n + l.taxCents, 0);
   const totalCents = subtotalCents + taxCents;
-  if (totalCents <= 0) throw new InvoiceError('Invoice total must be greater than zero', 'INVALID_TOTAL');
+  if (totalCents <= 0) throw new InvoiceError(msg('errors:invoice.invoiceTotalMustBeGreaterThan'), 'INVALID_TOTAL');
 
   const amountPaid = Math.max(0, Math.min(input.amountPaidCents ?? 0, totalCents));
   const status = amountPaid >= totalCents ? 'paid' : 'issued';
@@ -350,12 +351,12 @@ export async function settleInvoice(
     [invoiceId, businessId],
   );
   const invoice = rows[0];
-  if (!invoice) throw new InvoiceError('Invoice not found for this business', 'INVOICE_NOT_FOUND');
-  if (invoice.status === 'paid') throw new InvoiceError('Invoice is already paid', 'ALREADY_PAID');
-  if (invoice.status === 'void') throw new InvoiceError('Invoice is void', 'INVOICE_VOID');
+  if (!invoice) throw new InvoiceError(msg('errors:invoice.invoiceNotFoundForThisBusiness'), 'INVOICE_NOT_FOUND');
+  if (invoice.status === 'paid') throw new InvoiceError(msg('errors:invoice.invoiceIsAlreadyPaid'), 'ALREADY_PAID');
+  if (invoice.status === 'void') throw new InvoiceError(msg('errors:invoice.invoiceIsVoid'), 'INVOICE_VOID');
 
   const outstanding = invoice.total_cents - invoice.amount_paid_cents;
-  if (outstanding <= 0) throw new InvoiceError('Invoice has no outstanding balance', 'NO_BALANCE');
+  if (outstanding <= 0) throw new InvoiceError(msg('errors:invoice.invoiceHasNoOutstandingBalance'), 'NO_BALANCE');
 
   const reference = generateReference();
   const owner: MethodOwner = {
@@ -474,7 +475,7 @@ export async function renderInvoicePdf(invoiceId: string, businessId: string): P
     currency: invoice.currency as string,
   };
 
-  const branding = await resolvePdfBranding(businessId, 'invoice.issued', {
+  const branding = await resolvePdfBranding(businessId, 'invoice.issued', { customer_id: invoice.customer_id ?? null,
     invoice_number: invoice.invoice_number,
     total_cents: invoice.total_cents,
     amount_due_cents: invoice.total_cents - (invoice.amount_paid_cents || 0),

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '../utils/currency';
 import { Modal } from '../design-system/components/feedback/Modal';
 import { Button } from '../design-system/components/actions/Button';
 import { CurrencyInput } from './CurrencyInput';
@@ -29,16 +31,14 @@ interface Props {
   onPaid?: (result: ChargeResult) => void;
 }
 
-const MANUAL_LABEL: Record<string, string> = {
-  cash: 'Cash', check: 'Check', bank_transfer: 'Bank transfer', other: 'Other',
-};
-const PROCESSED_LABEL: Record<string, string> = {
-  card: 'Card', bank_draw: 'Direct debit', google_pay: 'Google Pay', apple_pay: 'Apple Pay',
-};
+// Method names are shown through checkout:takePayment.method.<value>.
+const MANUAL_METHODS = ['cash', 'check', 'bank_transfer', 'other'];
+const PROCESSED_METHODS = ['card', 'bank_draw', 'google_pay', 'apple_pay'];
 
 export function TakePaymentModal({
   open, onClose, businessId, customerId, amountCents, bookingId, membershipId, description, onPaid,
 }: Props) {
+  const { t } = useTranslation('checkout');
   const [availableMethods, setAvailableMethods] = useState<string[]>([]);
   const [storedMethods, setStoredMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +71,7 @@ export function TakePaymentModal({
       const defaultStored = stored.find((m) => m.is_default) ?? stored[0];
       if (defaultStored) setStoredMethodId(defaultStored.id);
     } catch {
-      setMessage({ ok: false, text: 'Could not load payment methods for this business.' });
+      setMessage({ ok: false, text: t('takePayment.loadFailed') });
     } finally {
       setLoading(false);
     }
@@ -109,36 +109,36 @@ export function TakePaymentModal({
     try {
       const card = await payApi.lookupGiftCard(giftCardCode.trim(), businessId);
       setGiftBalance(card.balance_cents);
-      if (card.status !== 'active') setMessage({ ok: false, text: `Gift card is ${card.status}.` });
+      if (card.status !== 'active') setMessage({ ok: false, text: t('takePayment.giftCardStatus', { status: t(`takePayment.giftStatus.${card.status}`, { defaultValue: card.status }) }) });
     } catch {
       setGiftBalance(null);
-      setMessage({ ok: false, text: 'Gift card not found for this business.' });
+      setMessage({ ok: false, text: t('takePayment.giftNotFound') });
     }
   }
 
   function friendlyError(code: string | undefined, fallback: string): string {
     switch (code) {
-      case 'NO_CONNECTION': return 'This business has no active payment processor connected.';
-      case 'METHOD_REQUIRED': return 'Select a stored payment method to charge.';
-      case 'METHOD_UNAVAILABLE': return 'That stored method is no longer available.';
-      case 'GIFT_CARD_NOT_FOUND': return 'Gift card not found for this business.';
-      case 'GIFT_CARD_INACTIVE': return 'This gift card is not active.';
-      case 'GIFT_CARD_EXPIRED': return 'This gift card has expired.';
-      case 'GIFT_CARD_INSUFFICIENT': return 'The gift card balance is less than the amount.';
-      case 'GIFT_CARD_CURRENCY': return 'The gift card currency does not match this business.';
+      case 'NO_CONNECTION': return t('takePayment.error.noConnection');
+      case 'METHOD_REQUIRED': return t('takePayment.error.methodRequired');
+      case 'METHOD_UNAVAILABLE': return t('takePayment.error.methodUnavailable');
+      case 'GIFT_CARD_NOT_FOUND': return t('takePayment.giftNotFound');
+      case 'GIFT_CARD_INACTIVE': return t('takePayment.error.giftInactive');
+      case 'GIFT_CARD_EXPIRED': return t('takePayment.error.giftExpired');
+      case 'GIFT_CARD_INSUFFICIENT': return t('takePayment.error.giftInsufficient');
+      case 'GIFT_CARD_CURRENCY': return t('takePayment.error.giftCurrency');
       default: return fallback;
     }
   }
 
   async function handleSubmit() {
-    if (!method) { setMessage({ ok: false, text: 'Choose a payment method.' }); return; }
-    if (amount <= 0) { setMessage({ ok: false, text: 'Enter an amount greater than zero.' }); return; }
+    if (!method) { setMessage({ ok: false, text: t('takePayment.chooseMethod') }); return; }
+    if (amount <= 0) { setMessage({ ok: false, text: t('takePayment.amountRequired') }); return; }
     // Resolve the effective stored method for the selected class (the select may be
     // showing a fallback first item that isn't yet reflected in state).
     const effectiveStoredId = methodsForSelected.some((m) => m.id === storedMethodId)
       ? storedMethodId : (methodsForSelected[0]?.id ?? '');
-    if (isProcessed && !effectiveStoredId) { setMessage({ ok: false, text: 'Select or add a payment method.' }); return; }
-    if (isGiftCard && !giftCardCode.trim()) { setMessage({ ok: false, text: 'Enter a gift card code.' }); return; }
+    if (isProcessed && !effectiveStoredId) { setMessage({ ok: false, text: t('takePayment.selectOrAdd') }); return; }
+    if (isGiftCard && !giftCardCode.trim()) { setMessage({ ok: false, text: t('takePayment.giftCodeRequired') }); return; }
 
     setSubmitting(true); setMessage(null);
     try {
@@ -155,17 +155,18 @@ export function TakePaymentModal({
         check_number: method === 'check' ? (checkNumber || null) : null,
       });
       if (result.status === 'failed') {
-        setMessage({ ok: false, text: result.failureReason || 'The payment was declined.' });
+        setMessage({ ok: false, text: result.failureReason || t('takePayment.declined') });
       } else {
-        const pending = result.status === 'pending' ? ' (pending — bank debits settle in a few days)' : '';
-        const bal = result.giftCardBalanceCents != null ? ` Gift card balance: ${(result.giftCardBalanceCents / 100).toFixed(2)}.` : '';
-        setMessage({ ok: true, text: `Payment recorded — ref ${result.referenceNumber}${pending}.${bal}` });
+        const pending = result.status === 'pending';
+        const balance = result.giftCardBalanceCents != null ? formatCurrency(result.giftCardBalanceCents) : null;
+        const key = pending ? (balance !== null ? 'takePayment.recordedPendingBalance' : 'takePayment.recordedPending') : (balance !== null ? 'takePayment.recordedBalance' : 'takePayment.recorded');
+        setMessage({ ok: true, text: t(key, { ref: result.referenceNumber, balance }) });
         setPaidTxnId(result.transactionId);
         onPaid?.(result);
       }
     } catch (err: any) {
       const code = err?.response?.data?.code;
-      setMessage({ ok: false, text: friendlyError(code, err?.response?.data?.error || 'Failed to take payment.') });
+      setMessage({ ok: false, text: friendlyError(code, err?.response?.data?.error || t('takePayment.failed')) });
     } finally {
       setSubmitting(false);
     }
@@ -191,15 +192,15 @@ export function TakePaymentModal({
     setReceiptBusy(true); setReceiptNote(null);
     const emailed = mode !== 'print' ? await emailReceipt() : null;
     const printed = mode !== 'email' ? await printReceipt() : null;
-    const parts: string[] = [];
-    if (emailed === true) parts.push('emailed');
-    if (printed === true) parts.push('opened for printing');
-    setReceiptNote(parts.length ? `Receipt ${parts.join(' and ')}.` : 'Could not produce the receipt.');
+    setReceiptNote(emailed === true && printed === true ? t('takePayment.receiptBoth')
+      : emailed === true ? t('takePayment.receiptEmailed')
+      : printed === true ? t('takePayment.receiptPrinted')
+      : t('takePayment.receiptFailed'));
     setReceiptBusy(false);
   }
 
-  const processedAvailable = availableMethods.filter((m) => PROCESSED_LABEL[m]);
-  const manualAvailable = availableMethods.filter((m) => MANUAL_LABEL[m]);
+  const processedAvailable = availableMethods.filter((m) => PROCESSED_METHODS.includes(m));
+  const manualAvailable = availableMethods.filter((m) => MANUAL_METHODS.includes(m));
   const giftAvailable = availableMethods.includes('gift_card');
   const succeeded = message?.ok === true;
 
@@ -207,27 +208,27 @@ export function TakePaymentModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Record Payment"
+      title={t('takePayment.title')}
       footer={
         succeeded ? (
-          <Button variant="primary" onClick={onClose}>Done</Button>
+          <Button variant="primary" onClick={onClose}>{t('takePayment.done')}</Button>
         ) : (
           <>
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" loading={submitting} disabled={loading} onClick={handleSubmit}>Take payment</Button>
+            <Button variant="outline" onClick={onClose}>{t('common:cancel')}</Button>
+            <Button variant="primary" loading={submitting} disabled={loading} onClick={handleSubmit}>{t('takePayment.takePayment')}</Button>
           </>
         )
       }
     >
       {loading ? (
-        <p style={styles.muted}>Loading payment methods…</p>
+        <p style={styles.muted}>{t('takePayment.loading')}</p>
       ) : (
         <div style={styles.body}>
           {/* Amount */}
           <div style={styles.field}>
-            <label style={styles.label}>Amount</label>
+            <label style={styles.label}>{t('takePayment.amount')}</label>
             {amountFixed ? (
-              <div style={styles.fixedAmount}>{(amount / 100).toFixed(2)}</div>
+              <div style={styles.fixedAmount}>{formatCurrency(amount)}</div>
             ) : (
               <CurrencyInput value={amount} onChange={setAmount} style={styles.input} />
             )}
@@ -235,7 +236,7 @@ export function TakePaymentModal({
 
           {/* Method */}
           <div style={styles.field}>
-            <label style={styles.label}>Method</label>
+            <label style={styles.label}>{t('takePayment.method')}</label>
             <select style={styles.input} value={method} onChange={(e) => {
               const next = e.target.value as SectionCMethod;
               setMethod(next); setMessage(null); setAddingMethod(false);
@@ -243,32 +244,32 @@ export function TakePaymentModal({
               const match = storedMethods.find((m) => next === 'bank_draw' ? m.method_type === 'bank_draw' : m.method_type !== 'bank_draw');
               setStoredMethodId(match?.id ?? '');
             }}>
-              <option value="">Select a method…</option>
+              <option value="">{t('takePayment.selectMethod')}</option>
               {processedAvailable.length > 0 && (
-                <optgroup label="Card / Direct debit">
-                  {processedAvailable.map((m) => <option key={m} value={m}>{PROCESSED_LABEL[m]}</option>)}
+                <optgroup label={t('takePayment.groupProcessed')}>
+                  {processedAvailable.map((m) => <option key={m} value={m}>{t(`takePayment.method.${m}`)}</option>)}
                 </optgroup>
               )}
               {manualAvailable.length > 0 && (
-                <optgroup label="Record only">
-                  {manualAvailable.map((m) => <option key={m} value={m}>{MANUAL_LABEL[m]}</option>)}
+                <optgroup label={t('takePayment.groupManual')}>
+                  {manualAvailable.map((m) => <option key={m} value={m}>{t(`takePayment.method.${m}`)}</option>)}
                 </optgroup>
               )}
               {giftAvailable && (
-                <optgroup label="Gift card">
-                  <option value="gift_card">Gift card</option>
+                <optgroup label={t('takePayment.method.gift_card')}>
+                  <option value="gift_card">{t('takePayment.method.gift_card')}</option>
                 </optgroup>
               )}
             </select>
             {availableMethods.length === 0 && (
-              <span style={styles.warn}>This business has no accepted payment methods configured.</span>
+              <span style={styles.warn}>{t('takePayment.noAccepted')}</span>
             )}
           </div>
 
           {/* Processed → pick a stored method, or capture a new one on the spot */}
           {isProcessed && (
             <div style={styles.field}>
-              <label style={styles.label}>Payment card / method</label>
+              <label style={styles.label}>{t('takePayment.storedMethod')}</label>
               {methodsForSelected.length > 0 && !addingMethod && (
                 <select
                   style={styles.input}
@@ -277,7 +278,7 @@ export function TakePaymentModal({
                 >
                   {methodsForSelected.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.display_brand || m.method_type}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ' (default)' : ''}
+                      {m.display_brand || t(`takePayment.method.${m.method_type}`)}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ` ${t('takePayment.defaultTag')}` : ''}
                     </option>
                   ))}
                 </select>
@@ -291,7 +292,7 @@ export function TakePaymentModal({
                 />
               ) : (
                 <AddMethodButton
-                  label={methodsForSelected.length > 0 ? 'Add a new card / method' : 'Add a card / method to charge'}
+                  label={methodsForSelected.length > 0 ? t('takePayment.addNew') : t('takePayment.addToCharge')}
                   onClick={() => setAddingMethod(true)}
                 />
               )}
@@ -301,14 +302,14 @@ export function TakePaymentModal({
           {/* Gift card → code + balance lookup */}
           {isGiftCard && (
             <div style={styles.field}>
-              <label style={styles.label}>Gift card code</label>
+              <label style={styles.label}>{t('takePayment.giftCode')}</label>
               <div style={styles.row}>
-                <input style={{ ...styles.input, flex: 1 }} value={giftCardCode} placeholder="GC-XXXX-XXXX"
+                <input style={{ ...styles.input, flex: 1 }} value={giftCardCode} placeholder={t('takePayment.giftCodePlaceholder')}
                   onChange={(e) => { setGiftCardCode(e.target.value); setGiftBalance(null); }} />
-                <Button variant="outline" size="sm" onClick={handleLookupGiftCard}>Check balance</Button>
+                <Button variant="outline" size="sm" onClick={handleLookupGiftCard}>{t('takePayment.checkBalance')}</Button>
               </div>
               {giftBalance != null && (
-                <span style={styles.muted}>Balance: {(giftBalance / 100).toFixed(2)}</span>
+                <span style={styles.muted}>{t('takePayment.balance', { amount: formatCurrency(giftBalance) })}</span>
               )}
             </div>
           )}
@@ -316,7 +317,7 @@ export function TakePaymentModal({
           {/* Check number (optional) */}
           {method === 'check' && (
             <div style={styles.field}>
-              <label style={styles.label}>Check number (optional)</label>
+              <label style={styles.label}>{t('takePayment.checkNumber')}</label>
               <input style={styles.input} value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
             </div>
           )}
@@ -328,11 +329,11 @@ export function TakePaymentModal({
           {/* Receipt choice — offered once a manual payment has settled. */}
           {succeeded && paidTxnId && (
             <div style={styles.receiptBox}>
-              <span style={styles.label}>Receipt</span>
+              <span style={styles.label}>{t('takePayment.receipt')}</span>
               <div style={styles.row}>
-                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('email')}>Email</Button>
-                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('print')}>Print</Button>
-                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('both')}>Both</Button>
+                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('email')}>{t('takePayment.receiptEmail')}</Button>
+                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('print')}>{t('takePayment.receiptPrint')}</Button>
+                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('both')}>{t('takePayment.receiptBothButton')}</Button>
               </div>
               {receiptNote && <span style={styles.muted}>{receiptNote}</span>}
             </div>

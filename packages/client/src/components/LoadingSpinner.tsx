@@ -1,8 +1,11 @@
+import { useTranslation } from 'react-i18next';
+
 export function LoadingSpinner() {
+  const { t } = useTranslation();
   return (
     <div style={styles.container}>
       <div style={styles.spinner} />
-      <p style={styles.text}>Loading...</p>
+      <p style={styles.text}>{t('common:loading')}</p>
     </div>
   );
 }

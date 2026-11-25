@@ -1,24 +1,39 @@
 /**
- * THE one place that says which languages DayStream supports.
+ * THE one list of DayStream's languages (Phase 44; owner, 24 Nov 2026: one list for every language
+ * choice, and a language is on it from the moment work on it starts).
  *
- * Everything that offers, validates or compares a language reads from here: the language switcher,
- * customers' and businesses' language dropdowns, form and document-template languages, the
- * customer import, and the server's API validation. To add a language:
- *   1. add its code to SUPPORTED_LANGUAGES,
- *   2. add its entry to LANGUAGE_DETAILS (TypeScript will not compile until you do),
- *   3. provide its interface translations (client i18n resources and server messages).
+ * Everything that offers, validates or compares a language reads from here: the menu bar's language
+ * choice, the customer record's language, document template, form and Check-In wording languages, the
+ * customer import, the server's validation, and the translation command and checks. To add a language:
+ *   1. add its code to SUPPORTED_LANGUAGES and its entry to LANGUAGE_DETAILS,
+ *   2. run `npm run translate` to fill its translation files (phrases not translated yet show in English).
  * Nothing else needs to change.
  */
-export const SUPPORTED_LANGUAGES = ['en'] as const;
+export const SUPPORTED_LANGUAGES = ['en', 'es'] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
+/** The same list, under the name the translation command and checks use. */
+export const TRANSLATED_LANGUAGES = SUPPORTED_LANGUAGES;
+export type TranslatedLanguage = SupportedLanguage;
 
 /** The language used when none is chosen. */
 export const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
 
-/** How each language is named in its own language, plus other names it is known by (lower case). */
-export const LANGUAGE_DETAILS: Record<SupportedLanguage, { label: string; aliases: readonly string[] }> = {
-  en: { label: 'English', aliases: ['english', 'inglés', 'ingles'] },
+/**
+ * How each language is named in its own language, its default format (the Intl locale used when the
+ * device's regional setting is for another language, and for emails and documents), and other names
+ * it is known by (lower case).
+ */
+export const LANGUAGE_DETAILS: Record<TranslatedLanguage, { label: string; locale: string; aliases: readonly string[] }> = {
+  en: { label: 'English', locale: 'en-US', aliases: ['english', 'inglés', 'ingles'] },
+  es: { label: 'Español', locale: 'es-ES', aliases: ['spanish', 'español', 'espanol', 'castellano'] },
 };
+
+/** The default format (Intl locale) of a language; English's for anything unknown. */
+export function languageLocale(language: string | null | undefined): string {
+  const d = (LANGUAGE_DETAILS as Record<string, { locale: string } | undefined>)[language ?? ''];
+  return d?.locale ?? LANGUAGE_DETAILS.en.locale;
+}
 
 /** The label of each supported language, for dropdowns. */
 export const LANGUAGE_LABELS = Object.fromEntries(

@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 interface CreateServiceInput {
   businessId: string;
@@ -74,7 +75,7 @@ export async function createService(input: CreateServiceInput) {
     [input.categoryId, input.businessId],
   );
   if (catRows.length === 0) {
-    throw new Error('Category not found');
+    throw new Error(msg('errors:service.categoryNotFound'));
   }
 
   // Check name uniqueness within category
@@ -83,7 +84,7 @@ export async function createService(input: CreateServiceInput) {
     [input.businessId, input.categoryId, input.name],
   );
   if (nameRows.length > 0) {
-    throw new Error('A service with this name already exists in this category');
+    throw new Error(msg('errors:service.aServiceWithThisNameAlready'));
   }
 
   const slug = await generateSlug(input.name, input.businessId);
@@ -284,7 +285,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
   if (updates.booking_type && ['shared', 'group'].includes(updates.booking_type)) {
     const capacity = updates.max_capacity ?? service.max_capacity;
     if (capacity < 2) {
-      throw new Error('Shared/group services require capacity of at least 2');
+      throw new Error(msg('errors:service.sharedGroupServicesRequireCapacityOf'));
     }
   }
 
@@ -356,7 +357,7 @@ export async function activateService(id: string, businessId: string) {
   );
 
   if (variants.length === 0) {
-    throw new Error('Service must have at least one active variant before activating');
+    throw new Error(msg('errors:service.serviceMustHaveAtLeastOne'));
   }
 
   const { rowCount } = await adminPool.query(

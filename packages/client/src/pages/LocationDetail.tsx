@@ -1,5 +1,7 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
@@ -9,7 +11,8 @@ import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import * as locationsApi from '../api/locations';
 import type { Location } from '../api/locations';
-import { parseDateOnly } from '../utils/date';
+import { currentLocale } from '../i18n';
+import { formatDay, formatTime as formatClock } from '../utils/format';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = {
   active: 'success',
@@ -45,6 +48,7 @@ function toForm(loc: Location) {
 }
 
 function LocationDetailPage() {
+  const { t } = useTranslation('setup');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const guardedNavigate = useGuardedNavigate();
@@ -69,44 +73,44 @@ function LocationDetailPage() {
       const updated = await locationsApi.updateLocation(id, businessId, { is_primary: true });
       setLocation(updated);
     } catch {
-      alert('Failed to set as primary');
+      void showMessage({ message: t('locationDetail.errSetPrimary'), tone: 'error' });
     }
   };
 
   const handleDeactivate = async () => {
-    if (!id || !confirm('Deactivate this location?')) return;
+    if (!id || !(await askConfirm({ message: t('locationDetail.confirmDeactivate'), confirmLabel: t('common:action.deactivate'), destructive: true }))) return;
     try {
       await locationsApi.deactivateLocation(id, businessId);
       navigate('/business?tab=locations');
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to deactivate');
+      void showMessage({ message: err.response?.data?.error || t('locationDetail.errDeactivate'), tone: 'error' });
     }
   };
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
-  if (!location) return <div style={styles.loading}>Location not found</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
+  if (!location) return <div style={styles.loading}>{t('locationDetail.notFound')}</div>;
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
-        <button style={styles.back} onClick={() => guardedNavigate('/business?tab=locations')}>← Back to Business</button>
+        <button style={styles.back} onClick={() => guardedNavigate('/business?tab=locations')}>{t('locationCreate.back')}</button>
 
         <div style={styles.header}>
           <div style={styles.headerLeft}>
             <h1 style={styles.title}>{location.name}</h1>
             <div style={styles.badges}>
-              {location.is_primary && <Badge variant="info">Primary</Badge>}
-              <Badge variant={STATUS_VARIANTS[location.status] || 'neutral'}>{location.status.replace('_', ' ')}</Badge>
+              {location.is_primary && <Badge variant="info">{t('locations.primary')}</Badge>}
+              <Badge variant={STATUS_VARIANTS[location.status] || 'neutral'}>{t(`locations.status_${location.status}`, { defaultValue: location.status.replace('_', ' ') })}</Badge>
             </div>
           </div>
           <div style={styles.headerActions}>
             <SaveChanges />
             {!location.is_primary && location.status === 'active' && (
-              <Button size="sm" variant="outline" onClick={handleSetPrimary}>Set Primary</Button>
+              <Button size="sm" variant="outline" onClick={handleSetPrimary}>{t('locationDetail.setPrimary')}</Button>
             )}
             {location.status === 'active' && !location.is_primary && (
-              <Button size="sm" variant="outline" onClick={handleDeactivate}>Deactivate</Button>
+              <Button size="sm" variant="outline" onClick={handleDeactivate}>{t('locationDetail.deactivate')}</Button>
             )}
           </div>
         </div>
@@ -127,7 +131,8 @@ function LocationDetailPage() {
 // --- Location details (always editable; saved with the page's Save changes) ---
 
 function LocationDetailsForm({ location, businessId, onUpdate }: { location: Location; businessId: string; onUpdate: (l: Location) => void }) {
-  const draft = useDraft('location-details', 'Location details', toForm(location), async (form) => {
+  const { t } = useTranslation('setup');
+  const draft = useDraft('location-details', t('locationDetail.draftDetails'), toForm(location), async (form) => {
     const updated = await locationsApi.updateLocation(location.id, businessId, form);
     onUpdate(updated);
     return toForm(updated);
@@ -138,28 +143,28 @@ function LocationDetailsForm({ location, businessId, onUpdate }: { location: Loc
 
   return (
     <div style={{ ...styles.editSection, ...draftBox(draft.dirty) }}>
-      <h3 style={{ ...styles.hoursTitle, marginBottom: 'var(--space-md)' }}>Details<UnsavedTag dirty={draft.dirty} /></h3>
+      <h3 style={{ ...styles.hoursTitle, marginBottom: 'var(--space-md)' }}>{t('locationDetail.details')}<UnsavedTag dirty={draft.dirty} /></h3>
       <div style={styles.formGrid}>
-        <FormField label="Name *" value={form.name} changed={changed('name')} onChange={(v) => setForm({ ...form, name: v })} />
-        <FormField label="Phone" value={form.phone} changed={changed('phone')} onChange={(v) => setForm({ ...form, phone: v })} />
-        <FormField label="Email" value={form.email} changed={changed('email')} onChange={(v) => setForm({ ...form, email: v })} />
-        <FormField label="Timezone" value={form.timezone} changed={changed('timezone')} onChange={(v) => setForm({ ...form, timezone: v })} placeholder="e.g. America/New_York" />
+        <FormField label={t('locationCreate.name')} value={form.name} changed={changed('name')} onChange={(v) => setForm({ ...form, name: v })} />
+        <FormField label={t('locationCreate.phone')} value={form.phone} changed={changed('phone')} onChange={(v) => setForm({ ...form, phone: v })} />
+        <FormField label={t('locationCreate.email')} value={form.email} changed={changed('email')} onChange={(v) => setForm({ ...form, email: v })} />
+        <FormField label={t('locationCreate.timezone')} value={form.timezone} changed={changed('timezone')} onChange={(v) => setForm({ ...form, timezone: v })} placeholder={t('locationCreate.timezonePlaceholder')} />
         <div style={{ gridColumn: '1 / -1' }}>
-          <label style={styles.label}>Status</label>
+          <label style={styles.label}>{t('locations.status')}</label>
           <select style={{ ...styles.input, ...fieldMark(changed('status')) }} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="temporarily_closed">Temporarily Closed</option>
+            <option value="active">{t('locationDetail.statusActive')}</option>
+            <option value="inactive">{t('locationDetail.statusInactive')}</option>
+            <option value="temporarily_closed">{t('locationDetail.statusClosed')}</option>
           </select>
         </div>
-        <FormField label="Address Line 1" value={form.address_line1} changed={changed('address_line1')} onChange={(v) => setForm({ ...form, address_line1: v })} span2 />
-        <FormField label="Address Line 2" value={form.address_line2} changed={changed('address_line2')} onChange={(v) => setForm({ ...form, address_line2: v })} span2 />
-        <FormField label="City" value={form.city} changed={changed('city')} onChange={(v) => setForm({ ...form, city: v })} />
-        <FormField label="State/Province" value={form.state_province} changed={changed('state_province')} onChange={(v) => setForm({ ...form, state_province: v })} />
-        <FormField label="Postal Code" value={form.postal_code} changed={changed('postal_code')} onChange={(v) => setForm({ ...form, postal_code: v })} />
-        <FormField label="Country (2-letter)" value={form.country} changed={changed('country')} onChange={(v) => setForm({ ...form, country: v })} />
+        <FormField label={t('locationCreate.addressLine1')} value={form.address_line1} changed={changed('address_line1')} onChange={(v) => setForm({ ...form, address_line1: v })} span2 />
+        <FormField label={t('locationCreate.addressLine2')} value={form.address_line2} changed={changed('address_line2')} onChange={(v) => setForm({ ...form, address_line2: v })} span2 />
+        <FormField label={t('locationCreate.city')} value={form.city} changed={changed('city')} onChange={(v) => setForm({ ...form, city: v })} />
+        <FormField label={t('locationCreate.stateProvince')} value={form.state_province} changed={changed('state_province')} onChange={(v) => setForm({ ...form, state_province: v })} />
+        <FormField label={t('locationCreate.postalCode')} value={form.postal_code} changed={changed('postal_code')} onChange={(v) => setForm({ ...form, postal_code: v })} />
+        <FormField label={t('locationCreate.country')} value={form.country} changed={changed('country')} onChange={(v) => setForm({ ...form, country: v })} />
         <div style={{ gridColumn: '1 / -1' }}>
-          <label style={styles.label}>Description</label>
+          <label style={styles.label}>{t('locationCreate.description')}</label>
           <textarea
             style={{ ...styles.input, minHeight: '80px', ...fieldMark(changed('description')) }}
             value={form.description}
@@ -169,9 +174,9 @@ function LocationDetailsForm({ location, businessId, onUpdate }: { location: Loc
       </div>
       {location.staff_count !== undefined && (
         <div style={{ ...styles.detailGrid, marginTop: 'var(--space-md)' }}>
-          <Field label="Staff Assigned" value={String(location.staff_count)} />
-          <Field label="Services Offered" value={String(location.service_count)} />
-          <Field label="Resources" value={String(location.resource_count)} />
+          <Field label={t('locationDetail.staffAssigned')} value={String(location.staff_count)} />
+          <Field label={t('locationDetail.servicesOffered')} value={String(location.service_count)} />
+          <Field label={t('locationDetail.resources')} value={String(location.resource_count)} />
         </div>
       )}
     </div>
@@ -180,13 +185,15 @@ function LocationDetailsForm({ location, businessId, onUpdate }: { location: Loc
 
 // --- Location Hours Section (saved with the page's Save changes) ---
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+/** Day names (Sunday first) in the language shown. */
+const dayName = (i: number) => new Intl.DateTimeFormat(currentLocale(), { weekday: 'long' }).format(new Date(2024, 0, 7 + i));
 
 type DayHours = { day_of_week: number; is_closed: boolean; open_time: string; close_time: string };
 
 function LocationHoursSection({ locationId }: { locationId: string }) {
+  const { t } = useTranslation('setup');
   const [loading, setLoading] = useState(true);
-  const draft = useDraft<DayHours[]>('location-hours', 'Hours of operation', [], async (hours) => {
+  const draft = useDraft<DayHours[]>('location-hours', t('locationDetail.draftHours'), [], async (hours) => {
     await locationsApi.setLocationHours(locationId, hours);
   });
   const hours = draft.value;
@@ -194,7 +201,7 @@ function LocationHoursSection({ locationId }: { locationId: string }) {
   useEffect(() => {
     locationsApi.getLocationHours(locationId).then((data) => {
       // Fill all 7 days, using data where available
-      const filled = DAY_NAMES.map((_, i) => {
+      const filled = Array.from({ length: 7 }, (_, i) => {
         const existing = data.find((h) => h.day_of_week === i);
         return {
           day_of_week: i,
@@ -217,15 +224,15 @@ function LocationHoursSection({ locationId }: { locationId: string }) {
   return (
     <div style={{ ...styles.hoursSection, ...draftBox(draft.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={styles.hoursTitle}>Hours of Operation<UnsavedTag dirty={draft.dirty} /></h3>
+        <h3 style={styles.hoursTitle}>{t('locationDetail.hoursTitle')}<UnsavedTag dirty={draft.dirty} /></h3>
       </div>
       <div style={styles.hoursGrid}>
         {hours.map((day) => (
           <div key={day.day_of_week} style={styles.hoursRow}>
-            <span style={styles.dayLabel}>{DAY_NAMES[day.day_of_week]}</span>
+            <span style={styles.dayLabel}>{dayName(day.day_of_week)}</span>
             <label style={styles.closedToggle}>
               <input type="checkbox" checked={!day.is_closed} onChange={(e) => updateDay(day.day_of_week, 'is_closed', !e.target.checked)} style={{ width: '14px', height: '14px', ...checkMark(dayChanged(day.day_of_week, 'is_closed')) }} />
-              Open
+              {t('locationDetail.open')}
             </label>
             {!day.is_closed ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -234,7 +241,7 @@ function LocationHoursSection({ locationId }: { locationId: string }) {
                 <input type="time" style={{ ...styles.timeInput, ...fieldMark(dayChanged(day.day_of_week, 'close_time')) }} value={day.close_time} onChange={(e) => updateDay(day.day_of_week, 'close_time', e.target.value)} />
               </div>
             ) : (
-              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Closed</span>
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{t('locationDetail.closed')}</span>
             )}
           </div>
         ))}
@@ -249,7 +256,7 @@ function formatTime(time: string): string {
   const [h, m] = time.split(':');
   const date = new Date();
   date.setHours(parseInt(h), parseInt(m), 0);
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return formatClock(date);
 }
 
 const overrideData = (o: any) => ({
@@ -261,6 +268,7 @@ const overrideData = (o: any) => ({
 });
 
 function LocationHourOverridesSection({ locationId }: { locationId: string }) {
+  const { t } = useTranslation('setup');
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [yearOptions, setYearOptions] = useState<number[]>([currentYear]);
@@ -268,7 +276,7 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ override_date: '', label: '', is_closed: false, open_time: '09:00', close_time: '17:00' });
   // Holiday hours are stored by date: saving one for a date replaces what that date had.
-  const list = useDraftList<any>('location-overrides', 'Holiday & special hours', {
+  const list = useDraftList<any>('location-overrides', t('locationDetail.draftOverrides'), {
     create: (o) => locationsApi.saveLocationHourOverride(locationId, overrideData(o)).then((saved: any) => ({ ...o, ...(saved || {}) })),
     update: async (o, before) => {
       // A changed date moves the entry: the old date is cleared, the new one saved.
@@ -331,13 +339,13 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
   return (
     <div style={{ ...styles.hoursSection, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={styles.hoursTitle}>Holiday & Special Hours<UnsavedTag dirty={list.dirty} /></h3>
+        <h3 style={styles.hoursTitle}>{t('locationDetail.overridesTitle')}<UnsavedTag dirty={list.dirty} /></h3>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {/* Another year shows other entries: first save or undo the changes on this one. */}
-          <select style={{ ...styles.timeInput, width: '90px' }} value={year} disabled={list.dirty} title={list.dirty ? 'Save or undo the changes first' : undefined} onChange={(e) => setYear(Number(e.target.value))}>
+          <select style={{ ...styles.timeInput, width: '90px' }} value={year} disabled={list.dirty} title={list.dirty ? t('locationDetail.saveFirst') : undefined} onChange={(e) => setYear(Number(e.target.value))}>
             {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-          <Button size="sm" variant="secondary" onClick={openAdd}>Add</Button>
+          <Button size="sm" variant="secondary" onClick={openAdd}>{t('locationDetail.add')}</Button>
         </div>
       </div>
 
@@ -345,17 +353,17 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
         <div style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             <div style={styles.formGroup}>
-              <label style={styles.label}>Date *</label>
+              <label style={styles.label}>{t('locationDetail.date')}</label>
               <input type="date" style={styles.timeInput} value={form.override_date} onChange={(e) => setForm({ ...form, override_date: e.target.value })} />
             </div>
             <div style={styles.formGroup}>
-              <label style={styles.label}>Label (e.g. Christmas Day)</label>
-              <input style={styles.timeInput} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Optional" />
+              <label style={styles.label}>{t('locationDetail.label')}</label>
+              <input style={styles.timeInput} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder={t('locationDetail.optional')} />
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' }}>
             <input type="checkbox" checked={form.is_closed} onChange={(e) => setForm({ ...form, is_closed: e.target.checked })} style={{ width: '14px', height: '14px' }} />
-            Closed all day
+            {t('locationDetail.closedAllDay')}
           </label>
           {!form.is_closed && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -364,16 +372,16 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
               <input type="time" style={styles.timeInput} value={form.close_time} onChange={(e) => setForm({ ...form, close_time: e.target.value })} />
             </div>
           )}
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Saved with the page's Save changes.</span>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>{t('locationDetail.savedWithPage')}</span>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button size="sm" onClick={handleDone}>{editingKey ? 'Done' : 'Add'}</Button>
-            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setEditingKey(null); }}>Cancel</Button>
+            <Button size="sm" onClick={handleDone}>{editingKey ? t('locationDetail.done') : t('locationDetail.add')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setEditingKey(null); }}>{t('common:cancel')}</Button>
           </div>
         </div>
       )}
 
-      {loading ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Loading...</p> :
-       list.rows.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>No holiday overrides for {year}.</p> : (
+      {loading ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{t('common:loading')}</p> :
+       list.rows.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{t('locationDetail.noOverrides', { year })}</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {list.rows.map((r) => {
             const o = r.item;
@@ -381,22 +389,22 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
             return (
               <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--color-border)', opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
                 <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', minWidth: '50px', textDecoration: r.deleted ? 'line-through' : 'none' }}>
-                  {parseDateOnly(o.override_date)?.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  {formatDay(o.override_date, { month: 'short', day: 'numeric' })}
                 </span>
                 <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', flex: 1 }}>
                   {o.label}
-                  {r.isNew && <> <RowTag>New</RowTag></>}
-                  {edited && <> <RowTag>Changed</RowTag></>}
-                  {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                  {r.isNew && <> <RowTag>{t('locationDetail.rowNew')}</RowTag></>}
+                  {edited && <> <RowTag>{t('locationDetail.rowChanged')}</RowTag></>}
+                  {r.deleted && <> <RowTag>{t('locationDetail.rowDeleted')}</RowTag></>}
                 </span>
                 {o.is_closed ? (
-                  <span style={{ fontSize: 'var(--font-size-sm)', padding: '2px 8px', borderRadius: '4px', background: 'var(--color-error-bg, rgba(211,47,47,0.1))', color: 'var(--color-error)' }}>Closed</span>
+                  <span style={{ fontSize: 'var(--font-size-sm)', padding: '2px 8px', borderRadius: '4px', background: 'var(--color-error-bg, rgba(211,47,47,0.1))', color: 'var(--color-error)' }}>{t('locationDetail.closed')}</span>
                 ) : (
                   <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{formatTime(o.open_time)}–{formatTime(o.close_time)}</span>
                 )}
-                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
-                  <button onClick={() => openEdit(r.key, o)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px' }}>✏️</button>
-                  <button onClick={() => list.remove(r.key)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px' }}>🗑️</button>
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('locationDetail.undo')}</Button> : <>
+                  <button onClick={() => openEdit(r.key, o)} title={t('common:edit')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px' }}>✏️</button>
+                  <button onClick={() => list.remove(r.key)} title={t('common:delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px' }}>🗑️</button>
                 </>}
               </div>
             );
@@ -410,11 +418,12 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
 // --- Location Staff Section (saved with the page's Save changes) ---
 
 function LocationStaffSection({ locationId, businessId }: { locationId: string; businessId: string }) {
+  const { t } = useTranslation('setup');
   const [allStaff, setAllStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedStaffId, setSelectedStaffId] = useState('');
-  const list = useDraftList<any>('location-staff', 'Staff at this location', {
+  const list = useDraftList<any>('location-staff', t('locationDetail.draftStaff'), {
     // Assigning returns nothing: the row is known by its staff member until the page is reloaded.
     create: (s) => locationsApi.assignStaffToLocation(locationId, s.staff_id).then(() => ({ ...s, id: `staff-${s.staff_id}` })),
     remove: (s) => locationsApi.removeStaffFromLocation(locationId, s.staff_id).then(() => undefined),
@@ -449,33 +458,33 @@ function LocationStaffSection({ locationId, businessId }: { locationId: string; 
   return (
     <div style={{ marginTop: 'var(--space-lg)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-lg)', ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={styles.hoursTitle}>Staff at this Location<UnsavedTag dirty={list.dirty} /></h3>
-        <Button size="sm" variant="secondary" onClick={openAdd}>Add Staff</Button>
+        <h3 style={styles.hoursTitle}>{t('locationDetail.staffTitle')}<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={openAdd}>{t('locationDetail.addStaff')}</Button>
       </div>
 
       {showAdd && (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
           <select style={{ ...styles.timeInput, width: '220px' }} value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value)}>
-            <option value="">Select staff member...</option>
+            <option value="">{t('locationDetail.selectStaff')}</option>
             {availableStaff.map((s: any) => <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>)}
           </select>
-          <Button size="sm" onClick={handleAssign}>Assign</Button>
-          <Button size="sm" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+          <Button size="sm" onClick={handleAssign}>{t('locationDetail.assign')}</Button>
+          <Button size="sm" variant="secondary" onClick={() => setShowAdd(false)}>{t('common:cancel')}</Button>
         </div>
       )}
 
-      {loading ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Loading...</p> :
-       list.rows.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>No staff assigned to this location.</p> : (
+      {loading ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{t('common:loading')}</p> :
+       list.rows.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{t('locationDetail.noStaff')}</p> : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {list.rows.map((r) => {
             const s = r.item;
             return (
               <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', opacity: r.deleted ? 0.6 : 1 }}>
                 <span style={{ textDecoration: r.deleted ? 'line-through' : 'none' }}>{s.first_name} {s.last_name}</span>
-                {r.isNew && <RowTag>New</RowTag>}
+                {r.isNew && <RowTag>{t('locationDetail.rowNew')}</RowTag>}
                 {r.deleted
-                  ? <><RowTag>Removed when you save</RowTag><button onClick={() => list.undo(r.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-xs)', color: 'var(--color-primary)', fontWeight: 600 }}>Undo</button></>
-                  : <button onClick={() => list.remove(r.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '0 2px', color: 'var(--color-text-muted)' }} title="Remove">×</button>}
+                  ? <><RowTag>{t('locationDetail.rowRemoved')}</RowTag><button onClick={() => list.undo(r.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-xs)', color: 'var(--color-primary)', fontWeight: 600 }}>{t('locationDetail.undo')}</button></>
+                  : <button onClick={() => list.remove(r.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '0 2px', color: 'var(--color-text-muted)' }} title={t('locationDetail.remove')}>×</button>}
               </div>
             );
           })}

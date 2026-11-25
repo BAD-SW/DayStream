@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * List message templates for a tenant, optionally filtered by channel.
@@ -133,7 +134,7 @@ export async function deleteTemplate(id: string, tenantId: string) {
  */
 export async function renderTemplate(templateId: string, tenantId: string, data: Record<string, any>) {
   const template = await getTemplateById(templateId, tenantId);
-  if (!template) throw new Error('Template not found');
+  if (!template) throw new Error(msg('errors:marketingTemplates.templateNotFound'));
 
   const replacePlaceholders = (text: string | null): string | null => {
     if (!text) return text;

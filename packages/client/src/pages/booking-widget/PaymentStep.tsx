@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { formatMoney } from './format';
 
 interface Props {
@@ -20,6 +21,7 @@ function formatExpiry(value: string): string {
 }
 
 export function PaymentStep({ itemName, amountCents, onPay, loading, error }: Props) {
+  const { t } = useTranslation('widget');
   const [cardholder, setCardholder] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -31,20 +33,20 @@ export function PaymentStep({ itemName, amountCents, onPay, loading, error }: Pr
     setFormError(null);
 
     const digits = cardNumber.replace(/\s/g, '');
-    if (digits.length !== 16) { setFormError('Card number must be 16 digits'); return; }
-    if (!/^\d{2}\/\d{2}$/.test(expiry)) { setFormError('Expiry must be in MM/YY format'); return; }
+    if (digits.length !== 16) { setFormError(t('payment.errors.cardNumber')); return; }
+    if (!/^\d{2}\/\d{2}$/.test(expiry)) { setFormError(t('payment.errors.expiryFormat')); return; }
     const [mm] = expiry.split('/').map(Number);
-    if (mm < 1 || mm > 12) { setFormError('Expiry month must be between 01 and 12'); return; }
-    if (!/^\d{3,4}$/.test(cvc)) { setFormError('CVC must be 3 or 4 digits'); return; }
-    if (!cardholder.trim()) { setFormError('Cardholder name is required'); return; }
+    if (mm < 1 || mm > 12) { setFormError(t('payment.errors.expiryMonth')); return; }
+    if (!/^\d{3,4}$/.test(cvc)) { setFormError(t('payment.errors.cvc')); return; }
+    if (!cardholder.trim()) { setFormError(t('payment.errors.cardholder')); return; }
 
     onPay();
   }
 
   return (
     <div className="dsw-step">
-      <h2 className="dsw-step-title">Payment</h2>
-      <p className="dsw-step-notice">Test / demo environment — no real card data is transmitted or stored.</p>
+      <h2 className="dsw-step-title">{t('payment.title')}</h2>
+      <p className="dsw-step-notice">{t('payment.demoNotice')}</p>
 
       <div className="dsw-summary">
         <span>{itemName}</span>
@@ -53,12 +55,12 @@ export function PaymentStep({ itemName, amountCents, onPay, loading, error }: Pr
 
       <form onSubmit={handleSubmit} className="dsw-form">
         <div className="dsw-field">
-          <label className="dsw-label" htmlFor="cardholder">Cardholder name</label>
+          <label className="dsw-label" htmlFor="cardholder">{t('payment.cardholder')}</label>
           <input id="cardholder" className="dsw-input" value={cardholder} onChange={(e) => setCardholder(e.target.value)} required />
         </div>
 
         <div className="dsw-field">
-          <label className="dsw-label" htmlFor="card_number">Card number</label>
+          <label className="dsw-label" htmlFor="card_number">{t('payment.cardNumber')}</label>
           <input
             id="card_number"
             className="dsw-input"
@@ -72,7 +74,7 @@ export function PaymentStep({ itemName, amountCents, onPay, loading, error }: Pr
 
         <div className="dsw-field-row">
           <div className="dsw-field">
-            <label className="dsw-label" htmlFor="expiry">Expiry (MM/YY)</label>
+            <label className="dsw-label" htmlFor="expiry">{t('payment.expiry')}</label>
             <input
               id="expiry"
               className="dsw-input"
@@ -84,7 +86,7 @@ export function PaymentStep({ itemName, amountCents, onPay, loading, error }: Pr
             />
           </div>
           <div className="dsw-field">
-            <label className="dsw-label" htmlFor="cvc">CVC</label>
+            <label className="dsw-label" htmlFor="cvc">{t('payment.cvc')}</label>
             <input
               id="cvc"
               className="dsw-input"
@@ -100,7 +102,7 @@ export function PaymentStep({ itemName, amountCents, onPay, loading, error }: Pr
         {(formError || error) && <p className="dsw-step-error">{formError || error}</p>}
 
         <button type="submit" className="dsw-btn dsw-btn--primary" disabled={loading}>
-          {loading ? 'Processing…' : `Pay ${formatMoney(amountCents)}`}
+          {loading ? t('payment.processing') : t('payment.pay', { amount: formatMoney(amountCents) })}
         </button>
       </form>
     </div>

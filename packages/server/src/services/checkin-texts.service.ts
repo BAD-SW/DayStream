@@ -4,6 +4,7 @@ import {
   checkInTextFor, languageFromText, DEFAULT_LANGUAGE, EDITABLE_CHECK_IN_TEXT_KEYS, isSupportedLanguage,
 } from '@daystream/shared';
 import type { CheckInText } from '@daystream/shared';
+import { msg } from '../i18n';
 
 /**
  * The wording of the customer check-in screens (spec 51, gap 3). A business changes only the pieces it
@@ -53,12 +54,12 @@ export async function resolveTexts(businessId: string, language: string): Promis
 function cleanTexts(input: Record<string, unknown>): Record<string, string> {
   const clean: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
-    if (!(EDITABLE_CHECK_IN_TEXT_KEYS as readonly string[]).includes(key)) throw new CheckInTextError(`"${key}" is not wording that can be changed.`, 'INVALID_TEXT');
+    if (!(EDITABLE_CHECK_IN_TEXT_KEYS as readonly string[]).includes(key)) throw new CheckInTextError(msg('errors:checkinTexts.isNotWordingThatCanBe', { key }), 'INVALID_TEXT');
     if (value === null || value === undefined) continue;
-    if (typeof value !== 'string') throw new CheckInTextError('Wording must be text.', 'INVALID_TEXT');
+    if (typeof value !== 'string') throw new CheckInTextError(msg('errors:checkinTexts.wordingMustBeText'), 'INVALID_TEXT');
     const v = value.trim();
     if (v === '') continue;
-    if (v.length > MAX_TEXT) throw new CheckInTextError('A piece of wording is too long.', 'INVALID_TEXT');
+    if (v.length > MAX_TEXT) throw new CheckInTextError(msg('errors:checkinTexts.aPieceOfWordingIsToo'), 'INVALID_TEXT');
     clean[key] = v;
   }
   return clean;
@@ -66,7 +67,7 @@ function cleanTexts(input: Record<string, unknown>): Record<string, string> {
 
 /** Saves the platform's wording for a language (platform administrators). */
 export async function saveSystemTexts(language: string, input: Record<string, unknown>, actor: { userId: string; tenantId: string }): Promise<Record<string, string>> {
-  if (!isSupportedLanguage(language)) throw new CheckInTextError('Choose a supported language.', 'INVALID_LANGUAGE');
+  if (!isSupportedLanguage(language)) throw new CheckInTextError(msg('errors:checkinTexts.chooseASupportedLanguage'), 'INVALID_LANGUAGE');
   const clean = cleanTexts(input);
   await adminPool.query(
     `INSERT INTO sys_check_in_texts (language, texts, updated_by) VALUES ($1, $2, $3)
@@ -80,7 +81,7 @@ export async function saveSystemTexts(language: string, input: Record<string, un
 export async function saveOverrides(
   businessId: string, tenantId: string, userId: string, language: string, input: Record<string, unknown>,
 ): Promise<Record<string, string>> {
-  if (!isSupportedLanguage(language)) throw new CheckInTextError('Choose a supported language.', 'INVALID_LANGUAGE');
+  if (!isSupportedLanguage(language)) throw new CheckInTextError(msg('errors:checkinTexts.chooseASupportedLanguage'), 'INVALID_LANGUAGE');
   const clean = cleanTexts(input);
   await adminPool.query(
     `INSERT INTO apt_check_in_texts (tenant_id, business_id, language, texts, updated_by)

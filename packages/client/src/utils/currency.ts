@@ -1,3 +1,5 @@
+import { currentLocale } from '../i18n';
+
 const SYMBOLS: Record<string, string> = {
   USD: '$',
   EUR: '€',
@@ -15,10 +17,14 @@ export function getBusinessCurrency(): string {
  * Amount is in minor units (cents). Currency defaults to the business currency from localStorage.
  */
 export function formatCurrency(amountInCents: number, currency?: string): string {
-  const curr = currency || getBusinessCurrency();
-  const amount = (amountInCents / 100).toFixed(2);
-  const symbol = SYMBOLS[curr.toUpperCase()] || curr + ' ';
-  return `${symbol}${amount}`;
+  // In the format of the language shown (Phase 44): €12.50 in English, 12,50 € in Spanish.
+  const curr = (currency || getBusinessCurrency()).toUpperCase();
+  try {
+    return new Intl.NumberFormat(currentLocale(), { style: 'currency', currency: curr }).format(amountInCents / 100);
+  } catch {
+    const symbol = SYMBOLS[curr] || curr + ' ';
+    return `${symbol}${(amountInCents / 100).toFixed(2)}`;
+  }
 }
 
 /**

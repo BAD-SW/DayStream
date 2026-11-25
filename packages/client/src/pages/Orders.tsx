@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { formatCurrency } from '../utils/currency';
+import { formatDateTime } from '../utils/format';
 import * as checkoutApi from '../api/checkout';
 import type { Order } from '../api/checkout';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   open: 'warning', completed: 'success', voided: 'neutral', refunded: 'error', partially_refunded: 'warning',
 };
+
+// Stored order statuses, shown through checkout:orders.status.<value>.
+const STATUS_KEYS = ['open', 'completed', 'voided', 'refunded', 'partially_refunded'];
 
 /**
  * Orders — history of checkouts/orders for the business. Lists past orders
@@ -18,7 +23,9 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
  * are transactional views of the same front-desk activity.
  */
 export function Orders() {
+  const { t } = useTranslation('checkout');
   const navigate = useNavigate();
+  const statusLabel = (s: string) => (STATUS_KEYS.includes(s) ? t(`orders.status.${s}`) : s);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   // Searching inside the orders' items stays a search box (it is not a column).
@@ -66,38 +73,38 @@ export function Orders() {
     return values.map((v) => ({
       value: v.value, count: v.count,
       label: key === 'total_amount' ? formatCurrency(Number(v.value))
-        : key === 'customer_first_name' ? (v.label || 'Walk-in')
-        : key === 'status' ? v.value.replace('_', ' ')
+        : key === 'customer_first_name' ? (v.label || t('orders.walkIn'))
+        : key === 'status' ? statusLabel(v.value)
         : v.label || v.value,
     }));
-  }, [businessId, tableFilters, debouncedProduct]);
+  }, [businessId, tableFilters, debouncedProduct, t]);
 
   const columns = [
-    { key: 'order_number', header: 'Order', width: '140px', sortable: true },
+    { key: 'order_number', header: t('orders.col.order'), width: '140px', sortable: true },
     {
-      key: 'completed_at', header: 'Date', sortable: true, filter: 'date' as const,
+      key: 'completed_at', header: t('orders.col.date'), sortable: true, filter: 'date' as const,
       render: (_: any, row: Order) => {
         const d = row.completed_at || row.created_at;
-        return d ? new Date(d).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—';
+        return d ? formatDateTime(d, undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—';
       },
     },
     {
-      key: 'customer_first_name', header: 'Customer', sortable: true,
+      key: 'customer_first_name', header: t('orders.col.customer'), sortable: true,
       render: (_: any, row: Order) =>
         row.customer_first_name
           ? `${row.customer_first_name} ${row.customer_last_name ?? ''}`.trim()
-          : (row.walk_in_name ? `${row.walk_in_name} (walk-in)` : 'Walk-in'),
+          : (row.walk_in_name ? t('orders.walkInNamed', { name: row.walk_in_name }) : t('orders.walkIn')),
     },
     {
-      key: 'item_count', header: 'Items', align: 'center' as const, filter: 'number' as const,
+      key: 'item_count', header: t('orders.col.items'), align: 'center' as const, filter: 'number' as const,
       render: (_: any, row: Order) => String((row as any).item_count ?? 0),
     },
     {
-      key: 'status', header: 'Status', sortable: true,
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
+      key: 'status', header: t('orders.col.status'), sortable: true,
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{statusLabel(val)}</Badge>,
     },
     {
-      key: 'total_amount', header: 'Total', align: 'right' as const, sortable: true, filter: 'amount' as const,
+      key: 'total_amount', header: t('orders.col.total'), align: 'right' as const, sortable: true, filter: 'amount' as const,
       render: (val: number) => formatCurrency(val),
     },
   ];
@@ -105,15 +112,15 @@ export function Orders() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Orders</h1>
+        <h1 style={styles.title}>{t('orders.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-          <button style={styles.navBtn} onClick={() => navigate('/bookings')}>Appointments</button>
-          <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>New Sale</button>
+          <button style={styles.navBtn} onClick={() => navigate('/bookings')}>{t('orders.appointments')}</button>
+          <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>{t('orders.newSale')}</button>
         </div>
       </div>
 
       <div style={styles.toolbar}>
-        <input type="text" style={styles.select} value={productFilter} onChange={(e) => setProductFilter(e.target.value)} placeholder="Search items in the orders…" title="Orders that contain an item with this name" aria-label="Search items in the orders" />
+        <input type="text" style={styles.select} value={productFilter} onChange={(e) => setProductFilter(e.target.value)} placeholder={t('orders.searchItemsPlaceholder')} title={t('orders.searchItemsTitle')} aria-label={t('orders.searchItemsLabel')} />
       </div>
 
       <Table
@@ -126,7 +133,7 @@ export function Orders() {
         onLoadMore={loadMore}
         hasMore={orders.length < total}
         loadingMore={loadingMore}
-        emptyMessage="No orders found"
+        emptyMessage={t('orders.empty')}
         mobileCardMode
         clientSort
         onRowClick={(row) => navigate(`/receipt/${row.id}`)}

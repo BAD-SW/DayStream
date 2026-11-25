@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
+import i18n from '../../i18n';
+import { formatDay, formatDate } from '../../utils/format';
 import * as bookingsApi from '../../api/bookings';
 import * as servicesApi from '../../api/services';
 import * as customersApi from '../../api/customers';
 import type { ServiceVariant } from '../../api/services';
 import { apiClient } from '../../api/client';
 import { formatCurrency } from '../../utils/currency';
-import { zonedParts, hhmm, toMin, addDays, dayLabel, initials } from '../../utils/zonedTime';
+import { zonedParts, hhmm, toMin, addDays, initials } from '../../utils/zonedTime';
 import './AppointmentWindow.css';
 import { PaymentStep } from './PaymentStep';
 import { PriceSummary } from './PriceSummary';
@@ -36,7 +39,9 @@ export interface SvcItem { id: string; name: string; category_name?: string; boo
 export interface Combo { start_time: string; end_time: string; location_id: string | null; location_name: string | null; staff_id?: string; staff_first_name?: string; staff_last_name?: string; capacity_remaining?: number }
 export interface AppointmentPrefill { date?: string; time?: string | null; serviceId?: string; variantId?: string; staffId?: string; locationId?: string; customer?: any; customerId?: string; walkIn?: boolean; walkInName?: string; participants?: number }
 
-const custName = (c: any) => (c ? `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.display_name || c.email || c.phone || 'No name yet' : '');
+/** A date shown in the language's own day and month names (the business's calendar day). */
+const dayLabel = (date: string, o: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) => formatDay(date, o);
+const custName = (c: any) => (c ? `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.display_name || c.email || c.phone || i18n.t('calendar:appt.noNameYet') : '');
 const staffName = (c: Combo) => `${c.staff_first_name || ''} ${c.staff_last_name || ''}`.trim();
 const places = (s?: SvcItem) => !!s && (s.booking_type === 'shared' || s.booking_type === 'group') && (s.max_capacity || 1) > 1;
 
@@ -66,6 +71,7 @@ export function CustomerPicker({ businessId, customer, onCustomer, walk, onWalk,
   /** the calendar popup opens with the list (Recent) showing and the search focused, as in the hub */
   startOpen?: boolean;
 }) {
+  const { t } = useTranslation('calendar');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(!!startOpen);
   const [list, setList] = useState<any[]>([]);
@@ -74,27 +80,27 @@ export function CustomerPicker({ businessId, customer, onCustomer, walk, onWalk,
   const [msg, setMsg] = useState('');
   useEffect(() => {
     if (!open || customer || walk) return;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       customersApi.getCustomers(businessId, q.trim() ? { search: q.trim(), search_mode: 'booking', limit: 6 } : { limit: 4 })
         .then((r) => setList(r.data || [])).catch(() => setList([]));
     }, q ? 250 : 0);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [q, open, businessId, customer, walk]);
 
   const head = (
     <div className="mk-l">
-      <span>Customer {walk ? '' : '*'}</span>
-      {!disabled && <button type="button" className="lk" onClick={() => { onWalk(!walk); onCustomer(null); setIsNew(false); }}>{walk ? 'Choose a customer instead' : 'Walk-in'}</button>}
+      <span>{t('appt.customer')} {walk ? '' : '*'}</span>
+      {!disabled && <button type="button" className="lk" onClick={() => { onWalk(!walk); onCustomer(null); setIsNew(false); }}>{walk ? t('appt.chooseCustomerInstead') : t('appt.walkIn')}</button>}
     </div>
   );
-  if (walk) return <div className="mk-f">{head}<input type="text" value={walkName} onChange={(e) => onWalkName(e.target.value)} placeholder="Name (optional)" aria-label="Walk-in name" disabled={disabled} /></div>;
+  if (walk) return <div className="mk-f">{head}<input type="text" value={walkName} onChange={(e) => onWalkName(e.target.value)} placeholder={t('appt.nameOptional')} aria-label={t('appt.walkInName')} disabled={disabled} /></div>;
   if (customer) {
     return (
       <div className="mk-f">{head}
         <div className="mk-card">
           <span className="av">{initials(custName(customer))}</span>
-          <div><b>{custName(customer)}</b><small>{[customer.email, customer.phone].filter(Boolean).join(' · ')}</small>{!compact && customer.last_visit_at && <small className="last">Last visit {dayLabel(String(customer.last_visit_at).slice(0, 10), { day: 'numeric', month: 'short' })}</small>}</div>
-          {!disabled && <button type="button" className="mk-x" onClick={() => { onCustomer(null); setQ(''); setOpen(true); }} aria-label="Change customer">×</button>}
+          <div><b>{custName(customer)}</b><small>{[customer.email, customer.phone].filter(Boolean).join(' · ')}</small>{!compact && customer.last_visit_at && <small className="last">{t('appt.lastVisit', { date: dayLabel(String(customer.last_visit_at).slice(0, 10), { day: 'numeric', month: 'short' }) })}</small>}</div>
+          {!disabled && <button type="button" className="mk-x" onClick={() => { onCustomer(null); setQ(''); setOpen(true); }} aria-label={t('appt.changeCustomer')}>×</button>}
         </div>
       </div>
     );
@@ -109,24 +115,24 @@ export function CustomerPicker({ businessId, customer, onCustomer, walk, onWalk,
       } catch (err: any) {
         const id = err?.response?.data?.details?.existing_id;
         if (id) { try { onCustomer(await customersApi.getCustomer(id, businessId)); setIsNew(false); return; } catch { /* fall through */ } }
-        const e = err?.response?.data?.error; setMsg(typeof e === 'string' ? e : e?.message || 'The customer could not be added.');
+        const e = err?.response?.data?.error; setMsg(typeof e === 'string' ? e : e?.message || t('appt.customerAddFailed'));
       }
     };
     return (
       <div className="mk-f">{head}
         <div className="mk-new">
-          <b style={{ fontSize: 'var(--font-size-small)' }}>New customer</b>
+          <b style={{ fontSize: 'var(--font-size-small)' }}>{t('appt.newCustomer')}</b>
           <div className="mk-g2">
-            <input type="text" value={nc.fn} onChange={(e) => setNc({ ...nc, fn: e.target.value })} placeholder="First name *" aria-label="First name" />
-            <input type="text" value={nc.ln} onChange={(e) => setNc({ ...nc, ln: e.target.value })} placeholder="Last name" aria-label="Last name" />
-            <input type="email" value={nc.em} onChange={(e) => setNc({ ...nc, em: e.target.value })} placeholder="Email" aria-label="Email" />
-            <input type="tel" value={nc.ph} onChange={(e) => setNc({ ...nc, ph: e.target.value })} placeholder="Phone" aria-label="Phone" />
+            <input type="text" value={nc.fn} onChange={(e) => setNc({ ...nc, fn: e.target.value })} placeholder={t('appt.firstNameRequired')} aria-label={t('appt.firstName')} />
+            <input type="text" value={nc.ln} onChange={(e) => setNc({ ...nc, ln: e.target.value })} placeholder={t('appt.lastName')} aria-label={t('appt.lastName')} />
+            <input type="email" value={nc.em} onChange={(e) => setNc({ ...nc, em: e.target.value })} placeholder={t('appt.email')} aria-label={t('appt.email')} />
+            <input type="tel" value={nc.ph} onChange={(e) => setNc({ ...nc, ph: e.target.value })} placeholder={t('appt.phone')} aria-label={t('appt.phone')} />
           </div>
-          <p className="mk-hint">An email or a phone number is needed. If it matches someone, they are offered instead of a duplicate.</p>
+          <p className="mk-hint">{t('appt.newCustomerHint')}</p>
           {msg && <p className="mk-warn">{msg}</p>}
           <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            <button type="button" className="btn sec" onClick={() => setIsNew(false)}>Cancel</button>
-            <button type="button" className="btn" disabled={!ok} onClick={add}>Add and select</button>
+            <button type="button" className="btn sec" onClick={() => setIsNew(false)}>{t('common:cancel')}</button>
+            <button type="button" className="btn" disabled={!ok} onClick={add}>{t('appt.addAndSelect')}</button>
           </div>
         </div>
       </div>
@@ -134,17 +140,17 @@ export function CustomerPicker({ businessId, customer, onCustomer, walk, onWalk,
   }
   return (
     <div className="mk-f">{head}
-      <input type="text" value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="Search name, surname, email (without @domain) or phone… or add a new customer" autoComplete="off" aria-label="Search customers" disabled={disabled} autoFocus={!!startOpen} />
+      <input type="text" value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={t('appt.searchCustomersPlaceholder')} autoComplete="off" aria-label={t('appt.searchCustomers')} disabled={disabled} autoFocus={!!startOpen} />
       {open && (
         <div className="mk-drop" role="listbox">
-          <div className="h">{q.trim() ? `${list.length} found` : 'Recent'}</div>
+          <div className="h">{q.trim() ? t('appt.found', { count: list.length }) : t('appt.recent')}</div>
           {list.map((c) => (
             <button key={c.id} type="button" role="option" onClick={() => { onCustomer(c); setOpen(false); }}>
               <span className="av">{initials(custName(c))}</span><span><b>{custName(c)}</b></span><small>{[c.email, c.phone].filter(Boolean).join(' · ')}</small>
             </button>
           ))}
           <button type="button" className="new" onClick={() => { setIsNew(true); const parts = q.trim().split(/\s+/); setNc({ fn: parts[0] || '', ln: parts.slice(1).join(' '), em: '', ph: '' }); }}>
-            <span className="av">＋</span><span>New customer{q.trim() ? ` “${q.trim()}”` : ''}</span>
+            <span className="av">＋</span><span>{q.trim() ? t('appt.newCustomerNamed', { name: q.trim() }) : t('appt.newCustomer')}</span>
           </button>
         </div>
       )}
@@ -159,6 +165,7 @@ export function ServicePicker({ services, serviceId, onService, compact, disable
   /** from a staff column: only the services that person does, with Show all (hub fStaff) */
   onlyFor?: { name: string; ids: string[] } | null;
 }) {
+  const { t } = useTranslation('calendar');
   const [sq, setSq] = useState('');
   const [page, setPage] = useState(0);
   const [all, setAll] = useState(false);
@@ -169,34 +176,35 @@ export function ServicePicker({ services, serviceId, onService, compact, disable
   const sel = services.find((x) => x.id === serviceId);
   return (
     <div className="mk-f">
-      <div className="mk-l">Service *</div>
-      {limit && <p className="mk-hint" style={{ margin: '0 0 var(--space-sm)' }}>Services {onlyFor!.name} does · <button type="button" className="lk2" onClick={() => { setAll(true); setPage(0); }}>Show all</button></p>}
+      <div className="mk-l">{t('appt.serviceRequired')}</div>
+      {limit && <p className="mk-hint" style={{ margin: '0 0 var(--space-sm)' }}>{t('appt.servicesDoes', { name: onlyFor!.name })}{' '}<button type="button" className="lk2" onClick={() => { setAll(true); setPage(0); }}>{t('appt.showAll')}</button></p>}
       <div className="sv-top">
-        <input type="text" value={sq} onChange={(e) => { setSq(e.target.value); setPage(0); }} placeholder="Search services…" autoComplete="off" aria-label="Search services" disabled={disabled} />
-        <div className="sv-pager" aria-label="Service pages">
-          <button type="button" disabled={pg === 0 || disabled} onClick={() => setPage(pg - 1)} aria-label="Previous services">‹</button>
+        <input type="text" value={sq} onChange={(e) => { setSq(e.target.value); setPage(0); }} placeholder={t('appt.searchServicesPlaceholder')} autoComplete="off" aria-label={t('appt.searchServices')} disabled={disabled} />
+        <div className="sv-pager" aria-label={t('appt.servicePages')}>
+          <button type="button" disabled={pg === 0 || disabled} onClick={() => setPage(pg - 1)} aria-label={t('appt.previousServices')}>‹</button>
           <span>{found.length ? `${pg + 1} / ${pages}` : '0'}</span>
-          <button type="button" disabled={pg >= pages - 1 || disabled} onClick={() => setPage(pg + 1)} aria-label="Next services">›</button>
+          <button type="button" disabled={pg >= pages - 1 || disabled} onClick={() => setPage(pg + 1)} aria-label={t('appt.nextServices')}>›</button>
         </div>
       </div>
       <div className={`svcs${compact ? ' svcs-c' : ''}`}>
-        {found.length === 0 && <p className="mk-hint">{services.length ? `No service matches “${sq}”.` : 'Loading services…'}</p>}
+        {found.length === 0 && <p className="mk-hint">{services.length ? t('appt.noServiceMatches', { query: sq }) : t('appt.loadingServices')}</p>}
         {shown.map((x) => (
           <button key={x.id} type="button" className="svc" aria-pressed={x.id === serviceId} onClick={() => onService(x.id)} disabled={disabled}>
-            {x.name}<small>{x.category_name || ''}{compact ? '' : ` · from ${formatCurrency(Math.min(...x.variants.map((v) => v.price)))}`}</small>
+            {x.name}<small>{x.category_name || ''}{compact ? '' : ` · ${t('appt.fromPrice', { price: formatCurrency(Math.min(...x.variants.map((v) => v.price))) })}`}</small>
           </button>
         ))}
       </div>
-      {sel && !shown.some((x) => x.id === sel.id) && <p className="mk-hint sv-picked">Selected: <b>{sel.name}</b></p>}
+      {sel && !shown.some((x) => x.id === sel.id) && <p className="mk-hint sv-picked"><Trans t={t} i18nKey="appt.selected" values={{ name: sel.name }} components={[<b key="b" />]} /></p>}
     </div>
   );
 }
 
 export function OptionChips({ svc, variantId, onVariant, disabled }: { svc?: SvcItem; variantId: string; onVariant: (id: string) => void; disabled?: boolean }) {
+  const { t } = useTranslation('calendar');
   if (!svc) return null;
   return (
     <div className="mk-f">
-      <div className="mk-l">Duration / option *</div>
+      <div className="mk-l">{t('appt.durationOption')}</div>
       <div className="chips">
         {svc.variants.map((v) => <button key={v.id} type="button" className="ch" aria-pressed={v.id === variantId} onClick={() => onVariant(v.id)} disabled={disabled}>{v.name} <small>{formatCurrency(v.price)}</small></button>)}
       </div>
@@ -205,13 +213,14 @@ export function OptionChips({ svc, variantId, onVariant, disabled }: { svc?: Svc
 }
 
 export function ParticipantsField({ svc, parts, onParts, ovr, onOvr, disabled }: { svc?: SvcItem; parts: number; onParts: (n: number) => void; ovr: boolean; onOvr: (b: boolean) => void; disabled?: boolean }) {
+  const { t } = useTranslation('calendar');
   if (!places(svc)) return null;
   const max = Math.min(svc!.max_capacity || 1, 6);
   return (
     <div className="mk-f">
-      <div className="mk-l"><span>Participants <span className="mk-hint" style={{ textTransform: 'none', letterSpacing: 0 }}>{svc!.booking_type === 'shared' ? 'shared room' : 'group'}, up to {svc!.max_capacity}</span></span></div>
+      <div className="mk-l"><span>{t('appt.participants')} <span className="mk-hint" style={{ textTransform: 'none', letterSpacing: 0 }}>{t(svc!.booking_type === 'shared' ? 'appt.sharedUpTo' : 'appt.groupUpTo', { max: svc!.max_capacity })}</span></span></div>
       <div className="chips">{Array.from({ length: max }, (_, i) => i + 1).map((n) => <button key={n} type="button" className="ch" aria-pressed={n === parts} onClick={() => onParts(n)} disabled={disabled}>{n}</button>)}</div>
-      <label className="mk-hint" style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}><input type="checkbox" checked={ovr} onChange={(e) => onOvr(e.target.checked)} disabled={disabled} /> Override capacity limit</label>
+      <label className="mk-hint" style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}><input type="checkbox" checked={ovr} onChange={(e) => onOvr(e.target.checked)} disabled={disabled} /> {t('appt.overrideCapacity')}</label>
     </div>
   );
 }
@@ -239,6 +248,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   businessId: string; timezone: string; mode: 'new' | 'edit'; bookingId?: string; prefill?: AppointmentPrefill;
   onClose: () => void; onSaved: (message: string) => void;
 }) {
+  const { t } = useTranslation('calendar');
   const services = useBookableServices(businessId);
   const today = zonedParts(new Date(), timezone).date;
 
@@ -293,8 +303,8 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   const copyCheckInLink = async () => {
     if (!bookingId) return;
     setLinkMessage(null);
-    try { await navigator.clipboard.writeText(await getSelfCheckInLink(businessId, bookingId)); setLinkMessage('Copied.'); }
-    catch { setLinkMessage('The link could not be copied.'); }
+    try { await navigator.clipboard.writeText(await getSelfCheckInLink(businessId, bookingId)); setLinkMessage(t('appt.copied')); }
+    catch { setLinkMessage(t('appt.copyFailed')); }
   };
 
   // prefilled customer by id (from the popup's More options or a link)
@@ -317,7 +327,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
       setDate(p.date); setTime(hhmm(p.minutes)); setMonth(p.date.slice(0, 7));
       if (bk.customer_id) { try { setCustomer(await customersApi.getCustomer(bk.customer_id, businessId)); } catch { setCustomer({ id: bk.customer_id, first_name: bk.customer_first_name, last_name: bk.customer_last_name, email: bk.customer_email }); } }
       else { setWalk(true); setWalkName(bk.walk_in_name || ''); }
-    }).catch(() => setLoadError('The appointment could not be loaded.'));
+    }).catch(() => setLoadError(t('appt.loadFailed')));
   }, [mode, bookingId, businessId, timezone]);
 
   const rules = booking?.change_rules;
@@ -402,12 +412,12 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
 
   const byTime = new Map<string, Combo[]>();
   for (const c of matches) { const k = lhm(c.start_time); byTime.set(k, [...(byTime.get(k) || []), c]); }
-  const groups: Array<[string, number, number]> = [['Morning', 0, 720], ['Afternoon', 720, 1020], ['Evening', 1020, 1440]];
+  const groups: Array<[string, number, number]> = [['morning', 0, 720], ['afternoon', 720, 1020], ['evening', 1020, 1440]];
 
   const price = variant ? variant.price * (places(svc) ? parts : 1) : 0;
   const when = chosen && variant && date ? `${dayLabel(date, { weekday: 'short', day: 'numeric', month: 'short' })} · ${time}–${hhmm(toMin(time!) + variant.duration)}` : '';
   const whoBits = chosen ? [chosen.staff_id ? staffName(chosen) : '', multiLoc ? chosen.location_name || '' : ''].filter(Boolean).join(' · ') : '';
-  const cName = walk ? (walkName || 'Walk-in') : custName(customer);
+  const cName = walk ? (walkName || t('appt.walkIn')) : custName(customer);
 
   const live = !!booking && ['pending', 'confirmed'].includes(booking.status);
   const startedNow = !!booking && new Date(booking.start_time).getTime() <= Date.now();
@@ -423,13 +433,17 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
     try {
       if (ending === 'cancel') {
         const r = await bookingsApi.cancelBooking(bookingId!, businessId, cancelReason || undefined, preview && preview.paid_amount > 0 ? refundTo : undefined);
-        onSaved(`Appointment cancelled${r?.cancellation_fee ? ' · fee ' + formatCurrency(r.cancellation_fee) : ''}${r?.refund ? ' · refunded ' + formatCurrency(r.refund.amount) + (r.refund.to === 'account_credit' ? ' as account credit' : '') : ''}`);
+        onSaved([
+          t('appt.cancelled'),
+          r?.cancellation_fee ? t('appt.cancelFee', { fee: formatCurrency(r.cancellation_fee) }) : '',
+          r?.refund ? t(r.refund.to === 'account_credit' ? 'appt.cancelRefundedCredit' : 'appt.cancelRefunded', { amount: formatCurrency(r.refund.amount) }) : '',
+        ].filter(Boolean).join(' · '));
       } else {
         const r = await bookingsApi.noShowBooking(bookingId!, businessId, noShowCharge);
         onSaved(noShowOutcomeText(r.fee));
       }
     } catch (err: any) {
-      const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || 'It could not be done.');
+      const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || t('appt.endFailed'));
     } finally { setSaving(false); }
   };
 
@@ -443,10 +457,13 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
       setKeptAddons(had);
       setAddons((cur) => cur.filter((id) => id !== removingPaid.addon_id));
       const amount = r.refund?.amount ? formatCurrency(r.refund.amount) : null;
-      setPaidMsg({ ok: true, text: `${removingPaid.name} removed${amount ? `, ${amount} refunded${paidRefundTo === 'account_credit' ? ' as account credit' : ' to the payment'}` : paidRefundTo === 'none' ? ', not refunded' : ''}.` });
+      const name = removingPaid.name;
+      setPaidMsg({ ok: true, text: amount
+        ? t(paidRefundTo === 'account_credit' ? 'removeAddon.doneRefundedCredit' : 'removeAddon.doneRefundedPayment', { name, amount })
+        : t(paidRefundTo === 'none' ? 'removeAddon.doneNotRefunded' : 'removeAddon.done', { name }) });
       setRemovingPaid(null);
     } catch (err: any) {
-      const e = err?.response?.data?.error; setPaidMsg({ ok: false, text: typeof e === 'string' ? e : 'The add-on could not be removed.' });
+      const e = err?.response?.data?.error; setPaidMsg({ ok: false, text: typeof e === 'string' ? e : t('removeAddon.failed') });
     } finally { setPaidBusy(false); }
   };
 
@@ -462,7 +479,9 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           ...(!walk && benefit ? { benefit } : {}),
           ...(addons.length ? { addons } : {}),
         });
-        onSaved(`Reservation saved: ${svc!.name}, ${when}${chosen.staff_id ? ' with ' + staffName(chosen) : ''}`);
+        onSaved(chosen.staff_id
+          ? t('appt.reservationSavedWith', { service: svc!.name, when, staff: staffName(chosen) })
+          : t('appt.reservationSaved', { service: svc!.name, when }));
       } else {
         const data: any = { notes: notes || null };
         if (!lockOffering) { data.service_id = serviceId; data.variant_id = variantId; data.participant_count = parts; }
@@ -472,12 +491,12 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
         if (!walk && benefit !== undefined) data.benefit = benefit;
         data.addons = addons;
         const saved = await bookingsApi.updateBooking(bookingId!, businessId, data);
-        if (saved?.addons_error) { setError(`Saved, but the add-ons were not changed: ${saved.addons_error}`); return; }
-        if (saved?.benefit_error) { setError(`Saved, but ${saved.benefit_error} It will be paid normally.`); return; }
-        onSaved(`Appointment saved: ${svc!.name}, ${when}`);
+        if (saved?.addons_error) { setError(t('appt.addonsNotChanged', { error: saved.addons_error })); return; }
+        if (saved?.benefit_error) { setError(t('appt.benefitError', { error: saved.benefit_error })); return; }
+        onSaved(t('appt.appointmentSaved', { service: svc!.name, when }));
       }
     } catch (err: any) {
-      const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || 'The appointment could not be saved.');
+      const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || t('appt.saveFailed'));
     } finally { setSaving(false); }
   };
 
@@ -487,9 +506,10 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   const nDays = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
   const shiftMonth = (n: number) => { const d = new Date(month + '-15T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + n); setMonth(d.toISOString().slice(0, 7)); };
 
-  const title3 = ['Date', ...(hasStaff ? ['staff'] : []), ...(multiLoc ? ['location'] : [])];
-  const head = viewOnly ? <>View appointment <small>{cName} · {String(booking?.status || '').replace('_', ' ')}</small></>
-    : mode === 'edit' ? <>Edit appointment <small>{cName}</small></> : <>New appointment</>;
+  const title3 = hasStaff && multiLoc ? t('appt.title3.staffLocation') : hasStaff ? t('appt.title3.staff') : multiLoc ? t('appt.title3.location') : t('appt.title3.time');
+  const statusText = (s: string) => t(`status.${s}`, { defaultValue: s.replace('_', ' ') });
+  const head = viewOnly ? <>{t('appt.viewAppointment')} <small>{cName} · {statusText(String(booking?.status || ''))}</small></> 
+    : mode === 'edit' ? <>{t('appt.editAppointment')} <small>{cName}</small></> : <>{t('appt.newAppointment')}</>;
 
   // Location / Staff boxes: search and pages when there are more than fit (2 rows; 4 per row alone, 2 per row side by side)
   const lsCol = (kind: 'loc' | 'staff', all: Array<{ id: string; name: string; n: number }>) => {
@@ -504,95 +524,95 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
     return (
       <div className="lscol">
         <div className="lscol-h">
-          <span className="q-lab">{kind === 'loc' ? <>Location <b>*</b></> : 'Staff'} · {all.length} available</span>
-          {kind === 'loc' && !cur ? <span className="ls-need">Required</span> : kind === 'staff' ? <button type="button" className="ch" aria-pressed={staff === 'any'} onClick={() => { setStaff('any'); setPick(null); }} disabled={lockStaff}>Any staff</button> : null}
+          <span className="q-lab">{kind === 'loc' ? <>{t('appt.location')} <b>*</b></> : t('appt.staff')} · {t('appt.availableCount', { count: all.length })}</span>
+          {kind === 'loc' && !cur ? <span className="ls-need">{t('appt.required')}</span> : kind === 'staff' ? <button type="button" className="ch" aria-pressed={staff === 'any'} onClick={() => { setStaff('any'); setPick(null); }} disabled={lockStaff}>{t('appt.anyStaff')}</button> : null}
         </div>
         {big && (
           <div className="sv-top">
-            <input type="text" value={lsq[kind]} onChange={(e) => { setLsq({ ...lsq, [kind]: e.target.value }); setLspg({ ...lspg, [kind]: 0 }); }} placeholder={kind === 'loc' ? 'Search locations…' : 'Search staff…'} autoComplete="off" aria-label={kind === 'loc' ? 'Search locations' : 'Search staff'} />
-            <div className="sv-pager"><button type="button" disabled={p === 0} onClick={() => setLspg({ ...lspg, [kind]: p - 1 })} aria-label="Previous">‹</button><span>{found.length ? `${p + 1} / ${pages}` : '0'}</span><button type="button" disabled={p >= pages - 1} onClick={() => setLspg({ ...lspg, [kind]: p + 1 })} aria-label="Next">›</button></div>
+            <input type="text" value={lsq[kind]} onChange={(e) => { setLsq({ ...lsq, [kind]: e.target.value }); setLspg({ ...lspg, [kind]: 0 }); }} placeholder={kind === 'loc' ? t('appt.searchLocationsPlaceholder') : t('appt.searchStaffPlaceholder')} autoComplete="off" aria-label={kind === 'loc' ? t('appt.searchLocations') : t('appt.searchStaff')} />
+            <div className="sv-pager"><button type="button" disabled={p === 0} onClick={() => setLspg({ ...lspg, [kind]: p - 1 })} aria-label={t('appt.previous')}>‹</button><span>{found.length ? `${p + 1} / ${pages}` : '0'}</span><button type="button" disabled={p >= pages - 1} onClick={() => setLspg({ ...lspg, [kind]: p + 1 })} aria-label={t('appt.next')}>›</button></div>
           </div>
         )}
         <div className="ls-grid" style={{ gridTemplateColumns: `repeat(${multiLoc && hasStaff ? 2 : 4}, minmax(0, 1fr))` }}>
-          {all.length === 0 && <p className="mk-hint">{kind === 'loc' ? 'No location has free times with these choices.' : 'Nobody is free with these choices.'}</p>}
-          {all.length > 0 && found.length === 0 && <p className="mk-hint">Nothing matches “{lsq[kind]}”.</p>}
+          {all.length === 0 && <p className="mk-hint">{kind === 'loc' ? t('appt.noLocationFree') : t('appt.nobodyFree')}</p>}
+          {all.length > 0 && found.length === 0 && <p className="mk-hint">{t('appt.nothingMatches', { query: lsq[kind] })}</p>}
           {items.map((x) => (
             <button key={x.id} type="button" className={`svc lsi${kind === 'staff' ? '' : ' noav'}`} aria-pressed={x.id === cur} disabled={kind === 'staff' ? lockStaff : lockMove}
               onClick={() => { if (kind === 'loc') setLoc(x.id); else { setStaff(x.id); setPick(x.id); } }}>
-              {kind === 'staff' && <span className="av">{initials(x.name)}</span>}<b>{x.name}</b><small>{x.n} times</small>
+              {kind === 'staff' && <span className="av">{initials(x.name)}</span>}<b>{x.name}</b><small>{t('appt.timesCount', { count: x.n })}</small>
             </button>
           ))}
         </div>
-        {selOff && <p className="mk-hint sv-picked">Selected: <b>{selOff.name}</b></p>}
+        {selOff && <p className="mk-hint sv-picked"><Trans t={t} i18nKey="appt.selected" values={{ name: selOff.name }} components={[<b key="b" />]} /></p>}
       </div>
     );
   };
 
-  const right = !svc ? <div className="q-empty">Choose a service: the free days and times appear here.</div> : (
+  const right = !svc ? <div className="q-empty">{t('appt.chooseService')}</div> : (
     <>
       {(multiLoc || hasStaff) && (
         <div className={`lsbox${multiLoc && hasStaff ? '' : ' one'}`}>
           {multiLoc && lsCol('loc', locItems)}
           {hasStaff && (multiLoc && !loc
-            ? <div className="lscol"><div className="lscol-h"><span className="q-lab">Staff</span></div><div className="q-empty">Choose a location first: the staff free there appear here.</div></div>
+            ? <div className="lscol"><div className="lscol-h"><span className="q-lab">{t('appt.staff')}</span></div><div className="q-empty">{t('appt.chooseLocationFirst')}</div></div>
             : lsCol('staff', staffItems))}
         </div>
       )}
-      {needLoc ? <div className="q-empty">Choose a location: the free days and times appear here.</div> : view === 'cal' ? (
+      {needLoc ? <div className="q-empty">{t('appt.chooseLocation')}</div> : view === 'cal' ? (
         <div className="q-two">
           <div className="q-cal">
             <div className="q-calh">
-              <button type="button" className="arr" disabled={month <= today.slice(0, 7) || lockMove} onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
+              <button type="button" className="arr" disabled={month <= today.slice(0, 7) || lockMove} onClick={() => shiftMonth(-1)} aria-label={t('appt.previousMonth')}>‹</button>
               <b>{dayLabel(month + '-15', { month: 'long', year: 'numeric' })}</b>
-              <button type="button" className="arr" disabled={lockMove || walkInToday} onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
+              <button type="button" className="arr" disabled={lockMove || walkInToday} onClick={() => shiftMonth(1)} aria-label={t('appt.nextMonth')}>›</button>
             </div>
             <div className="q-grid">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <span key={d} className="q-dow">{d}</span>)}
+              {Array.from({ length: 7 }, (_, i) => <span key={i} className="q-dow">{dayLabel(addDays('2024-01-01', i), { weekday: 'short' })}</span>)}
               {Array.from({ length: lead }, (_, i) => <span key={'l' + i} />)}
               {Array.from({ length: nDays }, (_, i) => {
                 const d = `${month}-${String(i + 1).padStart(2, '0')}`;
-                if (d < today || (walkInToday && d !== today)) return <span key={d} className="q-day past" title={walkInToday && d > today ? 'A walk-in is booked for today only' : undefined}>{i + 1}</span>;
+                if (d < today || (walkInToday && d !== today)) return <span key={d} className="q-day past" title={walkInToday && d > today ? t('appt.walkInTodayOnlyTitle') : undefined}>{i + 1}</span>;
                 const n = monthFree?.free[d] || 0; const closed = monthFree?.days[d] === 'closed';
                 const lvl = !monthFree ? 'none' : closed ? 'closed' : n === 0 ? 'none' : n < 6 ? 'few' : 'many';
                 return (
                   <button key={d} type="button" className={`q-day ${lvl}`} aria-pressed={date === d} disabled={lockMove && date !== d}
-                    title={closed ? 'Closed' : n ? `${n} free times` : 'Nothing free with these choices'} onClick={() => { if (n || date === d) { setDate(d); if (!lockMove) setTime(null); } }}>
-                    {i + 1}{d === today && <i>today</i>}
+                    title={closed ? t('appt.closed') : n ? t('appt.freeTimes', { count: n }) : t('appt.nothingFree')} onClick={() => { if (n || date === d) { setDate(d); if (!lockMove) setTime(null); } }}>
+                    {i + 1}{d === today && <i>{t('appt.today')}</i>}
                   </button>
                 );
               })}
             </div>
-            <div className="q-legend"><span className="q-day many">8</span> many free <span className="q-day few">8</span> a few <span className="q-day none">8</span> none</div>
-            {walkInToday && <p className="mk-hint">A walk-in is booked for today only. For another day, choose or add the customer.</p>}
+            <div className="q-legend"><span className="q-day many">8</span> {t('appt.legendMany')} <span className="q-day few">8</span> {t('appt.legendFew')} <span className="q-day none">8</span> {t('appt.legendNone')}</div>
+            {walkInToday && <p className="mk-hint">{t('appt.walkInTodayOnly')}</p>}
           </div>
-          {!date ? <div className="q-empty">Choose a day in the calendar.<br /><span className="mk-hint">Green days have many free times; amber a few.</span></div> : (
+          {!date ? <div className="q-empty">{t('appt.chooseDay')}<br /><span className="mk-hint">{t('appt.chooseDayHint')}</span></div> : (
             <div className="q-times">
               <div className="q-timesh">{dayLabel(date, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-              {!dayLoaded ? <p className="mk-hint">Loading free times…</p> : byTime.size ? (
+              {!dayLoaded ? <p className="mk-hint">{t('appt.loadingTimes')}</p> : byTime.size ? (
                 <div className="tgrp">
                   {groups.map(([g, a, b]) => {
-                    const ts = [...byTime.keys()].filter((t) => toMin(t) >= a && toMin(t) < b).sort();
+                    const ts = [...byTime.keys()].filter((tm) => toMin(tm) >= a && toMin(tm) < b).sort();
                     if (!ts.length) return null;
-                    return [<span key={g + 's'}>{g}</span>, (
+                    return [<span key={g + 's'}>{t(`appt.dayPart.${g}`)}</span>, (
                       <div key={g} className="chips">
-                        {ts.map((t) => {
-                          const arr = byTime.get(t)!;
-                          const sub = places(svc) ? `${Math.max(...arr.map((c) => c.capacity_remaining ?? 0))} places` : hasStaff && staff === 'any' ? `${new Set(arr.map((c) => c.staff_id)).size} staff` : '';
-                          return <button key={t} type="button" className="ch q-time" aria-pressed={time === t} disabled={lockMove && time !== t} onClick={() => { setTime(t); setPick(null); }}>{t}{sub && <small>{sub}</small>}</button>;
+                        {ts.map((tm) => {
+                          const arr = byTime.get(tm)!;
+                          const sub = places(svc) ? t('appt.placesCount', { count: Math.max(...arr.map((c) => c.capacity_remaining ?? 0)) }) : hasStaff && staff === 'any' ? t('appt.staffCount', { count: new Set(arr.map((c) => c.staff_id)).size }) : '';
+                          return <button key={tm} type="button" className="ch q-time" aria-pressed={time === tm} disabled={lockMove && time !== tm} onClick={() => { setTime(tm); setPick(null); }}>{tm}{sub && <small>{sub}</small>}</button>;
                         })}
                       </div>
                     )];
                   })}
                 </div>
-              ) : <p className="mk-warn">Nothing free that day with these choices.</p>}
-              {time && dayLoaded && !atTime.length && <p className="mk-warn">{time} is not free for {svc.name} {variant?.name} with these choices. Choose another time{hasStaff ? ', staff member' : ''}{multiLoc ? ' or location' : ''}.</p>}
+              ) : <p className="mk-warn">{t('appt.nothingFreeDay')}</p>}
+              {time && dayLoaded && !atTime.length && <p className="mk-warn">{t(hasStaff ? (multiLoc ? 'appt.notFreeStaffLocation' : 'appt.notFreeStaff') : (multiLoc ? 'appt.notFreeLocation' : 'appt.notFree'), { time, service: svc.name, option: variant?.name })}</p>}
               {time && hasStaff && staff === 'any' && atTime.length > 0 && (
                 <div className="q-pick">
-                  <span className="q-lab">With</span>
+                  <span className="q-lab">{t('appt.with')}</span>
                   <div className="chips">
                     {atTime.filter((c, i, a) => a.findIndex((x) => x.staff_id === c.staff_id) === i).map((c, i) => (
                       <button key={c.staff_id} type="button" className="ch" aria-pressed={(pick || atTime[0].staff_id) === c.staff_id} disabled={lockStaff} onClick={() => setPick(c.staff_id!)}>
-                        <span className="av">{initials(staffName(c))}</span>{staffName(c)} {i === 0 && <small>suggested</small>}
+                        <span className="av">{initials(staffName(c))}</span>{staffName(c)} {i === 0 && <small>{t('appt.suggested')}</small>}
                       </button>
                     ))}
                   </div>
@@ -604,15 +624,15 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
       ) : (
         <>
           <div className="q-listh">
-            <b>Next free times</b>
-            <label className="q-jump">From <select value={listFrom} onChange={(e) => { setListFrom(Number(e.target.value)); setListDays(4); }}>
-              {[0, 7, 14, 28, 56].map((d) => <option key={d} value={d}>{d === 0 ? 'today' : dayLabel(addDays(today, d))}</option>)}
+            <b>{t('appt.nextFreeTimes')}</b>
+            <label className="q-jump">{t('appt.from')} <select value={listFrom} onChange={(e) => { setListFrom(Number(e.target.value)); setListDays(4); }}>
+              {[0, 7, 14, 28, 56].map((d) => <option key={d} value={d}>{d === 0 ? t('appt.today') : dayLabel(addDays(today, d))}</option>)}
             </select></label>
           </div>
           {(() => {
             const list = listCombos.filter((c) => (!multiLoc || !loc || c.location_id === loc) && (staff === 'any' || c.staff_id === staff));
             const days = [...new Set(list.map((c) => zonedParts(new Date(c.start_time), timezone).date))].filter((d) => !walkInToday || d === today).sort().slice(0, listDays);
-            if (!days.length) return <p className="mk-warn">Nothing free with these choices in the next three weeks.</p>;
+            if (!days.length) return <p className="mk-warn">{t('appt.nothingFreeThreeWeeks')}</p>;
             return (
               <div className="q-list">
                 {days.map((d) => {
@@ -620,14 +640,14 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
                   for (const c of list.filter((x) => zonedParts(new Date(x.start_time), timezone).date === d)) { const k = `${c.staff_id || 'res'}|${c.location_id || ''}`; rows.set(k, [...(rows.get(k) || []), c]); }
                   return (
                     <div key={d} className="q-lday">
-                      <div className="q-ldh">{dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' })}{d === today ? ' · today' : ''}</div>
+                      <div className="q-ldh">{dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' })}{d === today ? ` · ${t('appt.today')}` : ''}</div>
                       {[...rows.entries()].map(([k, cs]) => (
                         <div key={k} className="q-lrow">
                           <div className="q-lwho">{cs[0].staff_id ? <><span className="av">{initials(staffName(cs[0]))}</span><b>{staffName(cs[0])}</b></> : <b>{svc.name}</b>}{multiLoc && <span className="q-loc">{cs[0].location_name}</span>}</div>
                           <div className="chips">
-                            {cs.map((c) => { const t = lhm(c.start_time); return (
-                              <button key={c.start_time} type="button" className="ch q-time" aria-pressed={date === d && time === t && (!c.staff_id || pick === c.staff_id)} disabled={lockMove}
-                                onClick={() => { setDate(d); setMonth(d.slice(0, 7)); setTime(t); if (c.staff_id) setPick(c.staff_id); if (c.location_id && multiLoc) setLoc(c.location_id); setView('cal'); }}>{t}</button>
+                            {cs.map((c) => { const tm = lhm(c.start_time); return (
+                              <button key={c.start_time} type="button" className="ch q-time" aria-pressed={date === d && time === tm && (!c.staff_id || pick === c.staff_id)} disabled={lockMove}
+                                onClick={() => { setDate(d); setMonth(d.slice(0, 7)); setTime(tm); if (c.staff_id) setPick(c.staff_id); if (c.location_id && multiLoc) setLoc(c.location_id); setView('cal'); }}>{tm}</button>
                             ); })}
                           </div>
                         </div>
@@ -635,7 +655,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
                     </div>
                   );
                 })}
-                <button type="button" className="btn sec" onClick={() => setListDays(listDays + 4)}>Show more days</button>
+                <button type="button" className="btn sec" onClick={() => setListDays(listDays + 4)}>{t('appt.showMoreDays')}</button>
               </div>
             );
           })()}
@@ -656,17 +676,17 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   ) : (
     <div className="mk-app">
       <div className="mk-title"><span>{head}</span></div>
-      {viewOnly && <p className="mk-warn"><b>View only.</b> {rules?.reason}</p>}
+      {viewOnly && <p className="mk-warn"><b>{t('appt.viewOnly')}</b> {rules?.reason}</p>}
       {!viewOnly && mode === 'edit' && rules?.reason && <p className="mk-warn">{rules.reason}</p>}
       <div className="nd-cols">
         <div className="q-col">
-          <div className="q-sec"><div className="q-sec-h"><b className="n">1</b> Customer</div><div className="q-sec-b">
+          <div className="q-sec"><div className="q-sec-h"><b className="n">1</b> {t('appt.customer')}</div><div className="q-sec-b">
             <CustomerPicker businessId={businessId} customer={customer} onCustomer={setCustomer} walk={walk} onWalk={setWalk} walkName={walkName} onWalkName={setWalkName} disabled={!!lockCustomer} />
             {!walk && customer?.id && (mode === 'edit' && bookingId
               ? <FormsNeededNotice customerId={customer.id} businessId={businessId} bookingId={bookingId} />
               : <FormsNeededNotice customerId={customer.id} businessId={businessId} serviceId={serviceId || undefined} />)}
           </div></div>
-          <div className="q-sec"><div className="q-sec-h"><b className="n">2</b> Service</div><div className="q-sec-b">
+          <div className="q-sec"><div className="q-sec-h"><b className="n">2</b> {t('appt.service')}</div><div className="q-sec-b">
             <ServicePicker services={services} serviceId={serviceId} onService={(id) => { setServiceId(id); setTime(null); setStaff(prefill?.staffId && mode === 'new' ? prefill.staffId : 'any'); setPick(null); }} disabled={!!lockOffering} />
             <OptionChips svc={svc} variantId={variantId} onVariant={setVariantId} disabled={!!lockOffering} />
             <ParticipantsField svc={svc} parts={parts} onParts={setParts} ovr={ovr} onOvr={setOvr} disabled={!!lockOffering} />
@@ -674,21 +694,21 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
               kept={keptAddons} pruneOnLoad={mode === 'new' || (!!booking && serviceId !== booking.service_id)} disabled={viewOnly}
               onRemovePaid={mode === 'edit' && bookingId ? (a) => { setRemovingPaid(a); setPaidRefundTo('original'); setPaidReason(''); setPaidMsg(null); } : undefined} />
             {removingPaid && (
-              <div className="q-endpanel" role="group" aria-label={`Remove ${removingPaid.name}`}>
-                <b>Remove {removingPaid.name}? It was paid ({formatCurrency(removingPaid.price)}).</b>
+              <div className="q-endpanel" role="group" aria-label={t('removeAddon.title', { name: removingPaid.name })}>
+                <b>{t('appt.removePaidQuestion', { name: removingPaid.name, price: formatCurrency(removingPaid.price) })}</b>
                 <div className="mk-f">
-                  <div className="mk-l">Refund</div>
+                  <div className="mk-l">{t('removeAddon.refund')}</div>
                   <div className="chips">
-                    {([['original', 'To the payment'], ['account_credit', 'As account credit'], ['none', 'No refund (an alternative is given)']] as const)
+                    {([['original', 'appt.refundToPayment'], ['account_credit', 'appt.refundAsCredit'], ['none', 'removeAddon.noRefund']] as const)
                       .filter(([v]) => v !== 'account_credit' || !!booking?.customer_id)
-                      .map(([v, l]) => <button key={v} type="button" className="ch" aria-pressed={paidRefundTo === v} onClick={() => setPaidRefundTo(v)}>{l}</button>)}
+                      .map(([v, l]) => <button key={v} type="button" className="ch" aria-pressed={paidRefundTo === v} onClick={() => setPaidRefundTo(v)}>{t(l)}</button>)}
                   </div>
                 </div>
-                <textarea rows={2} value={paidReason} onChange={(e) => setPaidReason(e.target.value)} placeholder="Reason (optional), for example not available today" aria-label="Reason" />
-                <p className="mk-hint">The refund is made now. To give an alternative, choose another add-on after this; it is charged at Checkout.</p>
+                <textarea rows={2} value={paidReason} onChange={(e) => setPaidReason(e.target.value)} placeholder={t('appt.reasonPlaceholderPaid')} aria-label={t('removeAddon.reason')} />
+                <p className="mk-hint">{t('appt.paidRefundNote')}</p>
                 <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
-                  <button type="button" className="btn sec" disabled={paidBusy} onClick={() => setRemovingPaid(null)}>Keep it</button>
-                  <button type="button" className="btn danger" disabled={paidBusy} onClick={removePaidAddon}>{paidBusy ? 'Working…' : 'Remove add-on'}</button>
+                  <button type="button" className="btn sec" disabled={paidBusy} onClick={() => setRemovingPaid(null)}>{t('removeAddon.keep')}</button>
+                  <button type="button" className="btn danger" disabled={paidBusy} onClick={removePaidAddon}>{paidBusy ? t('noShow.working') : t('removeAddon.remove')}</button>
                 </div>
               </div>
             )}
@@ -712,34 +732,34 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
         <div className="q-col">
           <div className="q-sec">
             <div className="q-sec-h nd-h3">
-              <span><b className="n">3</b> {title3.length === 1 ? 'Date & time' : `${title3.slice(0, -1).join(', ')} & ${title3[title3.length - 1]}`}</span>
-              {svc && <div className="vt" role="group" aria-label="View"><button type="button" aria-pressed={view === 'cal'} onClick={() => setView('cal')}>▦ Calendar</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>☰ List</button></div>}
+              <span><b className="n">3</b> {title3}</span>
+              {svc && <div className="vt" role="group" aria-label={t('appt.view')}><button type="button" aria-pressed={view === 'cal'} onClick={() => setView('cal')}>{t('appt.viewCalendar')}</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>{t('appt.viewList')}</button></div>}
             </div>
             <div className="q-sec-b">{right}</div>
           </div>
         </div>
       </div>
       {mode === 'edit' && booking?.customer_id && booking.status === 'confirmed' && (
-        <p className="q-hint">Customer's phone check-in link:{' '}
-          <button type="button" className="lnk" onClick={copyCheckInLink}>Copy link</button>
+        <p className="q-hint">{t('appt.checkInLink')}{' '}
+          <button type="button" className="lnk" onClick={copyCheckInLink}>{t('appt.copyLink')}</button>
           {linkMessage && <span role="status"> {linkMessage}</span>}
         </p>
       )}
       {/* Every payment made for this appointment, with its receipt (spec 51, gap 5) */}
       {mode === 'edit' && booking?.paid_orders?.length > 0 && (
         <section className="q-sec" aria-labelledby="booking-receipts-title">
-          <div className="q-sec-h" id="booking-receipts-title">Payments</div>
+          <div className="q-sec-h" id="booking-receipts-title">{t('appt.payments')}</div>
           <div className="q-sec-b" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
             {booking.paid_orders.map((o: { id: string; order_number: string; status: string; total_amount: number; completed_at: string | null }) => (
               <ReceiptActions key={o.id} kind="order" id={o.id} businessId={businessId}
-                label={`${o.order_number} · ${formatCurrency(o.total_amount)}${o.completed_at ? ' · ' + new Date(o.completed_at).toLocaleDateString() : ''}${o.status !== 'completed' ? ' · ' + o.status.replace('_', ' ') : ''}`} />
+                label={[o.order_number, formatCurrency(o.total_amount), o.completed_at ? formatDate(o.completed_at) : '', o.status !== 'completed' ? t(`checkout:orders.status.${o.status}`, { defaultValue: o.status.replace('_', ' ') }) : ''].filter(Boolean).join(' · ')} />
             ))}
           </div>
         </section>
       )}
       {mode === 'edit' && canCharts && booking?.customer_id && bookingId && (
         <section className="q-sec" aria-labelledby="booking-charts-title">
-          <div className="q-sec-h" id="booking-charts-title">Treatment chart</div>
+          <div className="q-sec-h" id="booking-charts-title">{t('appt.treatmentChart')}</div>
           <div className="q-sec-b"><ChartsPanel businessId={businessId} customerId={booking.customer_id} bookingId={bookingId} defaultChartGroupId={svc?.default_chart_group_id ?? null} /></div>
         </section>
       )}
@@ -748,58 +768,58 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
       {error && <p className="mk-warn" role="alert">{error}</p>}
       {mode === 'edit' && live && !ending && (
         <div className="q-end">
-          {!startedNow && <button type="button" className="btn sec danger" onClick={openCancel}>Cancel appointment</button>}
-          {startedNow && !!booking?.customer_id && <button type="button" className="btn sec danger" onClick={() => { setEnding('noshow'); setNoShowCharge(true); setError(''); }}>Mark as no-show</button>}
+          {!startedNow && <button type="button" className="btn sec danger" onClick={openCancel}>{t('appt.cancelAppointment')}</button>}
+          {startedNow && !!booking?.customer_id && <button type="button" className="btn sec danger" onClick={() => { setEnding('noshow'); setNoShowCharge(true); setError(''); }}>{t('appt.markNoShow')}</button>}
         </div>
       )}
       {ending && (
-        <div className="q-endpanel" role="group" aria-label={ending === 'cancel' ? 'Cancel appointment' : 'Mark as no-show'}>
+        <div className="q-endpanel" role="group" aria-label={ending === 'cancel' ? t('appt.cancelAppointment') : t('appt.markNoShow')}>
           {ending === 'cancel' ? (
             <>
-              <b>Cancel this appointment?</b>
-              <textarea rows={2} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Reason (optional; the customer sees it in the cancellation email)" aria-label="Reason" />
-              <p className="mk-hint">{!preview ? 'Checking the cancellation policy…' : preview.fee > 0 ? `Cancellation fee under the policy: ${formatCurrency(preview.fee)}.` : 'No cancellation fee under the policy.'}</p>
+              <b>{t('appt.cancelQuestion')}</b>
+              <textarea rows={2} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder={t('appt.reasonPlaceholderCancel')} aria-label={t('removeAddon.reason')} />
+              <p className="mk-hint">{!preview ? t('appt.checkingPolicy') : preview.fee > 0 ? t('appt.policyFee', { fee: formatCurrency(preview.fee) }) : t('appt.policyNoFee')}</p>
               {preview && preview.paid_amount > 0 && (
                 <div className="mk-f">
-                  <div className="mk-l">Paid {formatCurrency(preview.paid_amount)}: refund</div>
+                  <div className="mk-l">{t('appt.paidRefund', { amount: formatCurrency(preview.paid_amount) })}</div>
                   <div className="chips">
-                    {([['original', 'To the payment'], ['account_credit', 'As account credit'], ['none', 'No refund']] as const).filter(([v]) => v !== 'account_credit' || !!booking?.customer_id).map(([v, l]) => <button key={v} type="button" className="ch" aria-pressed={refundTo === v} onClick={() => setRefundTo(v)}>{l}</button>)}
+                    {([['original', 'appt.refundToPayment'], ['account_credit', 'appt.refundAsCredit'], ['none', 'appt.noRefund']] as const).filter(([v]) => v !== 'account_credit' || !!booking?.customer_id).map(([v, l]) => <button key={v} type="button" className="ch" aria-pressed={refundTo === v} onClick={() => setRefundTo(v)}>{t(l)}</button>)}
                   </div>
                 </div>
               )}
             </>
           ) : (
             <>
-              <b>Mark this appointment as a no-show?</b>
+              <b>{t('appt.noShowQuestion')}</b>
               <NoShowFeeChoice preview={noShow.preview} failed={noShow.failed} charge={noShowCharge} onChange={setNoShowCharge} />
             </>
           )}
           <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn sec" onClick={() => setEnding(null)}>Keep appointment</button>
-            <button type="button" className="btn danger" disabled={saving || (ending === 'cancel' && !preview) || (ending === 'noshow' && !noShow.preview && !noShow.failed)} onClick={endBooking}>{saving ? 'Working…' : ending === 'cancel' ? 'Cancel appointment' : noShowCharge && (noShow.preview?.fee ?? 0) > 0 ? 'Charge & mark no-show' : 'Mark as no-show'}</button>
+            <button type="button" className="btn sec" onClick={() => setEnding(null)}>{t('appt.keepAppointment')}</button>
+            <button type="button" className="btn danger" disabled={saving || (ending === 'cancel' && !preview) || (ending === 'noshow' && !noShow.preview && !noShow.failed)} onClick={endBooking}>{saving ? t('noShow.working') : ending === 'cancel' ? t('appt.cancelAppointment') : noShowCharge && (noShow.preview?.fee ?? 0) > 0 ? t('appt.chargeAndMarkNoShow') : t('appt.markNoShow')}</button>
           </div>
         </div>
       )}
       <div className="q-confirm">
         <div className="q-ctext">
-          <b>{when || 'Choose a day and a time'}</b>
-          <span>{cName ? `${cName}${svc ? ` · ${svc.name} ${variant?.name || ''} · ${formatCurrency(price)}` : ''}` : 'No customer yet'}{whoBits ? ` · ${whoBits}` : ''}</span>
+          <b>{when || t('appt.chooseDayAndTime')}</b>
+          <span>{cName ? `${cName}${svc ? ` · ${svc.name} ${variant?.name || ''} · ${formatCurrency(price)}` : ''}` : t('appt.noCustomerYet')}{whoBits ? ` · ${whoBits}` : ''}</span>
         </div>
         {viewOnly ? <span /> : noteOpen
-          ? <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal note (optional)" aria-label="Internal note" />
-          : <button type="button" className="q-note" onClick={() => setNoteOpen(true)}>+ Add a note</button>}
+          ? <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('appt.internalNotePlaceholder')} aria-label={t('appt.internalNote')} />
+          : <button type="button" className="q-note" onClick={() => setNoteOpen(true)}>{t('appt.addNote')}</button>}
         <div className="q-cbtns">
-          <button type="button" className="btn ghost" onClick={onClose}>{viewOnly ? 'Close' : 'Cancel'}</button>
+          <button type="button" className="btn ghost" onClick={onClose}>{viewOnly ? t('common:modal.close') : t('common:cancel')}</button>
           {!viewOnly && (mode === 'new'
             // Reservation Payment Rule (spec 51, gap 5): no card → save now; card required → hold a card
             // (not for a walk-in, who is already here); card charged at reservation → the payment step.
             // Paid with a membership or package: nothing to charge or keep, so saved now (owner, 23 Nov 2026).
             ? svc?.payment_rule === 'no_card' || (svc?.payment_rule === 'card_required' && walk) || (!walk && !!benefit)
-              ? <button type="button" className="btn" disabled={!ready || saving} onClick={save}>{saving ? 'Saving…' : 'Save reservation'}</button>
+              ? <button type="button" className="btn" disabled={!ready || saving} onClick={save}>{saving ? t('appt.saving') : t('appt.saveReservation')}</button>
               : svc?.payment_rule === 'card_required'
-                ? <button type="button" className="btn" disabled={!ready} onClick={() => setStep('card')}>Next: payment ›</button>
-                : <button type="button" className="btn" disabled={!ready} onClick={() => setStep('pay')}>Next: payment ›</button>
-            : <button type="button" className="btn" disabled={!ready || saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>)}
+                ? <button type="button" className="btn" disabled={!ready} onClick={() => setStep('card')}>{t('appt.nextPayment')}</button>
+                : <button type="button" className="btn" disabled={!ready} onClick={() => setStep('pay')}>{t('appt.nextPayment')}</button>
+            : <button type="button" className="btn" disabled={!ready || saving} onClick={save}>{saving ? t('appt.saving') : t('appt.saveChanges')}</button>)}
         </div>
       </div>
     </div>

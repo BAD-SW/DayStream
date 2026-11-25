@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   DndContext,
   closestCenter,
@@ -27,6 +28,7 @@ interface SortableTileGridProps {
  * Persists order to user preferences via API.
  */
 export function SortableTileGrid({ modules }: SortableTileGridProps) {
+  const { t } = useTranslation('nav');
   const [orderedModules, setOrderedModules] = useState<ModuleDefinition[]>(modules);
 
   // Load saved order on mount
@@ -94,7 +96,7 @@ export function SortableTileGrid({ modules }: SortableTileGridProps) {
         </SortableContext>
       </DndContext>
       <button onClick={handleReset} style={styles.resetBtn}>
-        Reset tile order
+        {t('dashboard.reset_tile_order')}
       </button>
     </div>
   );

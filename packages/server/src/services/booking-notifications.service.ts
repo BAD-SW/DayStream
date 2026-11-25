@@ -1,3 +1,5 @@
+import { languageLocale } from '@daystream/shared';
+import { msgIn } from '../i18n';
 import { canContact } from './contactability.service';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
@@ -181,6 +183,10 @@ function buildAppointmentData(
   return {
     booking_reference: booking.booking_reference,
     service_name: serviceWithAddons(booking),
+    // Ids beside the names, so the email can show them in the customer's language when it is sent (Phase 44, requirement 9.5).
+    service_id: booking.service_id ?? null,
+    service_base_name: booking.service_name ?? null,
+    addons: (booking.addons || []).map((a: { addon_id?: string; id?: string; name?: string }) => ({ id: a.addon_id ?? a.id ?? null, name: a.name ?? '' })),
     start_time: booking.start_time,
     // start_time also drives appointment_date / appointment_time in the resolver.
     staff_name: staffName || null,
@@ -478,16 +484,22 @@ async function sendEmail(notification: any): Promise<void> {
     data = typeof notification.data === 'string' ? JSON.parse(notification.data) : (notification.data ?? {});
   } catch { data = {}; }
 
+  // The recipient's language (Phase 44, requirement 5): the customer record's, or the staff member's account's.
+  const language: string | null = typeof data.language === 'string' ? data.language
+    : await (await import('./recipient-language.service')).recipientLanguage(notification.recipient_id).catch(() => null);
+
+  // Offering names in the recipient's language, where the business translated them (Phase 44, requirement 9.5).
+  if (language) data = await localizeEmailNames(data, language);
+
   // A reminder uses the business's Appointment Reminder template. A business that has not made one yet
   // still sends the plain reminder (with the check-in link) instead of an almost empty email.
   const templateIfAny = TEMPLATE_OR_PLAIN.has(type)
-    ? await selectTemplate(notification.business_id, type, typeof data.language === 'string' ? data.language : null)
+    ? await selectTemplate(notification.business_id, type, language)
     : true;
   if (isKnownArtifactType(artifactKey) && templateIfAny) {
     // Branded catalog document — resolve the business's template and render it.
     // Build the {{details_table}} line-item table from the queued data so the
     // email draws it where the marker sits (receipt/invoice/adjustment).
-    const language = typeof data.language === 'string' ? data.language : null;
     const { buildDetailsTableForNotification } = await import('./document-send.service');
     const detailsTable = await buildDetailsTableForNotification(notification.business_id, type, data).catch(() => null);
     const rendered = await resolveAndRender(notification.business_id, type, data, language, detailsTable);
@@ -523,7 +535,8 @@ async function sendEmail(notification: any): Promise<void> {
   // Non-catalog type (e.g. booking.reminder/.reschedule/.cancellation) — send a
   // clean default email so it is actually delivered rather than only logged.
   // (A branded template for these can be added to the catalog later.)
-  const rendered = renderDefaultEmail(type, data);
+  const { rows: biz } = await adminPool.query('SELECT timezone FROM sys_businesses WHERE id = $1', [notification.business_id]);
+  const rendered = renderDefaultEmail(type, data, language, biz[0]?.timezone || undefined);
   await sendEmailTransport({ to: recipient, subject: rendered.subject, html: rendered.html, text: rendered.text });
   logger.info('Default email sent', { type, recipient });
   await recordInThread(notification, rendered.subject, rendered.text);
@@ -543,43 +556,50 @@ async function recordInThread(notification: any, subject: string, text: string) 
  * branded catalog template. Produces a plain, readable message from the queued
  * data so transactional mail still goes out. HTML-escaped throughout.
  */
-function renderDefaultEmail(type: string, data: Record<string, unknown>): { subject: string; html: string; text: string } {
+function renderDefaultEmail(type: string, data: Record<string, unknown>, language: string | null, timeZone?: string): { subject: string; html: string; text: string } {
+  // Written in the recipient's language, dates in the business's time zone (Phase 44, requirement 5.4).
   const esc = (s: unknown): string => String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const titles: Record<string, string> = {
-    'booking.confirmation': 'Your appointment is confirmed',
-    'booking.reschedule': 'Your appointment has been rescheduled',
-    'booking.cancellation': 'Your appointment has been cancelled',
-    'booking.reminder': 'Appointment reminder',
-    'customer.task_reminder': 'A reminder from us',
-    'event.registration_confirmed': 'You are registered for the event',
-    'event.registration_reserved': 'Your place is reserved',
-    'event.registration_cancelled': 'Your event registration has been cancelled',
+  const t = (key: string, params?: Record<string, string>) => msgIn(language, `email:plain.${key}`, params);
+  const when = (value: unknown) => {
+    const d = new Date(String(value));
+    if (isNaN(d.getTime())) return '';
+    try { return new Intl.DateTimeFormat(languageLocale(language), { dateStyle: 'medium', timeStyle: 'short', ...(timeZone ? { timeZone } : {}) }).format(d); }
+    catch { return d.toISOString(); }
   };
-  const subject = titles[type] || 'Notification';
-  const name = esc((data.customer_name as string) || '').split(' ')[0] || 'there';
-  const service = esc(data.service_name);
-  const when = data.start_time ? new Date(String(data.start_time)).toLocaleString() : '';
-  const lines: string[] = [`<p>Hi ${name},</p>`, `<p>${esc(subject)}.</p>`];
-  if (service) lines.push(`<p>Service: ${service}</p>`);
-  if (when) lines.push(`<p>When: ${esc(when)}</p>`);
-  if (data.booking_reference) lines.push(`<p>Reference: ${esc(data.booking_reference)}</p>`);
+  const titleKey: Record<string, string> = {
+    'booking.confirmation': 'title.bookingConfirmation',
+    'booking.reschedule': 'title.bookingReschedule',
+    'booking.cancellation': 'title.bookingCancellation',
+    'booking.reminder': 'title.bookingReminder',
+    'customer.task_reminder': 'title.taskReminder',
+    'event.registration_confirmed': 'title.eventConfirmed',
+    'event.registration_reserved': 'title.eventReserved',
+    'event.registration_cancelled': 'title.eventCancelled',
+  };
+  const subject = t(titleKey[type] ?? 'title.notification');
+  const name = esc((data.customer_name as string) || '').split(' ')[0];
+  const lines: string[] = [`<p>${name ? esc(t('greeting', { name })) : esc(t('greetingNoName'))}</p>`, `<p>${esc(subject)}.</p>`];
+  const field = (label: string, value: string) => lines.push(`<p>${esc(t(label, { value }))}</p>`);
+  if (data.service_name) field('service', String(data.service_name));
+  if (data.start_time) { const w = when(data.start_time); if (w) field('when', w); }
+  if (data.booking_reference) field('reference', String(data.booking_reference));
   // Only a link the system made itself (https or http), shown as text and as a link.
   if (typeof data.check_in_link === 'string' && /^https?:\/\//.test(data.check_in_link)) {
-    lines.push(`<p>Check in from your phone when you arrive, and complete any forms: <a href="${esc(data.check_in_link)}">${esc(data.check_in_link)}</a></p>`);
+    lines.push(`<p>${esc(t('checkIn'))} <a href="${esc(data.check_in_link)}">${esc(data.check_in_link)}</a></p>`);
   }
   if (data.task_title) lines.push(`<p>${esc(data.task_title)}</p>`);
   if (data.task_description) lines.push(`<p>${esc(data.task_description)}</p>`);
-  if (data.due_at) lines.push(`<p>Date: ${esc(new Date(String(data.due_at)).toLocaleString())}</p>`);
+  if (data.due_at) { const w = when(data.due_at); if (w) field('date', w); }
   // Events (THE-20): already written in the hosting business's time zone.
-  if (data.event_title) lines.push(`<p>Event: ${esc(data.event_title)}</p>`);
-  if (data.when_text) lines.push(`<p>When: ${esc(data.when_text)}</p>`);
-  if (data.location) lines.push(`<p>Where: ${esc(data.location)}</p>`);
-  if (data.ticket_text) lines.push(`<p>Ticket: ${esc(data.ticket_text)}</p>`);
+  if (data.event_title) field('event', String(data.event_title));
+  if (data.when_text) field('when', String(data.when_text));
+  if (data.location) field('where', String(data.location));
+  if (data.ticket_text) field('ticket', String(data.ticket_text));
   if (data.amount_text) lines.push(`<p>${esc(data.amount_text)}</p>`);
   if (data.refund_text) lines.push(`<p>${esc(data.refund_text)}</p>`);
   const html = lines.join('\n');
-  const text = lines.map((l) => l.replace(/<[^>]+>/g, '')).join('\n');
+  const text = lines.map((l) => l.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')).join('\n');
   return { subject, html, text };
 }
 
@@ -721,4 +741,21 @@ export async function scheduleUpcomingReminders(): Promise<number> {
   }
 
   return queued;
+}
+
+/** The service (with its add-ons) and membership names of an email's data, in a language where translated. */
+async function localizeEmailNames(data: Record<string, unknown>, language: string): Promise<Record<string, unknown>> {
+  const { translatedName } = await import('./offering-translations.service');
+  let out = data;
+  if (typeof data.service_id === 'string') {
+    const service = (await translatedName('service', data.service_id, language)) ?? (typeof data.service_base_name === 'string' ? data.service_base_name : null);
+    const addons = Array.isArray(data.addons) ? (data.addons as Array<{ id?: string | null; name?: string }>) : [];
+    const addonNames = (await Promise.all(addons.map(async (a) => (await translatedName('addon', a.id ?? null, language)) ?? a.name ?? ''))).filter(Boolean);
+    if (service) out = { ...out, service_name: addonNames.length > 0 ? `${service} + ${addonNames.join(', ')}` : service };
+  }
+  if (typeof data.membership_plan_id === 'string') {
+    const name = await translatedName('membership', data.membership_plan_id, language);
+    if (name) out = { ...out, membership_name: name };
+  }
+  return out;
 }

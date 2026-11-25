@@ -62,13 +62,10 @@ export async function getSystemTemplate(id: string): Promise<SystemDocumentTempl
  * matches, else one with no language, else the first active one (the same order as a business's).
  */
 export async function activeSystemTemplate(artifactType: string, language?: string | null): Promise<SystemDocumentTemplate | null> {
+  // In the recipient's language, else English, else one with no language (Phase 44, requirement 5).
   const candidates = await listSystemTemplates({ artifactType, activeOnly: true });
-  if (candidates.length === 0) return null;
-  if (language) {
-    const exact = candidates.find((t) => (t.language ?? '').toLowerCase() === language.toLowerCase());
-    if (exact) return exact;
-  }
-  return candidates.find((t) => !t.language) ?? candidates[0];
+  const { pickTemplateForLanguage } = await import('./document-branding-resolver.service');
+  return pickTemplateForLanguage(candidates, language);
 }
 
 export async function createSystemTemplate(artifactType: string, input: DocumentBrandingInput, actor: Actor): Promise<SystemDocumentTemplate> {

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { formatTime } from '../../utils/format';
 import './SlotPicker.css';
 
 export interface SlotPickerSlot {
@@ -26,18 +28,19 @@ export function isSlotClickable(capacityRemaining: number | undefined, participa
 }
 
 export function SlotPicker({ slots, participantCount, selectedTime, onSlotSelect, onBack, loading, businessTimezone, overrideCapacity }: SlotPickerProps) {
+  const { t } = useTranslation('booking');
   return (
     <div className="slot-picker">
-      <button type="button" className="slot-picker__back" onClick={onBack}>← Back to calendar</button>
+      <button type="button" className="slot-picker__back" onClick={onBack}>{t('slot.backToCalendar')}</button>
 
       {loading && (
-        <div className="slot-picker__loading" role="status" aria-label="Loading time slots">
+        <div className="slot-picker__loading" role="status" aria-label={t('slot.loadingSlots')}>
           <span className="slot-picker__spinner" />
         </div>
       )}
 
       {!loading && slots.length === 0 && (
-        <p className="slot-picker__empty">No availability for this day</p>
+        <p className="slot-picker__empty">{t('slot.noAvailability')}</p>
       )}
 
       {!loading && slots.length > 0 && (
@@ -50,9 +53,7 @@ export function SlotPicker({ slots, participantCount, selectedTime, onSlotSelect
             // style here would visually tell the admin the slot can't be clicked when it can.
             const overriding = !clickable && overrideCapacity;
             const isSelected = selectedTime === slot.start_time;
-            const label = new Date(slot.start_time).toLocaleTimeString(undefined, {
-              hour: '2-digit', minute: '2-digit', timeZone: businessTimezone,
-            });
+            const label = formatTime(slot.start_time, businessTimezone, { hour: '2-digit' });
             let stateClass = 'slot-picker__slot--available';
             if (overriding) stateClass = 'slot-picker__slot--overriding';
             else if (!clickable) stateClass = 'slot-picker__slot--over-capacity';
@@ -65,7 +66,7 @@ export function SlotPicker({ slots, participantCount, selectedTime, onSlotSelect
                   stateClass,
                   isSelected ? 'slot-picker__slot--selected' : '',
                 ].filter(Boolean).join(' ')}
-                title={overriding ? 'Over capacity — click to book anyway (admin override)' : undefined}
+                title={overriding ? t('slot.overrideTitle') : undefined}
                 disabled={disabled}
                 aria-disabled={disabled}
                 onClick={() => { if (!disabled) onSlotSelect(slot.start_time); }}

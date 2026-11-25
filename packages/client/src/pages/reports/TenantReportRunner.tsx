@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { TenantBillingActivity } from '../../components/TenantBillingActivity';
 import { TENANT_REPORT_CATALOG } from './tenantReportCatalog';
 
@@ -12,6 +13,7 @@ const REPORT_COMPONENTS: Record<string, () => JSX.Element> = {
 };
 
 export function TenantReportRunner() {
+  const { t } = useTranslation('tenantOps');
   const { reportId } = useParams<{ reportId: string }>();
   const navigate = useNavigate();
 
@@ -21,7 +23,7 @@ export function TenantReportRunner() {
   return (
     <div style={styles.page}>
       <button type="button" style={styles.back} onClick={() => navigate('/admin/tenant-reports')}>
-        ← Back to Reports
+        {t('runner.back')}
       </button>
 
       {entry && ReportComponent ? (
@@ -34,8 +36,8 @@ export function TenantReportRunner() {
         </>
       ) : (
         <>
-          <h1 style={styles.pageTitle}>Report not found</h1>
-          <p style={styles.pageSubtitle}>No report is registered for &ldquo;{reportId}&rdquo;.</p>
+          <h1 style={styles.pageTitle}>{t('runner.notFound')}</h1>
+          <p style={styles.pageSubtitle}>{t('runner.notRegistered', { id: reportId })}</p>
         </>
       )}
     </div>

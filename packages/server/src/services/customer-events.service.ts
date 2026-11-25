@@ -1,8 +1,11 @@
+import { languageLocale } from '@daystream/shared';
+import { msgIn } from '../i18n';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import { findOrCreatePerson } from './person-identity.service';
 import { getCancelSettings, customerCancelWindow } from './customer-cancellation.service';
 import { promoteFromWaitlist } from './event-waitlist.service';
+import { msg } from '../i18n';
 
 /**
  * Events for customers (THE-20): the organisation's published events, registering and
@@ -241,7 +244,7 @@ export async function listForCustomer(tenantId: string, customerIds: string[]) {
 export async function eventForCustomer(tenantId: string, eventId: string, customerIds: string[]) {
   await releaseExpiredOnlineHolds(eventId);
   const [e] = await eventRows(`e.tenant_id = $1 AND e.id = $2 AND e.status IN ('published', 'completed', 'cancelled') AND e.deleted_at IS NULL`, [tenantId, eventId]);
-  if (!e) throw new CustomerEventError('Event not found', 404, 'NOT_FOUND');
+  if (!e) throw new CustomerEventError(msg('errors:customerEvents.eventNotFound'), 404, 'NOT_FOUND');
   const tiers = await tiersOf([e.id]);
   const who = await standingAt(customerIds, e.host_business_id);
   const settings = await getCancelSettings(e.host_business_id, 'events');
@@ -308,7 +311,7 @@ export async function hostCustomerId(hostId: string, customerId: string, userId:
   const { rows: src } = await adminPool.query(
     `SELECT c.id, c.business_id, c.tenant_id, c.first_name, c.last_name, c.email, c.phone FROM cus_customers c WHERE c.id = $1`, [customerId]);
   const me = src[0];
-  if (!me) throw new CustomerEventError('Customer not found', 404, 'NOT_FOUND');
+  if (!me) throw new CustomerEventError(msg('errors:customerEvents.customerNotFound'), 404, 'NOT_FOUND');
   if (me.business_id === hostId) return me.id;
   const { rows: there } = await adminPool.query(
     `SELECT id FROM cus_customers
@@ -318,7 +321,7 @@ export async function hostCustomerId(hostId: string, customerId: string, userId:
     [hostId, userId, me.email || ''],
   );
   if (there[0]) return there[0].id;
-  if (!me.email && !me.phone) throw new CustomerEventError('Add an email address to your profile to register for this event', 400);
+  if (!me.email && !me.phone) throw new CustomerEventError(msg('errors:customerEvents.addAnEmailAddressToYour'), 400);
   const made = await findOrCreatePerson({
     businessId: hostId, tenantId: me.tenant_id, email: me.email, phone: me.phone,
     firstName: me.first_name, lastName: me.last_name, source: 'online_registration',
@@ -360,21 +363,21 @@ export async function assertNotAlreadyRegistered(eventId: string, customerId: st
 /** Check a customer may choose this ticket for this event (open, eligible, on sale). */
 export async function assertCustomerMayRegister(eventId: string, tierId: string | undefined, customerIds: string[]) {
   const { rows } = await adminPool.query(`SELECT start_time, status FROM evt_events WHERE id = $1`, [eventId]);
-  if (!rows[0] || rows[0].status !== 'published') throw new CustomerEventError('This event is not open for registration', 409, 'CONFLICT');
-  if (new Date(rows[0].start_time) <= new Date()) throw new CustomerEventError('This event has already started', 409, 'CONFLICT');
-  if (!tierId) throw new CustomerEventError('Choose a ticket', 400);
+  if (!rows[0] || rows[0].status !== 'published') throw new CustomerEventError(msg('errors:customerEvents.thisEventIsNotOpenFor'), 409, 'CONFLICT');
+  if (new Date(rows[0].start_time) <= new Date()) throw new CustomerEventError(msg('errors:customerEvents.thisEventHasAlreadyStarted'), 409, 'CONFLICT');
+  if (!tierId) throw new CustomerEventError(msg('errors:customerEvents.chooseATicket'), 400);
   const { rows: t } = await adminPool.query(`SELECT * FROM evt_ticket_tiers WHERE id = $1 AND event_id = $2`, [tierId, eventId]);
-  if (!t[0]) throw new CustomerEventError('Ticket not found', 404, 'NOT_FOUND');
+  if (!t[0]) throw new CustomerEventError(msg('errors:customerEvents.ticketNotFound'), 404, 'NOT_FOUND');
   const eligibility = t[0].eligibility_type || 'all';
-  if (!OFFERED_ELIGIBILITY.includes(eligibility)) throw new CustomerEventError('This ticket is not available', 409, 'CONFLICT');
+  if (!OFFERED_ELIGIBILITY.includes(eligibility)) throw new CustomerEventError(msg('errors:customerEvents.thisTicketIsNotAvailable'), 409, 'CONFLICT');
   const now = new Date();
-  if (t[0].availability_start && new Date(t[0].availability_start) > now) throw new CustomerEventError('This ticket is not on sale yet', 409, 'CONFLICT');
-  if (t[0].availability_end && new Date(t[0].availability_end) < now) throw new CustomerEventError('This ticket is no longer on sale', 409, 'CONFLICT');
+  if (t[0].availability_start && new Date(t[0].availability_start) > now) throw new CustomerEventError(msg('errors:customerEvents.thisTicketIsNotOnSale'), 409, 'CONFLICT');
+  if (t[0].availability_end && new Date(t[0].availability_end) < now) throw new CustomerEventError(msg('errors:customerEvents.thisTicketIsNoLongerOn'), 409, 'CONFLICT');
   if (eligibility === 'members_only' && !(await hasActiveMembership(customerIds, await hostBusinessId(eventId)))) {
-    throw new CustomerEventError('This ticket is for members only: it needs an active membership', 403, 'MEMBERS_ONLY');
+    throw new CustomerEventError(msg('errors:customerEvents.thisTicketIsForMembersOnly'), 403, 'MEMBERS_ONLY');
   }
   if (eligibility === 'first_time' && !(await isFirstTimeCustomer(customerIds, await hostBusinessId(eventId)))) {
-    throw new CustomerEventError('This ticket is for first-time customers only', 403, 'FIRST_TIME_ONLY');
+    throw new CustomerEventError(msg('errors:customerEvents.thisTicketIsForFirstTime'), 403, 'FIRST_TIME_ONLY');
   }
   return t[0];
 }
@@ -391,9 +394,9 @@ export async function createTicketOrder(registrationId: string, checkedOutBy: st
     [registrationId],
   );
   const r = rows[0];
-  if (!r) throw new CustomerEventError('Registration not found', 404, 'NOT_FOUND');
+  if (!r) throw new CustomerEventError(msg('errors:customerEvents.registrationNotFound'), 404, 'NOT_FOUND');
   const hostId = await hostBusinessId(r.event_id);
-  if (!hostId) throw new CustomerEventError('This event has no hosting business to take the payment', 409, 'CONFLICT');
+  if (!hostId) throw new CustomerEventError(msg('errors:customerEvents.thisEventHasNoHostingBusiness'), 409, 'CONFLICT');
   if (r.order_id) {
     const { rows: o } = await adminPool.query(`SELECT id, status FROM fin_orders WHERE id = $1`, [r.order_id]);
     if (o[0]?.status === 'open') return { orderId: o[0].id as string, hostId };
@@ -422,7 +425,7 @@ export async function queueEventEmail(registrationId: string, kind: EventEmailKi
       `SELECT r.id, r.reference_number, r.group_size, r.customer_id, r.event_id, tt.name AS tier_name, tt.price,
               o.total_amount, o.status AS order_status,
               e.title, e.start_time, e.end_time, e.location_name,
-              c.business_id, c.email, c.first_name, c.last_name
+              c.business_id, c.email, c.first_name, c.last_name, c.preferred_language
          FROM evt_registrations r
          JOIN evt_events e ON e.id = r.event_id
          JOIN cus_customers c ON c.id = r.customer_id
@@ -437,9 +440,13 @@ export async function queueEventEmail(registrationId: string, kind: EventEmailKi
     const { rows: biz } = await adminPool.query('SELECT timezone, currency FROM sys_businesses WHERE id = $1', [hostId]);
     const tz = biz[0]?.timezone || 'UTC';
     const currency = biz[0]?.currency || 'EUR';
-    const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, ...o }).format(d);
+    // In the customer's language (Phase 44, requirement 5): its wording and its date and amount format.
+    const { customerLanguage } = await import('./recipient-language.service');
+    const language = await customerLanguage(r.customer_id);
+    const locale = languageLocale(language);
+    const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(locale, { timeZone: tz, ...o }).format(d);
     const start = new Date(r.start_time);
-    const money = (c: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(c / 100);
+    const money = (c: number) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(c / 100);
     const toPay = r.total_amount ?? (r.price || 0) * r.group_size;
     const { queueNotification } = await import('./booking-notifications.service');
     await queueNotification({
@@ -448,15 +455,16 @@ export async function queueEventEmail(registrationId: string, kind: EventEmailKi
       recipientId: r.customer_id,
       recipientEmail: r.email,
       data: {
+        language,
         customer_name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null,
         event_title: r.title,
         when_text: `${fmt(start, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${fmt(start, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}–${fmt(new Date(r.end_time), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`,
         location: r.location_name || null,
-        ticket_text: `${r.tier_name || 'Ticket'}${r.group_size > 1 ? ` × ${r.group_size}` : ''}`,
+        ticket_text: `${r.tier_name || msgIn(language, 'email:event.ticket')}${r.group_size > 1 ? ` × ${r.group_size}` : ''}`,
         booking_reference: r.reference_number,
-        amount_text: kind === 'reserved' && toPay > 0 ? `To pay at reception: ${money(toPay)}` : null,
+        amount_text: kind === 'reserved' && toPay > 0 ? msgIn(language, 'email:event.payAtReception', { amount: money(toPay) }) : null,
         refund_text: kind === 'cancelled' && refund && refund.amount > 0
-          ? `${money(refund.amount)} ${refund.to === 'credit' ? 'has been added to your account credit' : 'will be refunded to your card'}`
+          ? msgIn(language, refund.to === 'credit' ? 'email:event.refundToCredit' : 'email:event.refundToCard', { amount: money(refund.amount) })
           : null,
       },
     });
@@ -474,7 +482,7 @@ export async function markRegistrationPaid(registrationId: string) {
       RETURNING r.*`,
     [registrationId],
   );
-  if (!rows[0]) throw new CustomerEventError('The payment for this registration was not completed', 409, 'CONFLICT');
+  if (!rows[0]) throw new CustomerEventError(msg('errors:customerEvents.thePaymentForThisRegistrationWas'), 409, 'CONFLICT');
   return rows[0];
 }
 
@@ -490,8 +498,8 @@ export async function cancelOwnRegistration(args: { registrationId: string; tena
     [args.registrationId, args.tenantId],
   );
   const r = rows[0];
-  if (!r) throw new CustomerEventError('Registration not found', 404, 'NOT_FOUND');
-  if (!['confirmed', 'pending'].includes(r.status)) throw new CustomerEventError('This registration is already cancelled', 409, 'CONFLICT');
+  if (!r) throw new CustomerEventError(msg('errors:customerEvents.registrationNotFound'), 404, 'NOT_FOUND');
+  if (!['confirmed', 'pending'].includes(r.status)) throw new CustomerEventError(msg('errors:customerEvents.thisRegistrationIsAlreadyCancelled'), 409, 'CONFLICT');
   const hostId = await hostBusinessId(r.event_id);
   const settings = await getCancelSettings(hostId, 'events');
   // After a date, time or place change the money goes back to the card in full (decision 14).

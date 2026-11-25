@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import i18n from '../i18n';
 
 /** Retail inventory (spec 51, gap 7). */
 
@@ -14,20 +15,28 @@ export interface StockMovement {
 }
 
 export type AdjustReason = 'damaged' | 'lost' | 'used_in_service' | 'found' | 'correction';
+/** `label` and the MOVEMENT_LABELS values are translation keys: show them with t(label), or use the helpers below. */
 export const ADJUST_REASONS: { value: AdjustReason; label: string }[] = [
-  { value: 'damaged', label: 'Damaged' },
-  { value: 'lost', label: 'Lost or stolen' },
-  { value: 'used_in_service', label: 'Used in a service' },
-  { value: 'found', label: 'Found' },
-  { value: 'correction', label: 'Correction' },
+  { value: 'damaged', label: 'inventory:adjust.damaged' },
+  { value: 'lost', label: 'inventory:adjust.lost' },
+  { value: 'used_in_service', label: 'inventory:adjust.used_in_service' },
+  { value: 'found', label: 'inventory:adjust.found' },
+  { value: 'correction', label: 'inventory:adjust.correction' },
 ];
 
 export const MOVEMENT_LABELS: Record<string, string> = {
-  opening: 'Opening stock', sale: 'Sold', sale_cancelled: 'Sale not completed (put back)', refund_restock: 'Returned to stock',
-  refund_write_off: 'Returned, written off', receive: 'Received', adjust: 'Adjusted', count: 'Counted',
-  transfer_in: 'Moved in', transfer_out: 'Moved out',
+  opening: 'inventory:movement.opening', sale: 'inventory:movement.sale', sale_cancelled: 'inventory:movement.sale_cancelled', refund_restock: 'inventory:movement.refund_restock',
+  refund_write_off: 'inventory:movement.refund_write_off', receive: 'inventory:movement.receive', adjust: 'inventory:movement.adjust', count: 'inventory:movement.count',
+  transfer_in: 'inventory:movement.transfer_in', transfer_out: 'inventory:movement.transfer_out',
 };
 
+/** What a stock movement reason reads as, in the language shown. */
+export const movementLabel = (reason: string): string => (MOVEMENT_LABELS[reason] ? i18n.t(MOVEMENT_LABELS[reason]) : reason);
+/** What a stock adjustment reason reads as, in the language shown. */
+export const adjustReasonLabel = (reason: string): string => {
+  const found = ADJUST_REASONS.find((r) => r.value === reason);
+  return found ? i18n.t(found.label) : reason;
+};
 export async function getProductStock(productId: string, businessId: string): Promise<{ track_stock: boolean; lines: StockLine[] }> {
   const res = await apiClient.get(`/v1/inventory/products/${productId}/stock`, { params: { business_id: businessId } });
   return res.data.data;

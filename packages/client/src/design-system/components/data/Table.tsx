@@ -1,4 +1,6 @@
 import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState, Fragment } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import cssStyles from './Table.module.css';
 import {
   ColumnFilter, TableFilters, FilterOption, FilterColumnDef, applyTableFilters, optionsFrom, dayOf,
@@ -109,7 +111,7 @@ export function Table<T extends Record<string, any>>({
   columns,
   data,
   loading,
-  emptyMessage = 'No data found',
+  emptyMessage,
   onSort,
   clientSort,
   onRowClick,
@@ -139,6 +141,8 @@ export function Table<T extends Record<string, any>>({
   hasMore,
   loadingMore,
 }: TableProps<T>) {
+  const { t } = useTranslation('common');
+  const shownEmptyMessage = emptyMessage ?? t('table.noRows');
   // Sorts so far, newest first: the earlier ones break ties, so rows with the same value keep the
   // order they had (David, 2026-11-04: sorting a column whose rows are all equal reshuffled them).
   const [sorts, setSorts] = useState<{ key: string; order: 'asc' | 'desc' }[]>(initialSort ? [initialSort] : []);
@@ -287,7 +291,7 @@ export function Table<T extends Record<string, any>>({
   }
 
   if (data.length === 0 && !filterRow && !footerRows && !anyFilter) {
-    return <div style={styles.empty}>{emptyMessage}</div>;
+    return <div style={styles.empty}>{shownEmptyMessage}</div>;
   }
 
   // Mobile card mode
@@ -306,7 +310,7 @@ export function Table<T extends Record<string, any>>({
             ))}
           </div>
         ))}
-        {page && totalPages && onPageChange && renderPagination(page, totalPages, onPageChange)}
+        {page && totalPages && onPageChange && renderPagination(page, totalPages, onPageChange, t)}
       </div>
     );
   }
@@ -341,7 +345,7 @@ export function Table<T extends Record<string, any>>({
                     type="checkbox"
                     checked={selectedIds.length === visible.length && visible.length > 0}
                     onChange={toggleAll}
-                    aria-label="Select all rows"
+                    aria-label={t('table.selectAllRows')}
                   />
                 </th>
               )}
@@ -364,13 +368,13 @@ export function Table<T extends Record<string, any>>({
                         : <span style={col.headerIconsBeside ? styles.headLabelBeside : undefined}>{col.header}</span>}
                       {col.sortable && (
                         <button type="button" className={cssStyles.headIcon} data-on={sorted || undefined} onClick={() => handleSort(col.key)}
-                          aria-label={`Sort by ${col.header}`} title={`Sort by ${col.header}`}>
+                          aria-label={t('table.sortBy', { column: col.header })} title={t('table.sortBy', { column: col.header })}>
                           <SortIcon dir={sorted ? sortOrder : undefined} />
                         </button>
                       )}
                       {def && (
                         <button type="button" className={cssStyles.headIcon} data-on={on || undefined}
-                          aria-label={`Filter ${col.header}`} title={`Filter ${col.header}`} aria-haspopup="dialog"
+                          aria-label={t('table.filterColumn', { column: col.header })} title={t('table.filterColumn', { column: col.header })} aria-haspopup="dialog"
                           aria-expanded={openFilter?.key === col.key}
                           onClick={(e) => { const anchor = e.currentTarget.closest('th') as HTMLElement; setOpenFilter(openFilter?.key === col.key ? null : { key: col.key, anchor }); }}>
                           <FunnelIcon on={on} />
@@ -387,7 +391,7 @@ export function Table<T extends Record<string, any>>({
             {visible.length === 0 && (
               <tr>
                 <td style={styles.td} colSpan={columns.length + (selectable ? 1 : 0)}>
-                  <div style={styles.empty}>{anyFilter && data.length > 0 ? 'Nothing matches these filters.' : emptyMessage}</div>
+                  <div style={styles.empty}>{anyFilter && data.length > 0 ? t('table.noMatches') : shownEmptyMessage}</div>
                 </td>
               </tr>
             )}
@@ -408,7 +412,7 @@ export function Table<T extends Record<string, any>>({
                         checked={selectedIds.includes(id)}
                         onChange={() => toggleRow(id)}
                         onClick={(e) => e.stopPropagation()}
-                        aria-label={`Select row ${rowIndex + 1}`}
+                        aria-label={t('table.selectRow', { number: rowIndex + 1 })}
                       />
                     </td>
                   )}
@@ -416,7 +420,7 @@ export function Table<T extends Record<string, any>>({
                     <td key={col.key} style={styles.td}>
                       {col.render ? col.render(row[col.key], row) : row[col.key]}
                       {onRowClick && colIndex === columns.length - 1 && (
-                        <span className={cssStyles.rowEditAffordance}>{renderExpanded ? (open ? 'Hide' : 'Details ›') : <>Edit &rsaquo;</>}</span>
+                        <span className={cssStyles.rowEditAffordance}>{renderExpanded ? (open ? t('table.hide') : t('table.details')) : t('table.edit')}</span>
                       )}
                     </td>
                   ))}
@@ -432,7 +436,7 @@ export function Table<T extends Record<string, any>>({
             {onLoadMore && hasMore && (
               <tr ref={sentinel}>
                 <td style={{ ...styles.td, ...styles.more }} colSpan={columns.length + (selectable ? 1 : 0)}>
-                  {loadingMore ? 'Loading more…' : <button type="button" style={styles.moreBtn} onClick={onLoadMore}>Show more</button>}
+                  {loadingMore ? t('table.loadingMore') : <button type="button" style={styles.moreBtn} onClick={onLoadMore}>{t('table.showMore')}</button>}
                 </td>
               </tr>
             )}
@@ -453,12 +457,12 @@ export function Table<T extends Record<string, any>>({
           )}
         </table>
       </div>
-      {page && totalPages && onPageChange && renderPagination(page, totalPages, onPageChange)}
+      {page && totalPages && onPageChange && renderPagination(page, totalPages, onPageChange, t)}
     </div>
   );
 }
 
-function renderPagination(page: number, totalPages: number, onPageChange: (p: number) => void) {
+function renderPagination(page: number, totalPages: number, onPageChange: (p: number) => void, t: TFunction) {
   if (totalPages <= 1) return null;
   return (
     <div style={styles.pagination}>
@@ -467,15 +471,15 @@ function renderPagination(page: number, totalPages: number, onPageChange: (p: nu
         disabled={page <= 1}
         style={styles.pageBtn}
       >
-        ← Prev
+        {t('table.previous')}
       </button>
-      <span style={styles.pageInfo}>Page {page} of {totalPages}</span>
+      <span style={styles.pageInfo}>{t('table.pageOf', { page, total: totalPages })}</span>
       <button
         onClick={() => onPageChange(page + 1)}
         disabled={page >= totalPages}
         style={styles.pageBtn}
       >
-        Next →
+        {t('table.next')}
       </button>
     </div>
   );

@@ -1,3 +1,7 @@
+import { localizeOfferings, translatedName } from './offering-translations.service';
+import { getBusinessLanguages } from './business-languages.service';
+import { requestLanguageCode } from '../i18n';
+import { DEFAULT_LANGUAGE } from '@daystream/shared';
 import crypto from 'node:crypto';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
@@ -11,6 +15,7 @@ import { computeDayStatus, getDaysInMonth, isDayClosedForBusiness } from '../rou
 import * as availabilityService from './availability.service';
 import { purchasePackage } from './package.service';
 import { enrollCustomer } from './membership.service';
+import { msg } from '../i18n';
 
 /** Requirement 15.4 — never log a raw email, only its hash, for booking-attempt audit entries. */
 function hashEmail(email: string): string {
@@ -35,18 +40,18 @@ interface WidgetConfig {
 /** Loads the widget config for a business, or throws 403/404 per Requirement 4.8 / 12.6. */
 export async function requireEnabledWidget(businessId: string): Promise<WidgetConfig> {
   const { rows: bizRows } = await adminPool.query('SELECT id, tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
-  if (bizRows.length === 0) throw new WidgetError('Business not found', 404);
+  if (bizRows.length === 0) throw new WidgetError(msg('errors:widgetBooking.businessNotFound'), 404);
 
   const { rows } = await adminPool.query('SELECT * FROM wgt_widget_configs WHERE business_id = $1', [businessId]);
   const config = rows[0];
-  if (!config || !config.is_enabled) throw new WidgetError('Widget is not enabled for this business', 403);
+  if (!config || !config.is_enabled) throw new WidgetError(msg('errors:widgetBooking.widgetIsNotEnabledForThis'), 403);
   return config;
 }
 
 /** Requirement 12.2 — validates the Origin header against allowed_origins, when configured. */
 export function assertOriginAllowed(config: WidgetConfig, origin: string | undefined): void {
   if (!config.allowed_origins || config.allowed_origins.length === 0) return;
-  if (!origin || !config.allowed_origins.includes(origin)) throw new WidgetError('Origin not permitted', 403);
+  if (!origin || !config.allowed_origins.includes(origin)) throw new WidgetError(msg('errors:widgetBooking.originNotPermitted'), 403);
 }
 
 export async function getBusinessInfo(businessId: string) {
@@ -64,6 +69,8 @@ export async function getBusinessInfo(businessId: string) {
     tenant_id: business.tenant_id,
     theme,
     require_payment_before_confirmation: config.require_payment_before_confirmation,
+    // The business's languages, for the widget's language menu (Phase 44, requirement 8).
+    languages: (await getBusinessLanguages(businessId))?.languages ?? [DEFAULT_LANGUAGE],
   };
 }
 
@@ -87,18 +94,27 @@ export async function getProducts(businessId: string) {
     `SELECT id, name, short_description, price, billing_frequency FROM mbr_plans WHERE business_id = $1 AND status = 'active' ORDER BY display_order`,
     [businessId],
   );
+  // In the language the widget shows (Phase 44, requirement 9.5); the business's own text where there is no translation.
+  const lang = requestLanguageCode();
+  const localServices = await Promise.all((await localizeOfferings('service', services, lang)).map(async (s: any) => ({
+    ...s, variants: await localizeOfferings('service_option', Array.isArray(s.variants) ? s.variants : [], lang),
+  })));
   return [
-    ...services.map((r: any) => ({ ...r, product_type: 'service' })),
-    ...packages.map((r: any) => ({ ...r, product_type: 'package' })),
-    ...memberships.map((r: any) => ({ ...r, product_type: 'membership' })),
+    ...localServices.map((r: any) => ({ ...r, product_type: 'service' })),
+    ...(await localizeOfferings('package', packages, lang)).map((r: any) => ({ ...r, product_type: 'package' })),
+    ...(await localizeOfferings('membership', memberships, lang)).map((r: any) => ({ ...r, product_type: 'membership' })),
   ];
+}
+
+/** Package and membership items: each service's name in a language, where it has a translation. */ function withServiceNames<T extends { service_id?: string | null; service_name?: string | null }>(items: T[], lang: string): Promise<T[]> {
+  return Promise.all(items.map(async (i) => ({ ...i, service_name: (await translatedName('service', i.service_id, lang)) ?? i.service_name })));
 }
 
 /** The add-ons a customer can choose online for a service (spec 51, gap 15). */
 async function widgetAddons(serviceId: string, businessId: string): Promise<Array<{ id: string; name: string; description: string | null; price: number }>> {
   const { serviceAddons } = await import('./addons.service');
   const list = await serviceAddons(serviceId, businessId);
-  return list.map((a) => ({ id: a.id, name: a.name, description: a.description, price: a.price }));
+  return localizeOfferings('addon', list.map((a) => ({ id: a.id, name: a.name, description: a.description, price: a.price })), requestLanguageCode());
 }
 
 export async function getProductDetail(businessId: string, productId: string) {
@@ -115,7 +131,9 @@ export async function getProductDetail(businessId: string, productId: string) {
       `SELECT id, name, duration, price FROM svc_variants WHERE service_id = $1 AND status = 'active' ORDER BY display_order`,
       [productId],
     );
-    return { ...serviceRows[0], product_type: 'service', variants, addons: await widgetAddons(productId, businessId) };
+    const lang = requestLanguageCode();
+    const [service] = await localizeOfferings('service', serviceRows, lang);
+    return { ...service, product_type: 'service', variants: await localizeOfferings('service_option', variants, lang), addons: await widgetAddons(productId, businessId) };
   }
 
   const { rows: packageRows } = await adminPool.query(
@@ -125,12 +143,14 @@ export async function getProductDetail(businessId: string, productId: string) {
   );
   if (packageRows.length > 0) {
     const { rows: items } = await adminPool.query(
-      `SELECT pi.item_type, pi.quantity, s.name AS service_name
+      `SELECT pi.item_type, pi.quantity, pi.service_id, s.name AS service_name
        FROM pkg_package_items pi LEFT JOIN svc_services s ON s.id = pi.service_id
        WHERE pi.package_id = $1`,
       [productId],
     );
-    return { ...packageRows[0], product_type: 'package', items };
+    const lang = requestLanguageCode();
+    const [pkg] = await localizeOfferings('package', packageRows, lang);
+    return { ...pkg, product_type: 'package', items: await withServiceNames(items, lang) };
   }
 
   const { rows: planRows } = await adminPool.query(
@@ -140,15 +160,17 @@ export async function getProductDetail(businessId: string, productId: string) {
   );
   if (planRows.length > 0) {
     const { rows: items } = await adminPool.query(
-      `SELECT pi.quantity_per_period, s.name AS service_name
+      `SELECT pi.quantity_per_period, pi.service_id, s.name AS service_name
        FROM mbr_plan_items pi LEFT JOIN svc_services s ON s.id = pi.service_id
        WHERE pi.plan_id = $1`,
       [productId],
     );
-    return { ...planRows[0], product_type: 'membership', items };
+    const lang = requestLanguageCode();
+    const [plan] = await localizeOfferings('membership', planRows, lang);
+    return { ...plan, product_type: 'membership', items: await withServiceNames(items, lang) };
   }
 
-  throw new WidgetError('Product not found', 404);
+  throw new WidgetError(msg('errors:widgetBooking.productNotFound'), 404);
 }
 
 /** Mirrors GET /bookings/availability/days (bookings.ts) exactly — same helpers, same logic. */
@@ -186,7 +208,7 @@ interface HoldDto { businessId: string; serviceId: string; variantId: string; st
 export async function holdSlot(dto: HoldDto) {
   await requireEnabledWidget(dto.businessId);
   const { rows: variantRows } = await adminPool.query('SELECT duration FROM svc_variants WHERE id = $1', [dto.variantId]);
-  if (variantRows.length === 0) throw new WidgetError('Variant not found', 404);
+  if (variantRows.length === 0) throw new WidgetError(msg('errors:widgetBooking.variantNotFound'), 404);
   const start = new Date(dto.startTime);
   const end = new Date(start.getTime() + variantRows[0].duration * 60 * 1000);
   const hold = await createHold({
@@ -206,12 +228,12 @@ interface AuthUser { sub: string; tid: string; role: string }
 
 /** Requirement 6.5 — only a 'customer' persona JWT may use the widget's customer/booking endpoints. */
 export function assertCustomerRole(user: AuthUser): void {
-  if (user.role !== 'Customer') throw new WidgetError('This action requires a customer account', 401);
+  if (user.role !== 'Customer') throw new WidgetError(msg('errors:widgetBooking.thisActionRequiresACustomerAccount'), 401);
 }
 
 async function resolveAuthEmail(userId: string): Promise<string> {
   const { rows } = await adminPool.query('SELECT email FROM usr_users WHERE id = $1', [userId]);
-  if (rows.length === 0) throw new WidgetError('Account not found', 404);
+  if (rows.length === 0) throw new WidgetError(msg('errors:widgetBooking.accountNotFound'), 404);
   return rows[0].email;
 }
 
@@ -221,13 +243,13 @@ export async function findOrCreateCustomer(businessId: string, user: AuthUser, p
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
   const tenantId = bizRows[0]?.tenant_id;
-  if (!tenantId || tenantId !== user.tid) throw new WidgetError('Not authorized for this business', 403);
+  if (!tenantId || tenantId !== user.tid) throw new WidgetError(msg('errors:widgetBooking.notAuthorizedForThisBusiness'), 403);
 
   // usr_users has no phone column — only cus_customers does — so phone is collected at the
   // Customer Details step (Requirement 3.9) and passed in here, not sourced from the account.
   const { rows: userRows } = await adminPool.query('SELECT email, first_name, last_name FROM usr_users WHERE id = $1', [user.sub]);
   const authAccount = userRows[0];
-  if (!authAccount) throw new WidgetError('Account not found', 404);
+  if (!authAccount) throw new WidgetError(msg('errors:widgetBooking.accountNotFound'), 404);
 
   // Phase 46: the widget finds or creates the person through the identity service, so someone
   // who was already added by staff, imported, or captured by a lead form is recognised here.
@@ -281,7 +303,7 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
     'SELECT id, tenant_id FROM cus_customers WHERE id = $1 AND business_id = $2 AND email = $3',
     [dto.customerId, dto.businessId, email],
   );
-  if (custRows.length === 0) throw new WidgetError('Not authorized for this customer', 401);
+  if (custRows.length === 0) throw new WidgetError(msg('errors:widgetBooking.notAuthorizedForThisCustomer'), 401);
 
   if (dto.holdId) {
     const { rows: holdRows } = await adminPool.query(
@@ -289,14 +311,14 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
          AND start_time = $5 AND held_by = $6 AND expires_at > NOW()`,
       [dto.holdId, dto.businessId, dto.serviceId, dto.variantId, new Date(dto.startTime).toISOString(), user.sub],
     );
-    if (holdRows.length === 0) throw new WidgetError('Slot hold expired or does not match', 409);
+    if (holdRows.length === 0) throw new WidgetError(msg('errors:widgetBooking.slotHoldExpiredOrDoesNot'), 409);
   }
 
   // Only add-ons the customer could see may be chosen.
   const addonIds = [...new Set(dto.addonIds || [])];
   if (addonIds.length > 0) {
     const allowed = await widgetAddons(dto.serviceId, dto.businessId);
-    if (addonIds.some((id) => !allowed.some((a) => a.id === id))) throw new WidgetError('An add-on chosen is not available for this service.', 400);
+    if (addonIds.some((id) => !allowed.some((a) => a.id === id))) throw new WidgetError(msg('errors:widgetBooking.anAddOnChosenIsNot'), 400);
   }
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [dto.businessId]);
@@ -354,8 +376,8 @@ export async function payForBooking(bookingId: string, businessId: string, user:
 
   const email = await resolveAuthEmail(user.sub);
   const booking = await getBookingById(bookingId, businessId);
-  if (!booking) throw new WidgetError('Booking not found', 404);
-  if (booking.customer_email !== email) throw new WidgetError('Not authorized for this booking', 401);
+  if (!booking) throw new WidgetError(msg('errors:widgetBooking.bookingNotFound'), 404);
+  if (booking.customer_email !== email) throw new WidgetError(msg('errors:widgetBooking.notAuthorizedForThisBooking'), 401);
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
 
@@ -369,7 +391,7 @@ export async function payForBooking(bookingId: string, businessId: string, user:
        VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'failed')`,
       [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price + addonsTotal(booking)],
     );
-    throw new WidgetError('Booking is already confirmed', 409);
+    throw new WidgetError(msg('errors:widgetBooking.bookingIsAlreadyConfirmed'), 409);
   }
 
   const { rows: txRows } = await adminPool.query(
@@ -407,7 +429,7 @@ async function resolveOwnedCustomer(businessId: string, customerId: string, user
     'SELECT id FROM cus_customers WHERE id = $1 AND business_id = $2 AND email = $3',
     [customerId, businessId, email],
   );
-  if (rows.length === 0) throw new WidgetError('Not authorized for this customer', 401);
+  if (rows.length === 0) throw new WidgetError(msg('errors:widgetBooking.notAuthorizedForThisCustomer'), 401);
   return email;
 }
 
@@ -448,8 +470,8 @@ export async function payForPackagePurchase(purchaseId: string, businessId: stri
     [purchaseId, businessId],
   );
   const purchase = rows[0];
-  if (!purchase) throw new WidgetError('Purchase not found', 404);
-  if (purchase.customer_email !== email) throw new WidgetError('Not authorized for this purchase', 401);
+  if (!purchase) throw new WidgetError(msg('errors:widgetBooking.purchaseNotFound'), 404);
+  if (purchase.customer_email !== email) throw new WidgetError(msg('errors:widgetBooking.notAuthorizedForThisPurchase'), 401);
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
 
@@ -459,7 +481,7 @@ export async function payForPackagePurchase(purchaseId: string, businessId: stri
        VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'failed')`,
       [bizRows[0].tenant_id, businessId, purchaseId, purchase.customer_id, purchase.price],
     );
-    throw new WidgetError('Purchase is already confirmed', 409);
+    throw new WidgetError(msg('errors:widgetBooking.purchaseIsAlreadyConfirmed'), 409);
   }
 
   const { rows: txRows } = await adminPool.query(
@@ -514,8 +536,8 @@ export async function payForMembershipEnrollment(enrollmentId: string, businessI
     [enrollmentId, businessId],
   );
   const enrollment = rows[0];
-  if (!enrollment) throw new WidgetError('Enrollment not found', 404);
-  if (enrollment.customer_email !== email) throw new WidgetError('Not authorized for this enrollment', 401);
+  if (!enrollment) throw new WidgetError(msg('errors:widgetBooking.enrollmentNotFound'), 404);
+  if (enrollment.customer_email !== email) throw new WidgetError(msg('errors:widgetBooking.notAuthorizedForThisEnrollment'), 401);
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
 
@@ -525,7 +547,7 @@ export async function payForMembershipEnrollment(enrollmentId: string, businessI
        VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'failed')`,
       [bizRows[0].tenant_id, businessId, enrollmentId, enrollment.customer_id, enrollment.price],
     );
-    throw new WidgetError('Enrollment is already confirmed', 409);
+    throw new WidgetError(msg('errors:widgetBooking.enrollmentIsAlreadyConfirmed'), 409);
   }
 
   const { rows: txRows } = await adminPool.query(

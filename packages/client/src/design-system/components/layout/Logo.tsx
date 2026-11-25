@@ -1,4 +1,5 @@
 import { CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface LogoMarkProps {
   size?: number;
@@ -41,11 +42,12 @@ interface LogoProps extends LogoMarkProps {
  * name reads as a mark rather than as more UI copy in Inter.
  */
 export function Logo({ size = 28, showWordmark = true, wordmarkStyle, className }: LogoProps) {
+  const { t } = useTranslation('common');
   return (
     <span style={styles.lockup}>
       <LogoMark size={size} className={className} />
       {showWordmark && (
-        <span style={{ ...styles.wordmark, ...wordmarkStyle }}>DayStream</span>
+        <span style={{ ...styles.wordmark, ...wordmarkStyle }}>{t('app_name')}</span>
       )}
     </span>
   );

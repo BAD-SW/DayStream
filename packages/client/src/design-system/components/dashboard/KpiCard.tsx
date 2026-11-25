@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import styles from './KpiCard.module.css';
 
 interface KpiCardProps {
@@ -16,6 +17,7 @@ interface KpiCardProps {
 }
 
 export function KpiCard({ icon, label, value, subValue, trend, prior, color, onClick }: KpiCardProps) {
+  const { t } = useTranslation('nav');
   return (
     <div className={styles.card} onClick={onClick} style={onClick ? { cursor: 'pointer' } : undefined}>
       <div className={styles.iconWrapper} style={color ? { color } : undefined}>
@@ -26,7 +28,7 @@ export function KpiCard({ icon, label, value, subValue, trend, prior, color, onC
         <span className={styles.value}>{value}</span>
         {subValue && <span className={styles.subValue}>{subValue}</span>}
         {prior !== undefined && (
-          <span className={styles.prior}>Prior year: {prior}</span>
+          <span className={styles.prior}>{t('dashboard.prior_year', { value: prior })}</span>
         )}
         {trend && (
           <span className={`${styles.trend} ${styles[`trend-${trend.direction}`]}`}>
@@ -36,7 +38,7 @@ export function KpiCard({ icon, label, value, subValue, trend, prior, color, onC
             {' '}{trend.percentage}% {trend.period}
           </span>
         )}
-        {onClick && <span className={styles.clickHint}>Click for details</span>}
+        {onClick && <span className={styles.clickHint}>{t('dashboard.click_for_details')}</span>}
       </div>
     </div>
   );

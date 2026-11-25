@@ -10,6 +10,10 @@
  * already placeholder-filled (sample values in the editor, real values on a page).
  */
 
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import { formatMoney } from '../utils/format';
+
 export interface BrandedDocumentTableRow {
   description: string;
   qty: number;
@@ -45,20 +49,19 @@ const DEFAULT_PRIMARY = '#1A1A1A';
 const DEFAULT_SECONDARY = '#C9A96E';
 const DETAILS_MARKER = '{{details_table}}';
 
-function fmtMoney(cents: number, currency: string): string {
-  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(cents / 100); }
-  catch { return `${(cents / 100).toFixed(2)} ${currency}`; }
-}
+// Fixed labels (Description, Qty, Amount, Total, Logo) are translated here; the template's own text is the business's and is shown as is.
+const fmtMoney = formatMoney;
 
 /** The Description/Qty/Amount table (+ Total) drawn where the marker appears. */
 function DetailsTable({ table, primary, secondary }: { table: BrandedDocumentTable; primary: string; secondary: string }) {
+  const { t } = useTranslation('payments');
   return (
     <table style={s.table}>
       <thead>
         <tr>
-          <th style={{ ...s.th, color: primary, borderBottomColor: primary }}>Description</th>
-          <th style={{ ...s.th, ...s.thRight, color: primary, borderBottomColor: primary }}>Qty</th>
-          <th style={{ ...s.th, ...s.thRight, color: primary, borderBottomColor: primary }}>Amount</th>
+          <th style={{ ...s.th, color: primary, borderBottomColor: primary }}>{t('document.description')}</th>
+          <th style={{ ...s.th, ...s.thRight, color: primary, borderBottomColor: primary }}>{t('document.qty')}</th>
+          <th style={{ ...s.th, ...s.thRight, color: primary, borderBottomColor: primary }}>{t('document.amount')}</th>
         </tr>
       </thead>
       <tbody>
@@ -73,7 +76,7 @@ function DetailsTable({ table, primary, secondary }: { table: BrandedDocumentTab
       <tfoot>
         <tr>
           <td style={s.totalSpacer} />
-          <td style={{ ...s.totalLabel, borderTopColor: secondary }}>Total</td>
+          <td style={{ ...s.totalLabel, borderTopColor: secondary }}>{t('document.total')}</td>
           <td style={{ ...s.totalValue, borderTopColor: secondary }}>{fmtMoney(table.totalCents, table.currency)}</td>
         </tr>
       </tfoot>
@@ -86,13 +89,13 @@ function DetailsTable({ table, primary, secondary }: { table: BrandedDocumentTab
  * sits. The body HTML is split on the marker; each half is rendered as sanitized
  * HTML and the app-generated table is placed between them.
  */
-function renderBody(fields: BrandedDocumentFields, primary: string, secondary: string) {
+function renderBody(fields: BrandedDocumentFields, primary: string, secondary: string, t: TFunction) {
   const html = fields.bodyHtml || '';
   const table = fields.detailsTable;
 
   if (!html.includes(DETAILS_MARKER) || !table) {
     // No marker (or no data) — strip any stray marker and render the body as-is.
-    const clean = html.replace(DETAILS_MARKER, '') || '<p style="color:#999">(No body content)</p>';
+    const clean = html.replace(DETAILS_MARKER, '') || `<p style="color:#999">${t('document.noBody')}</p>`;
     return <div style={s.body} dangerouslySetInnerHTML={{ __html: clean }} />;
   }
 
@@ -107,6 +110,7 @@ function renderBody(fields: BrandedDocumentFields, primary: string, secondary: s
 }
 
 export function BrandedDocumentView({ fields }: { fields: BrandedDocumentFields }) {
+  const { t } = useTranslation('payments');
   const primary = fields.primaryColor || DEFAULT_PRIMARY;
   const secondary = fields.secondaryColor || DEFAULT_SECONDARY;
   const hasFooter = Boolean(fields.footerText || (fields.footerLinkText && fields.footerLinkUrl));
@@ -115,12 +119,12 @@ export function BrandedDocumentView({ fields }: { fields: BrandedDocumentFields 
     <div style={s.doc}>
       <div style={{ ...s.header, background: primary }}>
         {fields.logoUrl
-          ? <img src={fields.logoUrl} alt="Logo" style={s.logo} />
+          ? <img src={fields.logoUrl} alt={t('document.logo')} style={s.logo} />
           : <span style={s.logoText}>{fields.businessName}</span>}
       </div>
       <div style={s.bodyWrap}>
         {fields.subject && <div style={{ ...s.subject, color: primary }}>{fields.subject}</div>}
-        {renderBody(fields, primary, secondary)}
+        {renderBody(fields, primary, secondary, t)}
         {hasFooter && (
           <div style={{ ...s.footer, borderTopColor: secondary }}>
             {fields.footerText && <span>{fields.footerText}</span>}

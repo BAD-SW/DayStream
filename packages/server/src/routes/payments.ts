@@ -7,6 +7,7 @@ import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as paymentService from '../services/payment.service';
+import { msg, isMessage } from '../i18n';
 
 export const paymentsRouter = Router();
 
@@ -18,13 +19,13 @@ paymentsRouter.use(tenantContext);
 paymentsRouter.use(async (req: Request, res: Response, next) => {
   if (!isCustomerLogin(req)) { next(); return; }
   try {
-    if (req.method !== 'GET' || req.path !== '/') { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+    if (req.method !== 'GET' || req.path !== '/') { error(res, msg('errors:payments.insufficientPermissions'), 'FORBIDDEN', 403); return; }
     const own = await ownCustomerIds(req);
     const asked = req.query.customer_id as string | undefined;
-    if (own.length === 0 || (asked && !own.includes(asked))) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+    if (own.length === 0 || (asked && !own.includes(asked))) { error(res, msg('errors:payments.insufficientPermissions'), 'FORBIDDEN', 403); return; }
     if (!asked) (req.query as any).customer_id = own[0];
     next();
-  } catch (err: any) { console.error('Payments scope failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Payments scope failed', err?.message || err); error(res, msg('errors:payments.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/payments — List transactions
@@ -32,18 +33,18 @@ paymentsRouter.use(async (req: Request, res: Response, next) => {
 paymentsRouter.get('/column-values', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await paymentService.getTransactionColumnValues(businessId, String(req.query.column || ''), parseColumnFilters(req.query.cf)));
   } catch (err: any) {
     console.error('Failed to list column values', err?.message || err);
-    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:payments.failedToListColumnValues'), 'INTERNAL_ERROR', 500);
   }
 });
 
 paymentsRouter.get('/', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await paymentService.getTransactions({
       businessId,
@@ -62,7 +63,7 @@ paymentsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
     success(res, result.transactions, { page: result.page, limit: result.limit, total: result.total, totalPages: Math.ceil(result.total / result.limit) });
   } catch (err: any) {
     console.error('Failed to list transactions', err?.message || err);
-    error(res, 'Failed to list transactions', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:payments.failedToListTransactions'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -70,12 +71,12 @@ paymentsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
 paymentsRouter.get('/summary', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const summary = await paymentService.getTransactionSummary(businessId);
     success(res, summary);
   } catch (err: any) {
     console.error('Failed to get payment summary', err?.message || err);
-    error(res, 'Failed to get payment summary', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:payments.failedToGetPaymentSummary'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -133,10 +134,10 @@ paymentsRouter.post('/', requirePermission('bookings:*'), validate(createTransac
 
     success(res, transaction, undefined, 201);
   } catch (err: any) {
-    if (err.message?.includes('Refund amount exceeds') || err.message?.includes('Original transaction not found')) {
+    if ((isMessage(err.message, 'errors:payment.refundAmountExceedsRemainingRefundableBalance') || err.message?.includes('Refund amount exceeds')) || (isMessage(err.message, 'errors:payment.originalTransactionNotFound') || err.message?.includes('Original transaction not found'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to record transaction', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:payments.failedToRecordTransaction'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -146,7 +147,7 @@ paymentsRouter.get('/refundable', requirePermission('bookings:read'), async (req
   try {
     const businessId = req.query.business_id as string;
     const customerId = req.query.customer_id as string;
-    if (!businessId || !customerId) { error(res, 'business_id and customer_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId || !customerId) { error(res, msg('errors:payments.businessIdAndCustomerIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await paymentService.getRefundableCharges({
       businessId,
       customerId,
@@ -159,7 +160,7 @@ paymentsRouter.get('/refundable', requirePermission('bookings:read'), async (req
     success(res, result.charges, { total: result.total, limit: result.limit, offset: result.offset, distinctMethods: result.distinctMethods });
   } catch (err: any) {
     console.error('Failed to get refundable charges', err?.message || err);
-    error(res, 'Failed to get refundable charges', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:payments.failedToGetRefundableCharges'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -167,12 +168,12 @@ paymentsRouter.get('/refundable', requirePermission('bookings:read'), async (req
 paymentsRouter.get('/methods', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const methods = await paymentService.getAcceptedMethods(businessId);
     success(res, methods);
   } catch (err: any) {
     console.error('Failed to get accepted methods', err?.message || err);
-    error(res, 'Failed to get accepted methods', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:payments.failedToGetAcceptedMethods'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -191,7 +192,7 @@ paymentsRouter.put('/methods', requirePermission('bookings:*'), validate(updateM
     success(res, result);
   } catch (err: any) {
     console.error('Failed to update accepted methods', err?.message || err);
-    error(res, 'Failed to update accepted methods', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:payments.failedToUpdateAcceptedMethods'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -199,12 +200,12 @@ paymentsRouter.put('/methods', requirePermission('bookings:*'), validate(updateM
 paymentsRouter.get('/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:payments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const transaction = await paymentService.getTransactionById(req.params.id, businessId);
-    if (!transaction) { error(res, 'Transaction not found', 'NOT_FOUND', 404); return; }
+    if (!transaction) { error(res, msg('errors:payments.transactionNotFound'), 'NOT_FOUND', 404); return; }
     success(res, transaction);
   } catch (err: any) {
     console.error('Failed to get transaction', err?.message || err);
-    error(res, 'Failed to get transaction', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:payments.failedToGetTransaction'), 'INTERNAL_ERROR', 500);
   }
 });

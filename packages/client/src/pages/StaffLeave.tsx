@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Table } from '../design-system/components/data/Table';
@@ -15,6 +16,7 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
 };
 
 export function StaffLeave() {
+  const { t } = useTranslation('staff');
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,23 +53,23 @@ export function StaffLeave() {
 
   const columns = [
     {
-      key: 'staff', header: 'Staff', filterValue: (row: LeaveRequest) => `${row.first_name} ${row.last_name}`,
+      key: 'staff', header: t('leave.staff'), filterValue: (row: LeaveRequest) => `${row.first_name} ${row.last_name}`,
       render: (_: any, row: LeaveRequest) => `${row.first_name} ${row.last_name}`,
     },
-    { key: 'leave_type', header: 'Type', render: (v: string) => v.charAt(0).toUpperCase() + v.slice(1) },
+    { key: 'leave_type', header: t('leave.type'), render: (v: string) => t(`leave.type_${v}`, { defaultValue: v.charAt(0).toUpperCase() + v.slice(1) }) },
 
-    { key: 'start_date', header: 'From' },
-    { key: 'end_date', header: 'To' },
+    { key: 'start_date', header: t('leave.from') },
+    { key: 'end_date', header: t('leave.to') },
     {
-      key: 'status', header: 'Status',
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
+      key: 'status', header: t('leave.status'),
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`leave.status_${val}`, { defaultValue: val })}</Badge>,
     },
     {
       key: 'actions', header: '',
       render: (_: any, row: LeaveRequest) => row.status === 'pending' ? (
         <div className="lv-actions">
-          <Button size="sm" onClick={() => handleApprove(row.id)}>Approve</Button>
-          <Button size="sm" variant="destructive" onClick={() => handleReject(row.id)}>Reject</Button>
+          <Button size="sm" onClick={() => handleApprove(row.id)}>{t('leave.approve')}</Button>
+          <Button size="sm" variant="destructive" onClick={() => handleReject(row.id)}>{t('leave.reject')}</Button>
         </div>
       ) : null,
     },
@@ -75,13 +77,13 @@ export function StaffLeave() {
 
   return (
     <div>
-      <PageHeader title="Leave Management" />
+      <PageHeader title={t('leave.title')} />
 
       <Table
         columns={columns}
         data={requests}
         loading={loading}
-        emptyMessage="No leave requests found"
+        emptyMessage={t('leave.empty')}
       />
 
     </div>

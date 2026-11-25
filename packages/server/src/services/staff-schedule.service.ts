@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 // --- Schedule Entries ---
 
@@ -56,7 +57,7 @@ const toMinutes = (t: string) => { const [h, m] = String(t).split(':').map(Numbe
 async function assertShiftAllowed(shift: { businessId: string; staffId: string; scheduleDate: string; startTime: string; endTime: string; locationId?: string | null; entryType?: string }, ignoreEntryId?: string): Promise<void> {
   if ((shift.entryType || 'shift') !== 'shift') return;
   const start = toMinutes(shift.startTime); const end = toMinutes(shift.endTime);
-  if (!(start < end)) throw new ShiftError('A shift must end after it starts', 'INVALID_TIMES');
+  if (!(start < end)) throw new ShiftError(msg('errors:staffSchedule.aShiftMustEndAfterIt'), 'INVALID_TIMES');
 
   const { rows: others } = await adminPool.query(
     `SELECT id FROM stf_schedule_entries
@@ -64,7 +65,7 @@ async function assertShiftAllowed(shift: { businessId: string; staffId: string; 
         AND start_time < $4::time AND end_time > $3::time AND ($5::uuid IS NULL OR id <> $5)`,
     [shift.staffId, shift.scheduleDate, shift.startTime, shift.endTime, ignoreEntryId || null],
   );
-  if (others.length > 0) throw new ShiftError('This person already has a shift at that time', 'SHIFT_OVERLAP');
+  if (others.length > 0) throw new ShiftError(msg('errors:staffSchedule.thisPersonAlreadyHasAShift'), 'SHIFT_OVERLAP');
 
   const { rows: hours } = await adminPool.query(
     `SELECT h.is_closed, h.open_time, h.close_time

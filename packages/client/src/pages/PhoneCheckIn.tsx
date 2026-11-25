@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { phoneVisit, phoneCheckIn, phoneStartForm, selfCheckInError } from '../api/selfCheckIn';
 import type { SelfVisit } from '../api/selfCheckIn';
 import { SelfFormsList } from '../components/forms/SelfFormsList';
 import { checkInTextFor, fillCheckInTexts } from '@daystream/shared';
+import { PublicLanguageBar } from '../components/PublicLanguageBar';
+import { formatDateTime, formatTime } from '../utils/format';
 
 /**
  * Check in from your own phone (spec 51, design 1.11a). Reached from the link in the reminder
@@ -12,6 +15,7 @@ import { checkInTextFor, fillCheckInTexts } from '@daystream/shared';
  */
 export function PhoneCheckIn() {
   const { code = '' } = useParams<{ code: string }>();
+  const { t: tr } = useTranslation('checkin');
   const [visit, setVisit] = useState<SelfVisit | null>(null);
   const [invalid, setInvalid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,15 +26,15 @@ export function PhoneCheckIn() {
   const t = visit
     ? fillCheckInTexts(visit.texts, {
       first_name: visit.first_name, service_name: visit.service_name, business_name: visit.business_name,
-      time: new Date(visit.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: visit.timezone }),
+      time: formatTime(visit.start_time, visit.timezone),
     })
     : checkInTextFor(null);
 
   const load = useCallback(() => {
     phoneVisit(code)
       .then(setVisit)
-      .catch((err) => setInvalid(selfCheckInError(err, 'This link is no longer valid. Please see the front desk.').message));
-  }, [code]);
+      .catch((err) => setInvalid(selfCheckInError(err, tr('phone.linkInvalid')).message));
+  }, [code, tr]);
   useEffect(() => { load(); }, [load]);
 
   // While waiting, ask every few seconds so "Please come in" appears without a refresh.
@@ -73,12 +77,12 @@ export function PhoneCheckIn() {
     return <Screen><p role="status" style={s.text}>{t.loading}</p></Screen>;
   }
 
-  const when = new Date(visit.start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZone: visit.timezone });
+  const when = formatDateTime(visit.start_time, visit.timezone);
   const canCheckIn = visit.status === 'confirmed';
   const closed = !canCheckIn && !visit.checked_in;
 
   return (
-    <Screen>
+    <Screen languages={visit.languages}>
       <h1 style={s.title}>{t.greeting}</h1>
       <p style={s.text}><strong>{visit.service_name}</strong><br />{when}</p>
 
@@ -104,16 +108,17 @@ export function PhoneCheckIn() {
   );
 }
 
-function Screen({ children }: { children: React.ReactNode }) {
+function Screen({ children, languages }: { children: React.ReactNode; languages?: readonly string[] }) {
   return (
     <div style={s.page}>
+      <PublicLanguageBar languages={languages} />
       <main style={s.card}>{children}</main>
     </div>
   );
 }
 
 const s: Record<string, React.CSSProperties> = {
-  page: { minHeight: '100vh', background: 'var(--color-background)', fontFamily: 'var(--font-family)', padding: 'var(--space-md)', boxSizing: 'border-box' },
+  page: { position: 'relative', minHeight: '100vh', background: 'var(--color-background)', fontFamily: 'var(--font-family)', padding: 'var(--space-md)', paddingTop: 'calc(var(--space-xl) + var(--space-lg))', boxSizing: 'border-box' },
   card: { maxWidth: '560px', margin: '0 auto', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: 'var(--space-lg)', boxSizing: 'border-box', textAlign: 'center' },
   title: { margin: '0 0 var(--space-sm) 0', fontSize: 'var(--font-size-h2, 1.5rem)', fontWeight: 700, color: 'var(--color-text)' },
   text: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-base)', color: 'var(--color-text)', lineHeight: 1.5 },

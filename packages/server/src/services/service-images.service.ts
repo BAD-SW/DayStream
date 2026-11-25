@@ -4,6 +4,7 @@ import { adminPool } from '../db/pool';
 import { storage } from './storage.service';
 import { logger } from '../middleware/logger';
 import { storagePaths, tenantOfBusiness } from '../utils/storage-paths';
+import { msg } from '../i18n';
 
 const MAX_IMAGES_PER_SERVICE = 10;
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -60,7 +61,7 @@ export async function uploadImage(
     [serviceId],
   );
   if (countRows[0].count >= MAX_IMAGES_PER_SERVICE) {
-    throw new Error(`Maximum ${MAX_IMAGES_PER_SERVICE} images per service`);
+    throw new Error(msg('errors:serviceImages.maximumImagesPerService', { MAX_IMAGES_PER_SERVICE }));
   }
 
   // Validate format and size
@@ -72,10 +73,10 @@ export async function uploadImage(
   // Get dimensions
   const metadata = await sharp(file.buffer).metadata();
   if (!metadata.width || !metadata.height) {
-    throw new Error('Could not read image dimensions');
+    throw new Error(msg('errors:serviceImages.couldNotReadImageDimensions'));
   }
   if (metadata.width < MIN_WIDTH || metadata.height < MIN_HEIGHT) {
-    throw new Error(`Image too small. Minimum dimensions: ${MIN_WIDTH}x${MIN_HEIGHT}px`);
+    throw new Error(msg('errors:serviceImages.imageTooSmallMinimumDimensionsX', { MIN_WIDTH, MIN_HEIGHT }));
   }
 
   // Generate unique filename

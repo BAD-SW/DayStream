@@ -1,16 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as resourcesApi from '../api/resources';
 
-const RESOURCE_CATEGORIES = [
-  { value: 'room', label: 'Room' },
-  { value: 'equipment', label: 'Equipment' },
-  { value: 'facility', label: 'Facility' },
-];
+const RESOURCE_CATEGORIES = ['room', 'equipment', 'facility'];
 
 export function ResourceCreate() {
+  const { t } = useTranslation('setup');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,16 +27,16 @@ export function ResourceCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.category) { setError('Category is required'); return; }
+    if (!form.category) { setError(t('resourceCreate.errCategoryRequired')); return; }
     const businessId = localStorage.getItem('business_id') || '';
-    if (!businessId) { setError('No business selected'); return; }
+    if (!businessId) { setError(t('resourceCreate.errNoBusiness')); return; }
     setLoading(true);
     setError('');
     try {
       const resource = await resourcesApi.createResource({ ...form, business_id: businessId });
       navigate(`/resources/${resource.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create resource');
+      setError(err.response?.data?.error || t('resourceCreate.errFailed'));
     } finally {
       setLoading(false);
     }
@@ -46,44 +44,44 @@ export function ResourceCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/business?tab=resources')}>← Back to Business</button>
-      <h1 style={styles.title}>Create Resource</h1>
+      <button style={styles.back} onClick={() => navigate('/business?tab=resources')}>{t('resourceCreate.back')}</button>
+      <h1 style={styles.title}>{t('resourceCreate.title')}</h1>
       {error && <Alert variant="error">{error}</Alert>}
       <form onSubmit={handleSubmit} style={styles.form}>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Name *</label>
+          <label style={styles.label}>{t('resourceCreate.name')}</label>
           <input style={styles.input} value={form.name} onChange={(e) => handleChange('name', e.target.value)} required />
         </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Description</label>
+          <label style={styles.label}>{t('resourceCreate.description')}</label>
           <textarea style={{ ...styles.input, minHeight: '80px' }} value={form.description} onChange={(e) => handleChange('description', e.target.value)} />
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Category *</label>
+            <label style={styles.label}>{t('resourceCreate.category')}</label>
             <select style={styles.input} value={form.category} onChange={(e) => handleChange('category', e.target.value)} required>
-              <option value="">— Select —</option>
-              {RESOURCE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              <option value="">{t('resourceCreate.select')}</option>
+              {RESOURCE_CATEGORIES.map((c) => <option key={c} value={c}>{t(`resources.category_${c}`)}</option>)}
             </select>
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Capacity</label>
+            <label style={styles.label}>{t('resourceCreate.capacity')}</label>
             <input style={styles.input} type="number" min={1} value={form.capacity} onChange={(e) => handleChange('capacity', Number(e.target.value))} />
           </div>
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Buffer (minutes)</label>
+            <label style={styles.label}>{t('resourceCreate.buffer')}</label>
             <input style={styles.input} type="number" min={0} value={form.buffer_minutes} onChange={(e) => handleChange('buffer_minutes', Number(e.target.value))} />
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-base)', color: 'var(--color-text)', alignSelf: 'end', paddingBottom: '10px' }}>
             <input type="checkbox" checked={form.is_24_7} onChange={(e) => handleChange('is_24_7', e.target.checked)} />
-            Available 24/7
+            {t('resourceCreate.available247')}
           </label>
         </div>
         <div style={styles.actions}>
-          <Button type="button" onClick={() => navigate('/business?tab=resources')}>Cancel</Button>
-          <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Resource'}</Button>
+          <Button type="button" onClick={() => navigate('/business?tab=resources')}>{t('common:cancel')}</Button>
+          <Button type="submit" disabled={loading}>{loading ? t('resourceCreate.creating') : t('resourceCreate.submit')}</Button>
         </div>
       </form>
     </div>

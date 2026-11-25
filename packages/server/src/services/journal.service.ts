@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface JournalLine {
   account_id: string;
@@ -25,10 +26,10 @@ export async function createEntry(input: CreateJournalEntryInput) {
   const totalDebits = input.lines.reduce((sum, l) => sum + l.debit, 0);
   const totalCredits = input.lines.reduce((sum, l) => sum + l.credit, 0);
   if (totalDebits !== totalCredits) {
-    throw new Error(`Entry does not balance: debits (${totalDebits}) != credits (${totalCredits})`);
+    throw new Error(msg('errors:journal.entryDoesNotBalanceDebitsCredits', { totalDebits, totalCredits }));
   }
   if (totalDebits === 0) {
-    throw new Error('Entry must have non-zero amounts');
+    throw new Error(msg('errors:journal.entryMustHaveNonZeroAmounts'));
   }
 
   const { rows } = await adminPool.query(

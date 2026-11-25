@@ -50,3 +50,6 @@ yarn-error.log*
 packages/server/storage/
 .vercel
 .env*
+
+# Phase 44: untranslated phrase reports written by the checks
+i18n-missing.*.txt

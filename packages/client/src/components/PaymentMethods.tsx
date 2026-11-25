@@ -1,4 +1,6 @@
+import { askConfirm } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { StripeCardCapture } from './StripeCardCapture';
 import { StripeBankCapture } from './StripeBankCapture';
@@ -21,12 +23,8 @@ import type { PaymentMethod, MethodType, MethodOwnerParams, BankDebitSchemeId } 
  * the hosted card element / mandate / wallet sheet renders.
  */
 
-const METHOD_LABEL: Record<MethodType, string> = {
-  card: 'Card',
-  bank_draw: 'Bank Draw (direct debit)',
-  google_pay: 'Google Pay',
-  apple_pay: 'Apple Pay',
-};
+// Method names are shown through checkout:paymentMethods.type.<value>.
+const METHOD_TYPES: MethodType[] = ['card', 'bank_draw', 'google_pay', 'apple_pay'];
 
 interface Props {
   owner: MethodOwnerParams;
@@ -35,7 +33,9 @@ interface Props {
   title?: string;
 }
 
-export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' }: Props) {
+export function PaymentMethods({ owner, allowedTypes, title }: Props) {
+  const { t } = useTranslation('checkout');
+  const methodLabel = (type: MethodType) => (METHOD_TYPES.includes(type) ? t(`paymentMethods.type.${type}`) : type);
   const types = allowedTypes ?? (['card', 'bank_draw', 'google_pay', 'apple_pay'] as MethodType[]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +46,7 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
   // Stripe capture session (set when the provider returns a SetupIntent to confirm).
   // `methodType` picks card vs bank; for bank, `debitScheme` (resolved server-side
   // from the owner's currency) picks the SEPA vs ACH capture form.
-  const [stripeSession, setStripeSession] = useState<{ clientSecret: string; publishableKey: string; methodType: MethodType; debitScheme?: BankDebitSchemeId } | null>(null);
+  const [stripeSession, setStripeSession] = useState<{ clientSecret: string; publishableKey: string; methodType: MethodType; debitScheme?: BankDebitSchemeId; creditorName?: string | null } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,7 +54,7 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
     try {
       setMethods(await payApi.listPaymentMethods(owner));
     } catch {
-      setErrorMsg('Failed to load payment methods.');
+      setErrorMsg(t('paymentMethods.loadFailed'));
       setMethods([]);
     } finally { setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -78,6 +78,7 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
           publishableKey: session.publishableKey,
           methodType: newType,
           debitScheme: session.debitScheme,
+          creditorName: session.creditorName,
         });
         setBusy(false);
         return;
@@ -90,12 +91,12 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
       const code = err?.response?.data?.code;
       const serverMsg = err?.response?.data?.error;
       if (code === 'NO_CONNECTION') {
-        setErrorMsg('No payment processor is connected for this account yet.');
+        setErrorMsg(t('paymentMethods.noConnection'));
       } else if (code === 'SCHEME_UNSUPPORTED' || code === 'SCHEME_NOT_IMPLEMENTED') {
         // e.g. a USD tenant before ACH ships, or a currency no scheme covers.
-        setErrorMsg(serverMsg || 'Bank draw is not available for this account’s currency.');
+        setErrorMsg(serverMsg || t('paymentMethods.schemeUnsupported'));
       } else {
-        setErrorMsg('Could not add the payment method.');
+        setErrorMsg(t('paymentMethods.addFailed'));
       }
     } finally { setBusy(false); }
   }
@@ -110,7 +111,7 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
       setAdding(false);
       await load();
     } catch {
-      setErrorMsg('The payment method was captured but could not be saved.');
+      setErrorMsg(t('paymentMethods.saveFailed'));
     } finally { setBusy(false); }
   }
 
@@ -122,48 +123,48 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
 
   async function handleDefault(id: string) {
     try { await payApi.setDefaultPaymentMethod(id, owner); await load(); }
-    catch { setErrorMsg('Could not set default.'); }
+    catch { setErrorMsg(t('paymentMethods.defaultFailed')); }
   }
 
   async function handleRemove(id: string) {
-    if (!confirm('Remove this payment method?')) return;
+    if (!(await askConfirm({ message: t('paymentMethods.removeConfirm'), confirmLabel: t('common:action.remove'), destructive: true }))) return;
     try { await payApi.removePaymentMethod(id, owner); await load(); }
-    catch { setErrorMsg('Could not remove the method.'); }
+    catch { setErrorMsg(t('paymentMethods.removeFailed')); }
   }
 
   function describe(m: PaymentMethod): string {
-    const brand = m.display_brand || METHOD_LABEL[m.method_type] || m.method_type;
+    const brand = m.display_brand || methodLabel(m.method_type) || m.method_type;
     const last4 = m.display_last4 ? ` •••• ${m.display_last4}` : '';
-    const exp = m.exp_month && m.exp_year ? ` (exp ${String(m.exp_month).padStart(2, '0')}/${m.exp_year})` : '';
+    const exp = m.exp_month && m.exp_year ? ` (${t('paymentMethods.expires', { date: `${String(m.exp_month).padStart(2, '0')}/${m.exp_year}` })})` : '';
     return `${brand}${last4}${exp}`;
   }
 
   return (
     <div style={styles.wrap}>
       <div style={styles.header}>
-        <h3 style={styles.title}>{title}</h3>
-        {!adding && <Button size="sm" variant="outline" onClick={() => setAdding(true)}>Add method</Button>}
+        <h3 style={styles.title}>{title ?? t('paymentMethods.title')}</h3>
+        {!adding && <Button size="sm" variant="outline" onClick={() => setAdding(true)}>{t('paymentMethods.add')}</Button>}
       </div>
 
       {errorMsg && <p style={styles.error}>{errorMsg}</p>}
 
       {loading ? (
-        <p style={styles.muted}>Loading…</p>
+        <p style={styles.muted}>{t('paymentMethods.loading')}</p>
       ) : methods.length === 0 ? (
-        <p style={styles.muted}>No payment methods on file.</p>
+        <p style={styles.muted}>{t('paymentMethods.none')}</p>
       ) : (
         <ul style={styles.list}>
           {methods.map((m) => (
             <li key={m.id} style={styles.item}>
               <span style={styles.desc}>
                 {describe(m)}
-                {m.is_default && <span style={styles.defaultTag}>Default</span>}
+                {m.is_default && <span style={styles.defaultTag}>{t('paymentMethods.default')}</span>}
               </span>
               <span style={styles.actions}>
                 {!m.is_default && (
-                  <button type="button" style={styles.linkBtn} onClick={() => handleDefault(m.id)}>Make default</button>
+                  <button type="button" style={styles.linkBtn} onClick={() => handleDefault(m.id)}>{t('paymentMethods.makeDefault')}</button>
                 )}
-                <button type="button" style={styles.linkDanger} onClick={() => handleRemove(m.id)}>Remove</button>
+                <button type="button" style={styles.linkDanger} onClick={() => handleRemove(m.id)}>{t('paymentMethods.remove')}</button>
               </span>
             </li>
           ))}
@@ -177,12 +178,12 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
             value={newType}
             onChange={(e) => setNewType(e.target.value as MethodType)}
           >
-            {types.map((t) => <option key={t} value={t}>{METHOD_LABEL[t]}</option>)}
+            {types.map((ty) => <option key={ty} value={ty}>{methodLabel(ty)}</option>)}
           </select>
           <Button size="sm" variant="primary" loading={busy} onClick={handleAdd}>
-            {newType === 'card' || newType === 'bank_draw' ? 'Continue' : 'Save'}
+            {newType === 'card' || newType === 'bank_draw' ? t('paymentMethods.continue') : t('common:save')}
           </Button>
-          <button type="button" style={styles.linkBtn} onClick={cancelAdd}>Cancel</button>
+          <button type="button" style={styles.linkBtn} onClick={cancelAdd}>{t('common:cancel')}</button>
         </div>
       )}
 
@@ -199,6 +200,7 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
         <StripeAchCapture
           clientSecret={stripeSession.clientSecret}
           publishableKey={stripeSession.publishableKey}
+          creditorName={stripeSession.creditorName ?? undefined}
           onCaptured={handleStripeCaptured}
           onCancel={cancelAdd}
         />
@@ -208,6 +210,7 @@ export function PaymentMethods({ owner, allowedTypes, title = 'Payment Methods' 
         <StripeBankCapture
           clientSecret={stripeSession.clientSecret}
           publishableKey={stripeSession.publishableKey}
+          creditorName={stripeSession.creditorName ?? undefined}
           onCaptured={handleStripeCaptured}
           onCancel={cancelAdd}
         />

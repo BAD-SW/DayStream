@@ -1,4 +1,7 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
+import { TranslateButton } from '../components/TranslationsTable';
+import { useTranslation, Trans } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
@@ -11,6 +14,7 @@ import { SaveChanges } from '../components/unsaved/SaveChanges';
 import * as servicesApi from '../api/services';
 import type { Service, ServiceVariant, ServiceCategory, AvailabilityRule } from '../api/services';
 import { formatCurrency } from '../utils/currency';
+import { formatDay, formatNumber } from '../utils/format';
 import { useClinicalAccess } from '../utils/useClinicalAccess';
 import * as formsApi from '../api/forms';
 import { ServiceAddonsCard } from '../components/addons/ServiceAddonsCard';
@@ -31,6 +35,7 @@ export function ServiceDetail() {
 }
 
 function ServiceDetailPage() {
+  const { t } = useTranslation('offerings');
   const { id } = useParams<{ id: string }>();
   const navigate = useGuardedNavigate();
   const [service, setService] = useState<Service | null>(null);
@@ -55,14 +60,14 @@ function ServiceDetailPage() {
     }).catch(() => setService(null)).finally(() => setLoading(false));
   }, [id, businessId]);
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
-  if (!service) return <div style={styles.loading}>Service not found</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
+  if (!service) return <div style={styles.loading}>{t('serviceDetail.notFound')}</div>;
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
-        <button style={styles.back} onClick={() => navigate('/offers?tab=services')}>← Back to Offerings</button>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=services')}>{t('serviceCreate.backToOfferings')}</button>
 
         {/* Header Card */}
         <div style={styles.headerCard}>
@@ -74,14 +79,14 @@ function ServiceDetailPage() {
           <div style={styles.headerRight}>
             <div style={styles.saveRow}><SaveChanges /></div>
             <div style={styles.saveRow}>
-              <Badge variant={STATUS_VARIANTS[service.status] || 'neutral'}>{service.status}</Badge>
-              <span style={styles.duration}>{service.default_duration} min</span>
+              <Badge variant={STATUS_VARIANTS[service.status] || 'neutral'}>{t(`shared.status.${service.status}`, { defaultValue: service.status })}</Badge>
+              <span style={styles.duration}>{t('services.minutes', { value: service.default_duration })}</span>
               <CopyWidgetSnippetButton
                 productId={service.id}
                 productName={service.name}
                 action="book"
                 enabled={service.online_booking_enabled}
-                disabledReason="Enable online booking to get a widget snippet"
+                disabledReason={t('serviceDetail.enableOnlineHint')}
               />
             </div>
           </div>
@@ -101,6 +106,7 @@ function ServiceDetailPage() {
 // --- Service Form (always editable; saved with the page's Save changes) ---
 
 function ServiceForm({ service, categories, taxCategories, businessId, onUpdate }: { service: Service; categories: ServiceCategory[]; taxCategories: any[]; businessId: string; onUpdate: (s: Service) => void }) {
+  const { t } = useTranslation('offerings');
   const [statusChanging, setStatusChanging] = useState(false);
   // Chart templates a service can suggest (spec 51, gap 2); only clinical roles can list them.
   const canCharts = useClinicalAccess();
@@ -129,7 +135,7 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
     default_chart_group_id: (s as any).default_chart_group_id || '',
     payment_rule: (s.payment_rule ?? 'no_card') as servicesApi.PaymentRule,
   });
-  const draft = useDraft('service-details', 'Service details', fromService(service), async (values) => {
+  const draft = useDraft('service-details', t('serviceDetail.draftName'), fromService(service), async (values) => {
     await servicesApi.updateService(service.id, businessId, { ...values, calendar_color: values.calendar_color || null } as any);
     // Read it back whole: the update's reply leaves out the category name shown in the header.
     const updated = await servicesApi.getService(service.id, businessId);
@@ -149,7 +155,7 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
       else if (action === 'restore') await servicesApi.restoreService(service.id, businessId);
       const updated = await servicesApi.getService(service.id, businessId);
       onUpdate(updated);
-    } catch { alert(`Failed to ${action}`); }
+    } catch { void showMessage({ message: t(`serviceDetail.failedTo.${action}`, { defaultValue: `Failed to ${action}` }), tone: 'error' }); }
     finally { setStatusChanging(false); }
   };
 
@@ -158,109 +164,109 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
       {/* Actions bar */}
       <div style={styles.actionsBar}>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {service.status === 'draft' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>Activate</Button>}
-          {service.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>Pause</Button>}
-          {service.status === 'paused' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>Activate</Button>}
-          {service.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>Archive</Button>}
-          {service.status === 'archived' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('restore')} loading={statusChanging}>Restore</Button>}
+          {service.status === 'draft' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>{t('shared.activate')}</Button>}
+          {service.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>{t('shared.pause')}</Button>}
+          {service.status === 'paused' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>{t('shared.activate')}</Button>}
+          {service.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>{t('shared.archive')}</Button>}
+          {service.status === 'archived' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('restore')} loading={statusChanging}>{t('shared.restore')}</Button>}
         </div>
       </div>
 
       {/* Service Details Card */}
       <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Service Details<UnsavedTag dirty={draft.dirty} /></h3>
-          <Button size="sm" variant="secondary" onClick={() => { /* TODO: trigger translation */ }}>Translate</Button>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('serviceDetail.details')}<UnsavedTag dirty={draft.dirty} /></h3>
+          <TranslateButton entityType="service" entityId={service.id} title={service.name} label={t('serviceDetail.translate')} />
         </div>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
+            <label style={styles.label}>{t('shared.nameRequired')}</label>
             <input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Category</label>
+            <label style={styles.label}>{t('shared.category')}</label>
             <select style={{ ...styles.input, ...mark('category_id') }} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
-              <option value="">None</option>
+              <option value="">{t('shared.none')}</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Booking Type</label>
+            <label style={styles.label}>{t('shared.bookingType')}</label>
             <select style={{ ...styles.input, ...mark('booking_type') }} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}>
-              <option value="individual">Individual</option>
-              <option value="shared">Shared</option>
-              <option value="group">Group</option>
-              <option value="resource">Resource</option>
+              <option value="individual">{t('shared.bookingType.individual')}</option>
+              <option value="shared">{t('shared.bookingType.shared')}</option>
+              <option value="group">{t('shared.bookingType.group')}</option>
+              <option value="resource">{t('shared.bookingType.resource')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Duration (min)</label>
+            <label style={styles.label}>{t('services.durationMin')}</label>
             <input style={{ ...styles.input, ...mark('default_duration') }} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Buffer Before (min)</label>
+            <label style={styles.label}>{t('services.bufferBefore')}</label>
             <input style={{ ...styles.input, ...mark('buffer_before') }} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Buffer After (min)</label>
+            <label style={styles.label}>{t('services.durationBuffer.after')}</label>
             <input style={{ ...styles.input, ...mark('buffer_after') }} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Max Capacity</label>
+            <label style={styles.label}>{t('services.maxCapacity')}</label>
             <input style={{ ...styles.input, ...mark('max_capacity') }} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>&nbsp;</label>
+            <label style={styles.label}>{'\u00A0'}</label>
             <div style={{ display: 'flex', gap: '24px', paddingTop: '4px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.online_booking_enabled)) }} />
-                Online Booking
+                {t('serviceDetail.onlineBooking')}
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.requires_dedicated_staff} onChange={(e) => setForm({ ...form, requires_dedicated_staff: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.requires_dedicated_staff)) }} />
-                Requires Dedicated Staff
+                {t('serviceDetail.requiresStaff')}
               </label>
             </div>
           </div>
           <div style={styles.formGroup}>
             {/* CAL-11: a colour per service by default; the owner can choose another */}
-            <label style={styles.label}>Calendar colour</label>
+            <label style={styles.label}>{t('serviceDetail.calendarColour')}</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', ...mark('calendar_color') }}>
-              <input type="color" aria-label="Calendar colour" value={form.calendar_color || '#2F7A91'} onChange={(e) => setForm({ ...form, calendar_color: e.target.value })} style={{ width: '44px', height: '34px', padding: 0, border: '1px solid var(--color-border)', borderRadius: '6px', background: 'none', cursor: 'pointer' }} />
-              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{form.calendar_color ? form.calendar_color.toUpperCase() : 'Default colour (from the calendar palette)'}</span>
-              {form.calendar_color && <button type="button" onClick={() => setForm({ ...form, calendar_color: '' })} style={{ background: 'none', border: 0, color: 'var(--color-primary-hover, #1B3597)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', textDecoration: 'underline', fontFamily: 'var(--font-family)' }}>Use the default</button>}
+              <input type="color" aria-label={t('serviceDetail.calendarColour')} value={form.calendar_color || '#2F7A91'} onChange={(e) => setForm({ ...form, calendar_color: e.target.value })} style={{ width: '44px', height: '34px', padding: 0, border: '1px solid var(--color-border)', borderRadius: '6px', background: 'none', cursor: 'pointer' }} />
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{form.calendar_color ? form.calendar_color.toUpperCase() : t('serviceDetail.defaultColour')}</span>
+              {form.calendar_color && <button type="button" onClick={() => setForm({ ...form, calendar_color: '' })} style={{ background: 'none', border: 0, color: 'var(--color-primary-hover, #1B3597)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', textDecoration: 'underline', fontFamily: 'var(--font-family)' }}>{t('serviceDetail.useDefault')}</button>}
             </div>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Tax Category</label>
+            <label style={styles.label}>{t('serviceDetail.taxCategory')}</label>
             <select style={{ ...styles.input, ...mark('tax_category_id') }} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
-              <option value="">No tax</option>
-              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+              <option value="">{t('serviceDetail.noTax')}</option>
+              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({formatNumber(tc.rate / 100, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)</option>)}
             </select>
           </div>
           {canCharts && (
             <div style={styles.formGroup}>
-              <label style={styles.label} htmlFor="svc-default-chart">Default chart</label>
+              <label style={styles.label} htmlFor="svc-default-chart">{t('serviceDetail.defaultChart')}</label>
               <select id="svc-default-chart" style={{ ...styles.input, ...mark('default_chart_group_id') }} value={form.default_chart_group_id}
                 onChange={(e) => setForm({ ...form, default_chart_group_id: e.target.value })}>
-                <option value="">None</option>
+                <option value="">{t('shared.none')}</option>
                 {chartTemplates.map((c) => <option key={c.groupId} value={c.groupId}>{c.name}</option>)}
               </select>
             </div>
           )}
           <div style={styles.formGroup}>
-            <label style={styles.label} htmlFor="svc-payment-rule">Reservation Payment Rule</label>
+            <label style={styles.label} htmlFor="svc-payment-rule">{t('serviceDetail.paymentRule')}</label>
             <select id="svc-payment-rule" style={{ ...styles.input, ...mark('payment_rule') }} value={form.payment_rule}
               onChange={(e) => setForm({ ...form, payment_rule: e.target.value as servicesApi.PaymentRule })}>
-              {servicesApi.PAYMENT_RULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {servicesApi.PAYMENT_RULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
             </select>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Short Description</label>
+            <label style={styles.label}>{t('shared.shortDescription')}</label>
             <input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Description</label>
+            <label style={styles.label}>{t('shared.description')}</label>
             <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
         </div>
@@ -280,7 +286,8 @@ const variantData = (v: VariantData): VariantData => ({
 } as VariantData);
 
 function VariantsCard({ service }: { service: Service }) {
-  const list = useDraftList<ServiceVariant>('service-variants', 'Variants', {
+  const { t } = useTranslation('offerings');
+  const list = useDraftList<ServiceVariant>('service-variants', t('serviceDetail.variants'), {
     create: (v) => servicesApi.createVariant(service.id, variantData(v)),
     update: (v) => servicesApi.updateVariant(service.id, v.id, variantData(v)),
     remove: (v) => servicesApi.deleteVariant(service.id, v.id),
@@ -292,11 +299,11 @@ function VariantsCard({ service }: { service: Service }) {
   return (
     <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Variants<UnsavedTag dirty={list.dirty} /></h3>
-        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add variant</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('serviceDetail.variants')}<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>{t('serviceDetail.addVariant')}</Button>
       </div>
 
-      {shown.length === 0 && <p style={styles.muted}>No variants yet. Add at least one variant to activate this service.</p>}
+      {shown.length === 0 && <p style={styles.muted}>{t('serviceDetail.noVariants')}</p>}
       {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {list.rows.map((r) => {
@@ -305,18 +312,19 @@ function VariantsCard({ service }: { service: Service }) {
             return (
               <div key={r.key} style={{ ...styles.variantRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
                 <div style={{ flex: 1 }}>
-                  {r.deleted ? <s><strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}</s>
-                    : <><strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}</>}
-                  {v.pricing_model === 'subscription' && <Badge variant="info">{`Sub: ${v.billing_interval || 'monthly'}`}</Badge>}
-                  {v.no_show_fee != null && v.no_show_fee > 0 && <Badge variant="neutral">{`No-show: ${formatCurrency(v.no_show_fee)}`}</Badge>}
-                  {r.isNew && <> <RowTag>New</RowTag></>}
-                  {edited && <> <RowTag>Changed</RowTag></>}
-                  {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                  {r.deleted ? <s><Trans i18nKey="serviceDetail.variantSummary" ns="offerings" values={{ name: v.name, duration: v.duration, price: formatCurrency(v.price) }} components={[<strong key="n" />]} /></s>
+                    : <><Trans i18nKey="serviceDetail.variantSummary" ns="offerings" values={{ name: v.name, duration: v.duration, price: formatCurrency(v.price) }} components={[<strong key="n" />]} /></>}
+                  {v.pricing_model === 'subscription' && <Badge variant="info">{t('serviceDetail.subscriptionBadge', { interval: t(`serviceDetail.interval.${v.billing_interval || 'monthly'}`, { defaultValue: v.billing_interval || 'monthly' }) })}</Badge>}
+                  {v.no_show_fee != null && v.no_show_fee > 0 && <Badge variant="neutral">{t('serviceDetail.noShowBadge', { amount: formatCurrency(v.no_show_fee) })}</Badge>}
+                  {r.isNew && <> <RowTag>{t('serviceDetail.rowNew')}</RowTag></>}
+                  {edited && <> <RowTag>{t('serviceDetail.rowChanged')}</RowTag></>}
+                  {r.deleted && <> <RowTag>{t('serviceDetail.rowDeleted')}</RowTag></>}
                 </div>
-                {!r.isNew && <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>}
-                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
-                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, variant: v })} title="Edit" aria-label={`Edit ${v.name}`}>✏️</button>
-                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Delete" aria-label={`Delete ${v.name}`}>×</button>
+                {!r.isNew && <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{t(`shared.status.${v.status}`, { defaultValue: v.status })}</Badge>}
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('serviceDetail.undo')}</Button> : <>
+                  {!r.isNew && v.id && <TranslateButton entityType="service_option" entityId={v.id} title={v.name} label={t('serviceDetail.translate')} />}
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, variant: v })} title={t('common:edit')} aria-label={t('serviceDetail.editNamed', { name: v.name })}>✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title={t('common:delete')} aria-label={t('serviceDetail.deleteNamed', { name: v.name })}>×</button>
                 </>}
               </div>
             );
@@ -341,6 +349,7 @@ function VariantsCard({ service }: { service: Service }) {
 }
 
 function ServiceVariantModal({ variant, onClose, onDone }: { variant?: ServiceVariant; onClose: () => void; onDone: (data: VariantData) => void }) {
+  const { t } = useTranslation('offerings');
   const [form, setForm] = useState({
     name: variant?.name || '',
     duration: variant?.duration || 60,
@@ -356,7 +365,7 @@ function ServiceVariantModal({ variant, onClose, onDone }: { variant?: ServiceVa
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) { setError('Name is required'); return; }
+    if (!form.name) { setError(t('products.nameRequiredMsg')); return; }
     onDone(variantData({
       name: form.name, duration: form.duration, pricing_model: form.pricing_model,
       price: Math.round(parseFloat(priceDisplay || '0') * 100),
@@ -371,62 +380,62 @@ function ServiceVariantModal({ variant, onClose, onDone }: { variant?: ServiceVa
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>{variant ? 'Edit variant' : 'Add variant'}</h3>
-          <button style={styles.closeBtn} onClick={onClose}>×</button>
+          <h3 style={styles.modalTitle}>{variant ? t('serviceDetail.editVariant') : t('serviceDetail.addVariant')}</h3>
+          <button style={styles.closeBtn} onClick={onClose} aria-label={t('common:modal.close')}>×</button>
         </div>
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
+            <label style={styles.label}>{t('shared.nameRequired')}</label>
             <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Duration (min) *</label>
+            <label style={styles.label}>{t('serviceDetail.durationRequired')}</label>
             <input style={styles.input} type="number" min={5} value={form.duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Price *</label>
+            <label style={styles.label}>{t('shared.priceRequired')}</label>
             <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => setPriceDisplay(e.target.value)}
               onBlur={() => setPriceDisplay((Math.round(parseFloat(priceDisplay || '0') * 100) / 100).toFixed(2))}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>No-Show Fee (blank = none)</label>
+            <label style={styles.label}>{t('serviceDetail.noShowFee')}</label>
             <input style={styles.input} type="number" step="0.01" min="0" placeholder="0.00" value={noShowFeeDisplay}
               onChange={(e) => setNoShowFeeDisplay(e.target.value)}
               onBlur={() => { if (noShowFeeDisplay.trim() !== '') setNoShowFeeDisplay((Math.round(parseFloat(noShowFeeDisplay || '0') * 100) / 100).toFixed(2)); }}
             />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Pricing Model</label>
+            <label style={styles.label}>{t('serviceDetail.pricingModel')}</label>
             <select style={styles.input} value={form.pricing_model} onChange={(e) => setForm({ ...form, pricing_model: e.target.value })}>
-              <option value="per_session">Per Session</option>
-              <option value="subscription">Subscription</option>
+              <option value="per_session">{t('serviceDetail.perSession')}</option>
+              <option value="subscription">{t('serviceDetail.subscription')}</option>
             </select>
           </div>
           {form.pricing_model === 'subscription' && (
             <>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Billing Interval</label>
+                <label style={styles.label}>{t('serviceDetail.billingInterval')}</label>
                 <select style={styles.input} value={form.billing_interval} onChange={(e) => setForm({ ...form, billing_interval: e.target.value })}>
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Biweekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="annually">Annually</option>
+                  <option value="weekly">{t('shared.billing.weekly')}</option>
+                  <option value="biweekly">{t('shared.billing.biweekly')}</option>
+                  <option value="monthly">{t('shared.billing.monthly')}</option>
+                  <option value="quarterly">{t('shared.billing.quarterly')}</option>
+                  <option value="annually">{t('shared.billing.annually')}</option>
                 </select>
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Included Sessions (blank = unlimited)</label>
+                <label style={styles.label}>{t('serviceDetail.includedSessions')}</label>
                 <input style={styles.input} value={form.included_sessions} onChange={(e) => setForm({ ...form, included_sessions: e.target.value })} />
               </div>
             </>
           )}
-          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>{t('serviceDetail.savedWithPage')}</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit">{variant ? 'Done' : 'Add variant'}</Button>
+            <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+            <Button type="submit">{variant ? t('serviceDetail.done') : t('serviceDetail.addVariant')}</Button>
           </div>
         </form>
       </div>
@@ -437,9 +446,10 @@ function ServiceVariantModal({ variant, onClose, onDone }: { variant?: ServiceVa
 // --- Images Card (uploads and deletions wait for the page's Save changes) ---
 
 function ImagesCard({ service, businessId }: { service: Service; businessId: string }) {
+  const { t } = useTranslation('offerings');
   const [images, setImages] = useState(service.images || []);
   type Pending = { added: Array<{ key: string; file: File; url: string }>; removed: string[] };
-  const draft = useDraft<Pending>('service-images', 'Images', { added: [], removed: [] }, async (d) => {
+  const draft = useDraft<Pending>('service-images', t('serviceDetail.images'), { added: [], removed: [] }, async (d) => {
     const left: Pending = { added: [...d.added], removed: [...d.removed] };
     let now = images;
     try {
@@ -461,13 +471,13 @@ function ImagesCard({ service, businessId }: { service: Service; businessId: str
   return (
     <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Images<UnsavedTag dirty={draft.dirty} /></h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('serviceDetail.images')}<UnsavedTag dirty={draft.dirty} /></h3>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)' }}>
-          Upload Image
+          {t('serviceDetail.uploadImage')}
           <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePick} style={{ display: 'none' }} />
         </label>
       </div>
-      {images.length === 0 && draft.value.added.length === 0 && <p style={styles.muted}>No images uploaded</p>}
+      {images.length === 0 && draft.value.added.length === 0 && <p style={styles.muted}>{t('serviceDetail.noImages')}</p>}
       {(images.length > 0 || draft.value.added.length > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 'var(--space-md)' }}>
           {images.map((img) => {
@@ -476,9 +486,9 @@ function ImagesCard({ service, businessId }: { service: Service; businessId: str
               <div key={img.id} style={{ position: 'relative', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', opacity: gone ? 0.5 : 1 }}>
                 <img src={img.urls?.thumbnail || ''} alt={img.alt_text || ''} style={{ width: '100%', height: '80px', objectFit: 'cover' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px', padding: '4px 6px', flexWrap: 'wrap' }}>
-                  {gone ? <RowTag>Deleted when you save</RowTag> : img.is_primary && <Badge variant="success">Primary</Badge>}
-                  {gone ? <Button size="sm" variant="ghost" onClick={() => toggleRemove(img.id)}>Undo</Button>
-                    : <button style={styles.deleteBtn} title="Delete" onClick={() => toggleRemove(img.id)}>×</button>}
+                  {gone ? <RowTag>{t('serviceDetail.rowDeleted')}</RowTag> : img.is_primary && <Badge variant="success">{t('serviceDetail.primary')}</Badge>}
+                  {gone ? <Button size="sm" variant="ghost" onClick={() => toggleRemove(img.id)}>{t('serviceDetail.undo')}</Button>
+                    : <button style={styles.deleteBtn} title={t('common:delete')} onClick={() => toggleRemove(img.id)}>×</button>}
                 </div>
               </div>
             );
@@ -487,14 +497,14 @@ function ImagesCard({ service, businessId }: { service: Service; businessId: str
             <div key={a.key} style={{ position: 'relative', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
               <img src={a.url} alt={a.file.name} style={{ width: '100%', height: '80px', objectFit: 'cover' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px' }}>
-                <RowTag>New</RowTag>
-                <button style={styles.deleteBtn} title="Remove" onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== a.key) })}>×</button>
+                <RowTag>{t('serviceDetail.rowNew')}</RowTag>
+                <button style={styles.deleteBtn} title={t('serviceDetail.remove')} onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== a.key) })}>×</button>
               </div>
             </div>
           ))}
         </div>
       )}
-      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>Accepted: JPEG, PNG, or WebP. Max 5MB. Min 400×300px. Uploaded when you press Save changes.</p>
+      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>{t('serviceDetail.imageRules')}</p>
     </div>
   );
 }
@@ -504,22 +514,23 @@ function ImagesCard({ service, businessId }: { service: Service; businessId: str
 type RuleData = Partial<AvailabilityRule> & { location_ids?: string[]; staff_ids?: string[]; resource_ids?: string[] };
 
 function AvailabilityCard({ service }: { service: Service }) {
-  const list = useDraftList<AvailabilityRule & RuleData>('service-availability', 'Availability', {
+  const { t } = useTranslation('offerings');
+  const list = useDraftList<AvailabilityRule & RuleData>('service-availability', t('serviceDetail.availability'), {
     create: (r) => servicesApi.createAvailabilityRule(service.id, ruleData(r)),
     update: (r) => servicesApi.updateAvailabilityRule(service.id, r.id, ruleData(r)),
     remove: (r) => servicesApi.deleteAvailabilityRule(service.id, r.id),
   });
   const [editing, setEditing] = useState<{ key?: string; rule?: AvailabilityRule } | null>(null);
   useEffect(() => { list.load((service.availability || []) as any); }, [service.id, list.load]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayNames = [t('shared.day.sun'), t('shared.day.mon'), t('shared.day.tue'), t('shared.day.wed'), t('shared.day.thu'), t('shared.day.fri'), t('shared.day.sat')];
 
   return (
     <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Availability<UnsavedTag dirty={list.dirty} /></h3>
-        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Rule</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('serviceDetail.availability')}<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>{t('serviceDetail.addRule')}</Button>
       </div>
-      {list.rows.length === 0 && <p style={styles.muted}>No availability rules. Service is available anytime.</p>}
+      {list.rows.length === 0 && <p style={styles.muted}>{t('serviceDetail.noRules')}</p>}
       {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {list.rows.map((r) => {
@@ -528,17 +539,17 @@ function AvailabilityCard({ service }: { service: Service }) {
             return (
               <div key={r.key} style={{ ...styles.variantRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', textDecoration: r.deleted ? 'line-through' : 'none' }}>
-                  <Badge variant="neutral">{rule.rule_type}</Badge>
-                  {rule.rule_type === 'recurring' && <span>{[...(rule.days_of_week || [])].sort((a, b) => a - b).map((d) => dayNames[d]).join(', ')} {rule.start_time}–{rule.end_time}</span>}
-                  {rule.rule_type === 'seasonal' && <span>{rule.effective_from} to {rule.effective_to} {rule.start_time}–{rule.end_time}</span>}
+                  <Badge variant="neutral">{t(`serviceDetail.ruleType.${rule.rule_type}`, { defaultValue: rule.rule_type })}</Badge>
+                  {rule.rule_type === 'recurring' && <span>{[...(rule.days_of_week || [])].sort((a, b) => a - b).map((d) => dayNames[d]).join(', ')} {t('serviceDetail.timeRange', { start: rule.start_time, end: rule.end_time })}</span>}
+                  {rule.rule_type === 'seasonal' && <span>{t('serviceDetail.seasonalRange', { from: formatDay(rule.effective_from), to: formatDay(rule.effective_to), start: rule.start_time, end: rule.end_time })}</span>}
                   {rule.description && <span style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>— {rule.description}</span>}
-                  {r.isNew && <RowTag>New</RowTag>}
-                  {edited && <RowTag>Changed</RowTag>}
-                  {r.deleted && <RowTag>Deleted when you save</RowTag>}
+                  {r.isNew && <RowTag>{t('serviceDetail.rowNew')}</RowTag>}
+                  {edited && <RowTag>{t('serviceDetail.rowChanged')}</RowTag>}
+                  {r.deleted && <RowTag>{t('serviceDetail.rowDeleted')}</RowTag>}
                 </div>
-                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
-                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, rule })} title="Edit">✏️</button>
-                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Delete">×</button>
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('serviceDetail.undo')}</Button> : <>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, rule })} title={t('common:edit')}>✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title={t('common:delete')}>×</button>
                 </>}
               </div>
             );
@@ -573,6 +584,7 @@ function ruleData(r: RuleData): RuleData {
 }
 
 function AvailabilityModal({ rule, onClose, onDone }: { rule?: AvailabilityRule; onClose: () => void; onDone: (data: RuleData) => void }) {
+  const { t } = useTranslation('offerings');
   const businessId = localStorage.getItem('business_id') || '';
   const [form, setForm] = useState({
     rule_type: rule?.rule_type || 'recurring',
@@ -589,7 +601,7 @@ function AvailabilityModal({ rule, onClose, onDone }: { rule?: AvailabilityRule;
   const [allLocations, setAllLocations] = useState<any[]>([]);
   const [allStaff, setAllStaff] = useState<any[]>([]);
   const [allResources, setAllResources] = useState<any[]>([]);
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayNames = [t('shared.day.sun'), t('shared.day.mon'), t('shared.day.tue'), t('shared.day.wed'), t('shared.day.thu'), t('shared.day.fri'), t('shared.day.sat')];
 
   useEffect(() => {
     import('../api/locations').then((locApi) => { locApi.getLocations(businessId).then(setAllLocations).catch(() => {}); });
@@ -610,19 +622,19 @@ function AvailabilityModal({ rule, onClose, onDone }: { rule?: AvailabilityRule;
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>{rule ? 'Edit Availability Rule' : 'Add Availability Rule'}</h3>
-          <button style={styles.closeBtn} onClick={onClose}>×</button>
+          <h3 style={styles.modalTitle}>{rule ? t('serviceDetail.editRule') : t('serviceDetail.addRuleTitle')}</h3>
+          <button style={styles.closeBtn} onClick={onClose} aria-label={t('common:modal.close')}>×</button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Rule Type</label>
+            <label style={styles.label}>{t('serviceDetail.ruleTypeLabel')}</label>
             <select style={styles.input} value={form.rule_type} onChange={(e) => setForm({ ...form, rule_type: e.target.value })}>
-              <option value="recurring">Recurring (weekly)</option>
-              <option value="seasonal">Seasonal (date range)</option>
+              <option value="recurring">{t('serviceDetail.recurring')}</option>
+              <option value="seasonal">{t('serviceDetail.seasonal')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Days of Week</label>
+            <label style={styles.label}>{t('serviceDetail.daysOfWeek')}</label>
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
               {dayNames.map((name, idx) => (
                 <button key={idx} type="button" onClick={() => toggleDay(idx)}
@@ -633,47 +645,47 @@ function AvailabilityModal({ rule, onClose, onDone }: { rule?: AvailabilityRule;
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div style={styles.formGroup}><label style={styles.label}>Start Time</label><input type="time" style={styles.input} value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.label}>End Time</label><input type="time" style={styles.input} value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>{t('serviceDetail.startTime')}</label><input type="time" style={styles.input} value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>{t('serviceDetail.endTime')}</label><input type="time" style={styles.input} value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} /></div>
           </div>
           {form.rule_type === 'seasonal' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={styles.formGroup}><label style={styles.label}>Effective From</label><input type="date" style={styles.input} value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} /></div>
-              <div style={styles.formGroup}><label style={styles.label}>Effective To</label><input type="date" style={styles.input} value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} /></div>
+              <div style={styles.formGroup}><label style={styles.label}>{t('serviceDetail.effectiveFrom')}</label><input type="date" style={styles.input} value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} /></div>
+              <div style={styles.formGroup}><label style={styles.label}>{t('serviceDetail.effectiveTo')}</label><input type="date" style={styles.input} value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} /></div>
             </div>
           )}
           {allLocations.length > 0 && (
             <MultiSelect
-              label="Locations (leave empty for all)"
+              label={t('serviceDetail.locationsLabel')}
               options={allLocations.map((loc: any) => ({ id: loc.id, label: loc.name }))}
               selected={form.location_ids}
               onChange={(ids) => setForm({ ...form, location_ids: ids })}
-              placeholder="All locations"
+              placeholder={t('serviceDetail.allLocations')}
             />
           )}
           {allStaff.length > 0 && (
             <MultiSelect
-              label="Staff (leave empty for all)"
+              label={t('serviceDetail.staffLabel')}
               options={allStaff.map((s: any) => ({ id: s.user_id || s.id, label: `${s.first_name} ${s.last_name}` }))}
               selected={form.staff_ids}
               onChange={(ids) => setForm({ ...form, staff_ids: ids })}
-              placeholder="All staff"
+              placeholder={t('serviceDetail.allStaff')}
             />
           )}
           {allResources.length > 0 && (
             <MultiSelect
-              label="Required Resources (leave empty for none)"
+              label={t('serviceDetail.resourcesLabel')}
               options={allResources.map((r: any) => ({ id: r.id, label: r.name }))}
               selected={form.resource_ids}
               onChange={(ids) => setForm({ ...form, resource_ids: ids })}
-              placeholder="No resource requirements"
+              placeholder={t('serviceDetail.noResources')}
             />
           )}
-          <div style={styles.formGroup}><label style={styles.label}>Description (optional)</label><input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
+          <div style={styles.formGroup}><label style={styles.label}>{t('serviceDetail.descriptionOptional')}</label><input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>{t('serviceDetail.savedWithPage')}</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit">{rule ? 'Done' : 'Add Rule'}</Button>
+            <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+            <Button type="submit">{rule ? t('serviceDetail.done') : t('serviceDetail.addRule')}</Button>
           </div>
         </form>
       </div>

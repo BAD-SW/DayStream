@@ -1,8 +1,11 @@
+import { askConfirm } from '../../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { LANGUAGE_OPTIONS } from '@daystream/shared';
 import { LanguageSelect } from '../../components/LanguageSelect';
+import { useBusinessLanguages } from '../../context/useBusinessLanguages';
 import { FormTemplateEditor } from './FormTemplateEditor';
 import { FormRenderer } from '../../components/forms/FormRenderer';
 import * as formsApi from '../../api/forms';
@@ -21,6 +24,7 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
   kind?: 'form' | 'chart';
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation('templates');
   const [forms, setForms] = useState<Form[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,14 +36,16 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
   // Unsaved changes in the open builder; switching to another row asks first.
   const [editorDirty, setEditorDirty] = useState(false);
   const handleDirty = useCallback((d: boolean) => { setEditorDirty(d); onDirtyChange?.(d); }, [onDirtyChange]);
-  const open = (target: Form | 'new') => {
-    if (editorDirty && !confirm('Discard your unsaved changes?')) return;
+  const confirmDiscard = () => askConfirm({ message: t('formsList.discardConfirm'), confirmLabel: t('common:action.discard'), destructive: true });
+  const open = async (target: Form | 'new') => {
+    if (editorDirty && !(await confirmDiscard())) return;
     setEditing(target);
   };
 
   const isChart = kind === 'chart';
   const isSystem = scope === 'system';
-  const noun = isChart ? 'chart template' : 'form';
+  const { languages: businessLanguages } = useBusinessLanguages();
+  const languages = isSystem ? undefined : businessLanguages;
   // A business also sees the platform's active system forms, read only, to preview and duplicate.
   const [systemForms, setSystemForms] = useState<SystemForm[]>([]);
   const [preview, setPreview] = useState<SystemForm | null>(null);
@@ -50,10 +56,10 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
       ? systemApi.listAdminSystemForms(kind).then((list) => list.map(formsApi.systemFormAsForm))
       : formsApi.listForms(businessId, kind);
     own.then(setForms)
-      .catch(() => setError(`Could not load the ${noun}s.`))
+      .catch(() => setError(t(isChart ? 'formsList.loadChartsFailed' : 'formsList.loadFormsFailed')))
       .finally(() => setLoading(false));
     if (!isSystem) formsApi.listSystemForms(businessId, kind).then(setSystemForms).catch(() => setSystemForms([]));
-  }, [businessId, kind, noun, isSystem]);
+  }, [businessId, kind, isChart, isSystem, t]);
 
   // Duplicate a system form into the business and open the copy (not active, applying to nothing yet).
   const copyFromSystem = async (f: SystemForm) => {
@@ -65,13 +71,13 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
 
   const fail = (e: unknown) => {
     const err = e as { response?: { data?: { error?: string } }; message?: string };
-    setError(err.response?.data?.error || err.message || 'Something went wrong.');
+    setError(err.response?.data?.error || err.message || t('formsList.somethingWrong'));
   };
 
   const handleDuplicate = async (f: Form) => {
     setError(null);
     try {
-      if (isSystem) await systemApi.createAdminSystemForm(kind, { name: `${f.name} (Copy)`, language: f.language, definition: f.definition, is_active: false });
+      if (isSystem) await systemApi.createAdminSystemForm(kind, { name: t('formsList.copyName', { name: f.name }), language: f.language, definition: f.definition, is_active: false });
       else await formsApi.duplicateForm(businessId, f.id);
       load();
     } catch (e) { fail(e); }
@@ -79,17 +85,15 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
 
   const handleDelete = async (f: Form) => {
     const label = f.language ? `${f.name} (${f.language})` : f.name;
-    if (!confirm(isChart
-      ? `Delete chart template "${label}"? Charts already written from it are kept.`
-      : `Delete form "${label}"? Forms customers already completed are kept.`)) return;
+    if (!(await askConfirm({ message: t(isChart ? 'formsList.confirmDeleteChart' : 'formsList.confirmDeleteForm', { label }), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     setError(null);
     try { if (isSystem) await systemApi.deleteAdminSystemForm(f.id); else await formsApi.deleteForm(businessId, f.id); if (editing && editing !== 'new' && editing.id === f.id) setEditing(null); load(); } catch (e) { fail(e); }
   };
 
-  const openLanguage = (f: Form) => {
-    if (editorDirty && !confirm('Discard your unsaved changes?')) return;
+  const openLanguage = async (f: Form) => {
+    if (editorDirty && !(await confirmDiscard())) return;
     const used = new Set(forms.filter((x) => x.groupId === f.groupId).map((x) => x.language));
-    const free = LANGUAGE_OPTIONS.find((l) => !used.has(l.code));
+    const free = LANGUAGE_OPTIONS.find((l) => !used.has(l.code) && (!languages || languages.includes(l.code)));
     setNewLang(free?.code ?? '');
     setLangTarget(f);
   };
@@ -106,7 +110,7 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
     } catch (e) { fail(e); } finally { setBusy(false); }
   };
 
-  if (loading) return <p style={s.muted}>Loading...</p>;
+  if (loading) return <p style={s.muted}>{t('common:loading')}</p>;
 
   const usedForTarget = langTarget
     ? new Set(forms.filter((x) => x.groupId === langTarget.groupId).map((x) => x.language))
@@ -117,17 +121,9 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
     <div>
       <p style={s.description}>
         {isChart ? (
-          <>
-            Build the chart templates your practitioners fill in about a customer, for example SOAP notes or a
-            treatment record. Charts are private to staff who work with clients, are stored encrypted, and
-            are locked when a practitioner signs them off.
-          </>
+          <>{t('formsList.introChart')}</>
         ) : (
-          <>
-            Build the forms and waivers your customers complete: intake questions, health history, or a
-            waiver with an "I agree" box and signature. Each form can have a version per language.
-            Completed forms are saved as a PDF in the customer's folder.
-          </>
+          <>{t('formsList.introForm')}</>
         )}
       </p>
       {error && <p style={s.error} role="alert">{error}</p>}
@@ -139,20 +135,20 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
       {!isSystem && systemForms.length > 0 && (
         <>
           <div style={s.listHeader}>
-            <h3 style={s.subTitle}>{isChart ? 'System chart templates' : 'System forms'}</h3>
+            <h3 style={s.subTitle}>{isChart ? t('formsList.systemCharts') : t('formsList.systemForms')}</h3>
           </div>
-          <p style={s.helper}>Starting points from the platform. Duplicate one to make your own copy, then choose when it is needed.</p>
+          <p style={s.helper}>{t('formsList.systemHelper')}</p>
           <div style={s.list}>
             {systemForms.map((f) => (
               <div key={f.id} style={s.listRow}>
                 <div style={s.listInfo}>
                   <span style={s.listName}>{f.name}</span>
-                  <span style={s.tag}>System</span>
-                  {!isChart && f.signed && <span style={s.tag}>Signed</span>}
+                  <span style={s.tag}>{t('formsList.system')}</span>
+                  {!isChart && f.signed && <span style={s.tag}>{t('formsList.signed')}</span>}
                 </div>
                 <div style={s.listActions}>
-                  <Button size="sm" variant="secondary" onClick={() => setPreview(f)}>Preview</Button>
-                  <Button size="sm" variant="ghost" loading={copying === f.id} onClick={() => { if (editorDirty && !confirm('Discard your unsaved changes?')) return; copyFromSystem(f); }}>Duplicate</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setPreview(f)}>{t('formsList.preview')}</Button>
+                  <Button size="sm" variant="ghost" loading={copying === f.id} onClick={async () => { if (editorDirty && !(await confirmDiscard())) return; copyFromSystem(f); }}>{t('formsList.duplicate')}</Button>
                 </div>
               </div>
             ))}
@@ -160,14 +156,12 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
         </>
       )}
       <div style={s.listHeader}>
-        <h3 style={s.subTitle}>{isChart ? 'Charts' : 'Forms'}</h3>
-        <Button size="sm" onClick={() => open('new')}>{isChart ? 'New chart template' : 'New form'}</Button>
+        <h3 style={s.subTitle}>{isChart ? t('formsList.charts') : t('formsList.forms')}</h3>
+        <Button size="sm" onClick={() => open('new')}>{isChart ? t('formsList.newChart') : t('formsList.newForm')}</Button>
       </div>
 
       {forms.length === 0 ? (
-        <p style={s.muted}>{isChart
-          ? 'No chart templates yet. Create one to start recording treatments.'
-          : 'No forms yet. Create one to start collecting waivers and intake answers.'}</p>
+        <p style={s.muted}>{isChart ? t('formsList.noCharts') : t('formsList.noForms')}</p>
       ) : (
         <div style={s.list}>
           {forms.map((f) => (
@@ -176,16 +170,16 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
               <div style={s.listInfo}>
                 <span style={s.listName}>{f.name}</span>
                 {f.language && <span style={s.tag}>{f.language}</span>}
-                {!isChart && f.signed && <span style={s.tag}>Signed</span>}
+                {!isChart && f.signed && <span style={s.tag}>{t('formsList.signed')}</span>}
                 <span style={{ ...s.statusTag, color: f.isActive ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
-                  {f.isActive ? '● Active' : '○ Inactive'}
+                  {f.isActive ? t('formsList.active') : t('formsList.inactive')}
                 </span>
               </div>
               <div style={s.listActions}>
-                <Button size="sm" variant="secondary" onClick={() => open(f)}>Edit</Button>
-                <Button size="sm" variant="ghost" onClick={() => handleDuplicate(f)}>Duplicate</Button>
-                {!isChart && !isSystem && <Button size="sm" variant="ghost" onClick={() => openLanguage(f)}>Add language</Button>}
-                <Button size="sm" variant="ghost" onClick={() => handleDelete(f)}>Delete</Button>
+                <Button size="sm" variant="secondary" onClick={() => open(f)}>{t('common:edit')}</Button>
+                <Button size="sm" variant="ghost" onClick={() => handleDuplicate(f)}>{t('formsList.duplicate')}</Button>
+                {!isChart && !isSystem && <Button size="sm" variant="ghost" onClick={() => openLanguage(f)}>{t('formsList.addLanguage')}</Button>}
+                <Button size="sm" variant="ghost" onClick={() => handleDelete(f)}>{t('common:delete')}</Button>
               </div>
             </div>
           ))}
@@ -209,30 +203,29 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope
       )}
       </div>
 
-      <Modal open={!!preview} onClose={() => setPreview(null)} title={`Preview — ${preview?.name ?? ''}`} size="lg">
+      <Modal open={!!preview} onClose={() => setPreview(null)} title={t('formsList.previewTitle', { name: preview?.name ?? '' })} size="lg">
         {preview && (
           <>
-            <p style={s.helper}>Read only. Duplicate it to make your own copy you can change.</p>
+            <p style={s.helper}>{t('formsList.readOnly')}</p>
             <FormRenderer definition={preview.definition} idPrefix="system-preview" answers={{}} onChange={() => undefined} disabled />
           </>
         )}
       </Modal>
 
-      <Modal open={!!langTarget} onClose={() => setLangTarget(null)} title="Add a language version" size="sm">
+      <Modal open={!!langTarget} onClose={() => setLangTarget(null)} title={t('formsList.addLanguageTitle')} size="sm">
         {availableLanguages.length === 0 ? (
-          <p style={s.muted}>This form already has every language the list offers.</p>
+          <p style={s.muted}>{t('formsList.allLanguages')}</p>
         ) : (
           <>
             <p style={s.helper}>
-              This copies "{langTarget?.name}" into a new version for you to translate. It stays inactive
-              until you switch it on.
+              {t('formsList.copiesInto', { name: langTarget?.name })}
             </p>
-            <label style={s.label} htmlFor="frm-new-lang">Language</label>
-            <LanguageSelect id="frm-new-lang" style={s.select} value={newLang} onChange={setNewLang}
+            <label style={s.label} htmlFor="frm-new-lang">{t('formsList.language')}</label>
+            <LanguageSelect languages={languages} id="frm-new-lang" style={s.select} value={newLang} onChange={setNewLang}
               exclude={[...usedForTarget].filter((l): l is string => !!l)} />
             <div style={s.modalActions}>
-              <Button onClick={handleAddLanguage} loading={busy} disabled={!newLang}>Add and edit</Button>
-              <Button variant="ghost" onClick={() => setLangTarget(null)} disabled={busy}>Cancel</Button>
+              <Button onClick={handleAddLanguage} loading={busy} disabled={!newLang}>{t('formsList.addAndEdit')}</Button>
+              <Button variant="ghost" onClick={() => setLangTarget(null)} disabled={busy}>{t('common:cancel')}</Button>
             </div>
           </>
         )}

@@ -1,6 +1,8 @@
 import { useState, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
+import { useTranslation, Trans } from 'react-i18next';
+import { PublicLanguageBar } from '../components/PublicLanguageBar';
 
 /**
  * Forgot Password — request a reset link. Submits the email to
@@ -10,6 +12,8 @@ import { apiClient } from '../api/client';
  * either way.
  */
 export function ForgotPassword() {
+  const { t } = useTranslation('auth');
+  const { t: tc } = useTranslation('common');
   // Same seed tenant the Login screen uses until multi-tenant login lands.
   const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -33,29 +37,29 @@ export function ForgotPassword() {
 
   return (
     <div style={styles.container}>
+      <PublicLanguageBar />
       <div style={styles.card}>
-        <h1 style={styles.title}>DayStream</h1>
-        <p style={styles.subtitle}>Reset your password</p>
+        <h1 style={styles.title}>{tc('app_name')}</h1>
+        <p style={styles.subtitle}>{t('forgot.subtitle')}</p>
 
         {sent ? (
           <div style={styles.form}>
             <p style={styles.info}>
-              If an account exists for <strong>{email}</strong>, a password reset link has been sent.
-              The link expires in 15 minutes.
+              <Trans t={t} i18nKey="forgot.sent" values={{ email }} components={{ 1: <strong /> }} />
             </p>
-            <Link to="/login" style={styles.linkBtn}>Back to sign in</Link>
+            <Link to="/login" style={styles.linkBtn}>{t('backToSignIn')}</Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={styles.form}>
-            <p style={styles.info}>Enter your email and we'll send you a link to set a new password.</p>
+            <p style={styles.info}>{t('forgot.intro')}</p>
             <div style={styles.fieldGroup}>
-              <label htmlFor="email" style={styles.label}>Email</label>
+              <label htmlFor="email" style={styles.label}>{t('email')}</label>
               <input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={t('login.emailPlaceholder')}
                 required
                 autoFocus
                 style={styles.input}
@@ -63,9 +67,9 @@ export function ForgotPassword() {
               />
             </div>
             <button type="submit" disabled={loading || !email} style={styles.button}>
-              {loading ? 'Sending…' : 'Send reset link'}
+              {loading ? t('forgot.sending') : t('forgot.send')}
             </button>
-            <Link to="/login" style={styles.linkCenter}>Back to sign in</Link>
+            <Link to="/login" style={styles.linkCenter}>{t('backToSignIn')}</Link>
           </form>
         )}
       </div>
@@ -74,7 +78,7 @@ export function ForgotPassword() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-background)', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", padding: '16px' },
+  container: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-background)', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", padding: '16px', paddingTop: 'var(--space-xl)', position: 'relative' },
   card: { backgroundColor: 'var(--color-surface)', borderRadius: '12px', padding: '48px 40px', width: '100%', maxWidth: '400px', border: '1px solid var(--color-border)' },
   title: { color: 'var(--color-text)', fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: '0 0 8px 0', textAlign: 'center' as const },
   subtitle: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', margin: '0 0 32px 0', textAlign: 'center' as const },

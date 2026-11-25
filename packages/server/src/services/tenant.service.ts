@@ -3,6 +3,7 @@ import { hashPassword } from './auth.service';
 import { logAudit } from './audit.service';
 import { generateSlug } from '@daystream/shared';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 interface CreateTenantInput {
   name: string;
@@ -22,7 +23,7 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
   // Check slug uniqueness
   const { rows: existing } = await adminPool.query('SELECT id FROM sys_tenants WHERE slug = $1', [slug]);
   if (existing.length > 0) {
-    throw new Error('A tenant with this slug already exists');
+    throw new Error(msg('errors:tenant.aTenantWithThisSlugAlready'));
   }
 
   const client = await adminPool.connect();
@@ -129,7 +130,7 @@ export async function getTenantById(id: string) {
 
 export async function updateTenantStatus(id: string, status: 'active' | 'suspended' | 'archived', userId: string) {
   const tenant = await getTenantById(id);
-  if (!tenant) throw new Error('Tenant not found');
+  if (!tenant) throw new Error(msg('errors:tenant.tenantNotFound'));
 
   // Enforce valid transitions
   const validTransitions: Record<string, string[]> = {
@@ -139,7 +140,7 @@ export async function updateTenantStatus(id: string, status: 'active' | 'suspend
   };
 
   if (!validTransitions[tenant.status]?.includes(status)) {
-    throw new Error(`Cannot transition from ${tenant.status} to ${status}`);
+    throw new Error(msg('errors:tenant.cannotTransitionFromTo', { status: tenant.status, status2: status }));
   }
 
   await adminPool.query('UPDATE sys_tenants SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]);

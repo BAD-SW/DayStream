@@ -1,4 +1,5 @@
 import { Fragment, KeyboardEvent, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface TabBarItem<T extends string> {
   key: T;
@@ -21,6 +22,7 @@ interface TabBarProps<T extends string> {
  * themselves. Same look as <Tabs>, driven by the --tab-* tokens.
  */
 export function TabBar<T extends string>({ tabs, active, onChange, 'aria-label': ariaLabel }: TabBarProps<T>) {
+  const { t } = useTranslation('common');
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
   function handleKeyDown(e: KeyboardEvent, index: number) {
@@ -53,7 +55,7 @@ export function TabBar<T extends string>({ tabs, active, onChange, 'aria-label':
             style={{ ...styles.tab, ...(isActive ? styles.tabActive : {}), ...(tab.changed ? styles.tabChanged : {}) }}
           >
             {tab.label}
-            {tab.changed && <span aria-label="unsaved changes" title="Unsaved changes" style={styles.changedDot} />}
+            {tab.changed && <span aria-label={t('tabBar.unsavedChanges')} title={t('tabBar.unsavedChangesTitle')} style={styles.changedDot} />}
           </button>
           </Fragment>
         );

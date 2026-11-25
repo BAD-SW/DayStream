@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { ReportRunResult, ReportExportFormat, ReportColumn } from '@daystream/shared';
 import { Button } from '../../design-system/components/actions/Button';
 import { Table } from '../../design-system/components/data/Table';
@@ -9,6 +10,7 @@ import { useContextManager } from '../../context/ContextManager';
 import * as reportsApi from '../../api/reports';
 import { REPORT_CATALOG } from './reportCatalog';
 import { formatReportValue, columnAlign, isNumericType } from './reportFormat';
+import { formatDay, formatNumber } from '../../utils/format';
 
 function findCatalogEntry(reportId: string) {
   for (const category of REPORT_CATALOG) {
@@ -108,6 +110,7 @@ function localToday(): string {
 }
 
 export function ReportRunner() {
+  const { t } = useTranslation('reports');
   const { reportId = '' } = useParams();
   const navigate = useNavigate();
   const { activeContext } = useContextManager();
@@ -150,7 +153,7 @@ export function ReportRunner() {
       setFilters({});
       setGroupBy([]);
     } catch {
-      setErrorMsg('Failed to run report. Check that a business is selected and try again.');
+      setErrorMsg(t('runner.runFailed'));
       setResult(null);
     } finally {
       setLoading(false);
@@ -181,7 +184,7 @@ export function ReportRunner() {
       link.click();
       URL.revokeObjectURL(url);
     } catch {
-      setErrorMsg(`Failed to export ${format.toUpperCase()}.`);
+      setErrorMsg(t('runner.exportFailed', { format: format.toUpperCase() }));
     } finally {
       setExporting(null);
     }
@@ -239,8 +242,8 @@ export function ReportRunner() {
   if (!entry) {
     return (
       <div style={styles.page}>
-        <Button variant="ghost" onClick={() => navigate('/reports')}>← Reports</Button>
-        <p style={styles.errorText}>Unknown report: {reportId}</p>
+        <Button variant="ghost" onClick={() => navigate('/reports')}>{t('runner.back')}</Button>
+        <p style={styles.errorText}>{t('runner.unknown', { id: reportId })}</p>
       </div>
     );
   }
@@ -252,9 +255,9 @@ export function ReportRunner() {
     <div style={styles.page}>
       <div style={styles.headerRow}>
         <div>
-          <Button variant="ghost" onClick={() => navigate('/reports')}>← Reports</Button>
-          <h1 style={styles.title}>{entry.title}</h1>
-          <p style={styles.description}>{entry.description}</p>
+          <Button variant="ghost" onClick={() => navigate('/reports')}>{t('runner.back')}</Button>
+          <h1 style={styles.title}>{t(`catalog.report.${entry.id}.title`)}</h1>
+          <p style={styles.description}>{t(`catalog.report.${entry.id}.description`)}</p>
         </div>
       </div>
 
@@ -262,13 +265,13 @@ export function ReportRunner() {
         {asOf ? (
           // Always today (owner, 19 Nov 2026): shown, not chosen.
           <div style={styles.dateField}>
-            <span style={styles.dateLabel}>As of</span>
-            <span style={styles.asOfValue}>{new Date(`${toDate}T12:00:00`).toLocaleDateString()}</span>
+            <span style={styles.dateLabel}>{t('runner.asOf')}</span>
+            <span style={styles.asOfValue}>{formatDay(toDate)}</span>
           </div>
         ) : (
           <>
             <div style={styles.dateField}>
-              <label htmlFor="report-from" style={styles.dateLabel}>From</label>
+              <label htmlFor="report-from" style={styles.dateLabel}>{t('runner.from')}</label>
               <input
                 id="report-from"
                 type="date"
@@ -279,7 +282,7 @@ export function ReportRunner() {
               />
             </div>
             <div style={styles.dateField}>
-              <label htmlFor="report-to" style={styles.dateLabel}>To</label>
+              <label htmlFor="report-to" style={styles.dateLabel}>{t('runner.to')}</label>
               <input
                 id="report-to"
                 type="date"
@@ -291,10 +294,10 @@ export function ReportRunner() {
             </div>
           </>
         )}
-        {loading && <span style={styles.runningHint}>Running…</span>}
+        {loading && <span style={styles.runningHint}>{t('runner.running')}</span>}
         {result && groupableColumns.length > 0 && (
           <div style={styles.groupInline}>
-            <span style={styles.groupBarLabel}>Group by</span>
+            <span style={styles.groupBarLabel}>{t('runner.groupBy')}</span>
             {groupableColumns.map((col) => (
               <label key={col.key} style={styles.groupCheck}>
                 <input
@@ -309,18 +312,18 @@ export function ReportRunner() {
         )}
         <div style={styles.spacer} />
         <Button variant="outline" onClick={() => handleExport('csv')} loading={exporting === 'csv'} disabled={!result}>
-          Save as CSV
+          {t('runner.saveCsv')}
         </Button>
         <Button variant="outline" onClick={() => handleExport('pdf')} loading={exporting === 'pdf'} disabled={!result}>
-          Save as PDF
+          {t('runner.savePdf')}
         </Button>
       </div>
 
       {!businessId && (
-        <p style={styles.hint}>Select a business to run this report.</p>
+        <p style={styles.hint}>{t('runner.selectBusiness')}</p>
       )}
       {businessId && rangeInvalid && (
-        <p style={styles.hint}>Choose a From date on or before the To date.</p>
+        <p style={styles.hint}>{t('runner.rangeInvalid')}</p>
       )}
       {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
 
@@ -330,8 +333,10 @@ export function ReportRunner() {
             <span>{result.meta.businessName}</span>
             <span>
               {result.sections
-                ? `${result.meta.dateRange.start} to ${result.meta.dateRange.end}`
-                : `${filteredRows.length} of ${result.rows.length} rows · ${result.meta.asOf ? `as of ${result.meta.dateRange.end}` : `${result.meta.dateRange.start} to ${result.meta.dateRange.end}`}`}
+                ? t('runner.range', { start: formatDay(result.meta.dateRange.start), end: formatDay(result.meta.dateRange.end) })
+                : result.meta.asOf
+                  ? t('runner.rowsAsOf', { shown: formatNumber(filteredRows.length), count: result.rows.length, total: formatNumber(result.rows.length), date: formatDay(result.meta.dateRange.end) })
+                  : t('runner.rowsRange', { shown: formatNumber(filteredRows.length), count: result.rows.length, total: formatNumber(result.rows.length), start: formatDay(result.meta.dateRange.start), end: formatDay(result.meta.dateRange.end) })}
             </span>
           </div>
 
@@ -343,15 +348,15 @@ export function ReportRunner() {
                 const isLastSection = secIdx === result.sections!.length - 1;
                 return (
                   <div key={section.id} style={{ ...styles.groupSection, ...(isLastSection ? {} : styles.sectionGap) }}>
-                    <div style={styles.groupHeader}>{section.title} <span style={styles.groupCount}>({section.rows.length})</span></div>
+                    <div style={styles.groupHeader}>{section.title} <span style={styles.groupCount}>({formatNumber(section.rows.length)})</span></div>
                     <Table
                       columns={secCols}
                       data={section.rows}
                       clientSort
                       fixedLayout
-                      emptyMessage="No data for the selected range"
+                      emptyMessage={t('runner.noData')}
                       footerRows={hasSecTotals && section.rows.length > 0
-                        ? [{ cells: buildFooterCellsFor(section.columns, section.totals, result.meta.currency, 'Total'), strong: true }]
+                        ? [{ cells: buildFooterCellsFor(section.columns, section.totals, result.meta.currency, t('runner.total')), strong: true }]
                         : undefined}
                     />
                   </div>
@@ -364,22 +369,22 @@ export function ReportRunner() {
                 const isLast = groupIdx === groups.length - 1;
                 const footerRows = [];
                 if (hasTotals) {
-                  footerRows.push({ cells: buildFooterCells('Subtotal', g.subtotals) });
+                  footerRows.push({ cells: buildFooterCells(t('runner.subtotal'), g.subtotals) });
                   // The grand total rides on the last group's table so it shares
                   // that table's exact column widths and stays aligned.
                   if (isLast && filteredRows.length > 0) {
-                    footerRows.push({ cells: buildFooterCells('Grand Total', filteredTotals), strong: true });
+                    footerRows.push({ cells: buildFooterCells(t('runner.grandTotal'), filteredTotals), strong: true });
                   }
                 }
                 return (
                   <div key={g.label} style={styles.groupSection}>
-                    <div style={styles.groupHeader}>{g.label} <span style={styles.groupCount}>({g.rows.length})</span></div>
+                    <div style={styles.groupHeader}>{g.label} <span style={styles.groupCount}>({formatNumber(g.rows.length)})</span></div>
                     <Table
                       columns={columns}
                       data={g.rows}
                       clientSort
                       fixedLayout
-                      emptyMessage="No rows"
+                      emptyMessage={t('runner.noRows')}
                       footerRows={footerRows.length > 0 ? footerRows : undefined}
                     />
                   </div>
@@ -395,15 +400,15 @@ export function ReportRunner() {
               filters={filters}
               onFiltersChange={setFilters}
               filterSource={result.rows}
-              emptyMessage="No data for the selected range"
-              footerRows={hasTotals && filteredRows.length > 0 ? [{ cells: buildFooterCells('Grand Total', filteredTotals), strong: true }] : undefined}
+              emptyMessage={t('runner.noData')}
+              footerRows={hasTotals && filteredRows.length > 0 ? [{ cells: buildFooterCells(t('runner.grandTotal'), filteredTotals), strong: true }] : undefined}
             />
           )}
         </div>
       )}
 
       {!result && !loading && businessId && !rangeInvalid && (
-        <p style={styles.hint}>Generating report…</p>
+        <p style={styles.hint}>{t('runner.generating')}</p>
       )}
     </div>
   );

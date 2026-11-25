@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { canContact, Channel } from './contactability.service';
+import { msg } from '../i18n';
 
 /** Message steps and the channel each one uses. */
 const SEND_STEP_CHANNELS: Record<string, Channel> = {
@@ -237,7 +238,7 @@ export async function enrollCustomer(
     [sequenceId, customerId],
   );
   if (scope[0] && scope[0].sequence_business && scope[0].sequence_business !== scope[0].person_business) {
-    throw new Error('This person belongs to another business');
+    throw new Error(msg('errors:sequenceEngine.thisPersonBelongsToAnotherBusiness'));
   }
 
   // Check if already enrolled (unless allow_reentry is true)
@@ -251,10 +252,10 @@ export async function enrollCustomer(
   if (existing.length > 0) {
     const enrollment = existing[0];
     if (enrollment.status === 'active') {
-      throw new Error('Customer is already actively enrolled in this sequence');
+      throw new Error(msg('errors:sequenceEngine.customerIsAlreadyActivelyEnrolledIn'));
     }
     if (!enrollment.allow_reentry) {
-      throw new Error('Sequence does not allow re-entry');
+      throw new Error(msg('errors:sequenceEngine.sequenceDoesNotAllowReEntry'));
     }
     // Remove old enrollment for re-entry
     await adminPool.query(`DELETE FROM mkt_sequence_enrollments WHERE id = $1`, [enrollment.id]);

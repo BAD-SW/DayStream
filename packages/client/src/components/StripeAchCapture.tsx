@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadStripe, Stripe } from '@stripe/stripe-js';
 import { Button } from '../design-system/components/actions/Button';
 
@@ -34,6 +35,7 @@ function stripeFor(pk: string): Promise<Stripe | null> {
 }
 
 export function StripeAchCapture({ clientSecret, publishableKey, creditorName, onCaptured, onCancel }: Props) {
+  const { t } = useTranslation('checkout');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [routing, setRouting] = useState('');
@@ -43,7 +45,8 @@ export function StripeAchCapture({ clientSecret, publishableKey, creditorName, o
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const creditor = creditorName || 'DayStream';
+  // The creditor comes with the capture session (the Stripe account's business); the application's name otherwise.
+  const creditor = creditorName || t('common:app_name');
   const canConfirm =
     !!name.trim() && !!email.trim() && routing.trim().length === 9 && !!account.trim() && accepted;
 
@@ -51,7 +54,7 @@ export function StripeAchCapture({ clientSecret, publishableKey, creditorName, o
     setBusy(true); setErr(null);
     const stripe = await stripeFor(publishableKey);
     if (!stripe) {
-      setErr('Could not initialize the payment provider. Check the publishable key.');
+      setErr(t('stripe.initFailed'));
       setBusy(false);
       return;
     }
@@ -66,13 +69,13 @@ export function StripeAchCapture({ clientSecret, publishableKey, creditorName, o
       },
     });
     if (result.error) {
-      setErr(result.error.message || 'Could not set up the direct debit mandate.');
+      setErr(result.error.message || t('stripe.mandateFailed'));
       setBusy(false);
       return;
     }
     const pmId = result.setupIntent?.payment_method;
     if (typeof pmId !== 'string') {
-      setErr('Mandate setup did not return a payment method.');
+      setErr(t('stripe.mandateNoMethod'));
       setBusy(false);
       return;
     }
@@ -82,47 +85,44 @@ export function StripeAchCapture({ clientSecret, publishableKey, creditorName, o
   return (
     <div style={styles.form}>
       <div style={styles.field}>
-        <label style={styles.label}>Account holder name</label>
-        <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name on the bank account" autoComplete="off" />
+        <label style={styles.label}>{t('stripe.holderName')}</label>
+        <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder={t('stripe.holderNamePlaceholder')} autoComplete="off" />
       </div>
       <div style={styles.field}>
-        <label style={styles.label}>Email</label>
-        <input style={styles.input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="For the mandate confirmation" autoComplete="off" />
+        <label style={styles.label}>{t('stripe.email')}</label>
+        <input style={styles.input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('stripe.emailPlaceholder')} autoComplete="off" />
       </div>
       <div style={styles.row}>
         <div style={{ ...styles.field, flex: 1 }}>
-          <label style={styles.label}>Routing number</label>
-          <input style={styles.input} value={routing} onChange={(e) => setRouting(e.target.value.replace(/\D/g, '').slice(0, 9))} placeholder="9 digits" inputMode="numeric" autoComplete="off" />
+          <label style={styles.label}>{t('stripe.routingNumber')}</label>
+          <input style={styles.input} value={routing} onChange={(e) => setRouting(e.target.value.replace(/\D/g, '').slice(0, 9))} placeholder={t('stripe.routingPlaceholder')} inputMode="numeric" autoComplete="off" />
         </div>
         <div style={{ ...styles.field, flex: 1 }}>
-          <label style={styles.label}>Account number</label>
-          <input style={styles.input} value={account} onChange={(e) => setAccount(e.target.value.replace(/\D/g, ''))} placeholder="Account number" inputMode="numeric" autoComplete="off" />
+          <label style={styles.label}>{t('stripe.accountNumber')}</label>
+          <input style={styles.input} value={account} onChange={(e) => setAccount(e.target.value.replace(/\D/g, ''))} placeholder={t('stripe.accountNumber')} inputMode="numeric" autoComplete="off" />
         </div>
       </div>
       <div style={styles.field}>
-        <label style={styles.label}>Account type</label>
+        <label style={styles.label}>{t('stripe.accountType')}</label>
         <select style={styles.input} value={holderType} onChange={(e) => setHolderType(e.target.value as 'individual' | 'company')}>
-          <option value="individual">Individual</option>
-          <option value="company">Company</option>
+          <option value="individual">{t('stripe.individual')}</option>
+          <option value="company">{t('stripe.company')}</option>
         </select>
       </div>
 
       <label style={styles.mandate}>
         <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} style={styles.checkbox} />
         <span style={styles.mandateText}>
-          By providing your account information and confirming, you authorize {creditor} and Stripe,
-          our payment service provider, to debit your account via the ACH network for the agreed
-          amounts, and you authorize your bank to honor those debits. You may revoke this authorization
-          by removing this payment method. ACH debits may take several business days to settle.
+          {t('stripe.achMandate', { creditor })}
         </span>
       </label>
 
       {err && <p style={styles.err}>{err}</p>}
       <div style={styles.actions}>
         <Button size="sm" variant="primary" loading={busy} disabled={!canConfirm} onClick={handleConfirm}>
-          Set up direct debit
+          {t('stripe.setUpDirectDebit')}
         </Button>
-        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>{t('common:cancel')}</button>
       </div>
     </div>
   );

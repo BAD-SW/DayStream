@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { Badge } from '../design-system/components/data/Badge';
@@ -12,6 +13,7 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'neutral
 };
 
 export function Resources() {
+  const { t } = useTranslation('setup');
   const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
   const [resources, setResources] = useState<Resource[]>([]);
@@ -42,34 +44,34 @@ export function Resources() {
   }, [businessId, search]);
 
   useEffect(() => { fetchResources(); }, [fetchResources]);
-  useEffect(() => { const t = setTimeout(() => setSearch(searchInput), 300); return () => clearTimeout(t); }, [searchInput]);
+  useEffect(() => { const timer = setTimeout(() => setSearch(searchInput), 300); return () => clearTimeout(timer); }, [searchInput]);
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
+    { key: 'name', header: t('resources.name'), sortable: true },
     {
-      key: 'category', header: 'Category', sortable: true,
-      render: (val: string) => val ? val.charAt(0).toUpperCase() + val.slice(1) : '—',
+      key: 'category', header: t('resources.category'), sortable: true,
+      render: (val: string) => val ? t(`resources.category_${val}`, { defaultValue: val.charAt(0).toUpperCase() + val.slice(1) }) : '—',
     },
     {
-      key: 'capacity', header: 'Capacity', sortable: true,
-      render: (val: number) => val > 1 ? `${val} concurrent` : 'Exclusive',
+      key: 'capacity', header: t('resources.capacity'), sortable: true,
+      render: (val: number) => val > 1 ? t('resources.concurrent', { n: val }) : t('resources.exclusive'),
     },
     {
-      key: 'buffer_minutes', header: 'Buffer', sortable: true,
-      render: (val: number) => val > 0 ? `${val} min` : '—',
+      key: 'buffer_minutes', header: t('resources.buffer'), sortable: true,
+      render: (val: number) => val > 0 ? t('resources.minutes', { n: val }) : '—',
     },
     {
-      key: 'status', header: 'Status', sortable: true,
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
+      key: 'status', header: t('resources.status'), sortable: true,
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`resources.status_${val}`, { defaultValue: val })}</Badge>,
     },
   ];
 
   return (
     <div>
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search resources..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('resources.search')} />
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => navigate('/resources/new')}>Add Resource</Button>
+        <Button variant="secondary" onClick={() => navigate('/resources/new')}>{t('resources.add')}</Button>
       </div>
 
       <Table
@@ -77,7 +79,7 @@ export function Resources() {
         data={resources}
         loading={loading}
         onRowClick={(row) => navigate(`/resources/${row.id}`)}
-        emptyMessage="No resources found"
+        emptyMessage={t('resources.empty')}
         mobileCardMode
         clientSort
       />

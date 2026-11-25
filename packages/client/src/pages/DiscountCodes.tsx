@@ -5,8 +5,11 @@ import { Button } from '../design-system/components/actions/Button';
 import * as pricingApi from '../api/pricing';
 import type { DiscountCode } from '../api/pricing';
 import { formatCurrency } from '../utils/currency';
+import { formatPercent } from '../utils/format';
+import { useTranslation } from 'react-i18next';
 
 export function DiscountCodes() {
+  const { t } = useTranslation('offerings');
   const [codes, setCodes] = useState<DiscountCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -40,14 +43,14 @@ export function DiscountCodes() {
   };
 
   const columns = [
-    { key: 'code', header: 'Code' },
-    { key: 'discount', header: 'Discount', render: (_: any, r: DiscountCode) => r.discount_type === 'percentage' ? `${r.discount_value}%` : formatCurrency(r.discount_value) },
-    { key: 'current_uses', header: 'Uses', render: (_: any, r: DiscountCode) => `${r.current_uses}/${r.max_total_uses || '∞'}` },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'active' ? 'success' : 'neutral'}>{v}</Badge> },
+    { key: 'code', header: t('shared.code') },
+    { key: 'discount', header: t('discountCodes.discount'), render: (_: any, r: DiscountCode) => r.discount_type === 'percentage' ? formatPercent(r.discount_value) : formatCurrency(r.discount_value) },
+    { key: 'current_uses', header: t('discountCodes.uses'), render: (_: any, r: DiscountCode) => `${r.current_uses}/${r.max_total_uses || '∞'}` },
+    { key: 'status', header: t('shared.status'), render: (v: string) => <Badge variant={v === 'active' ? 'success' : 'neutral'}>{t(`shared.status.${v}`, { defaultValue: v })}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, r: DiscountCode) => r.status === 'active' ? (
-        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDeactivate(r.id); }}>Deactivate</button>
+        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDeactivate(r.id); }}>{t('discountCodes.deactivate')}</button>
       ) : null,
     },
   ];
@@ -55,39 +58,39 @@ export function DiscountCodes() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Discount Codes</h1>
+        <h1 style={styles.title}>{t('discountCodes.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-          <Button onClick={() => setShowCreate(!showCreate)}>Create Code</Button>
-          <Button onClick={() => setShowBulk(!showBulk)}>Bulk Generate</Button>
+          <Button onClick={() => setShowCreate(!showCreate)}>{t('discountCodes.create')}</Button>
+          <Button onClick={() => setShowBulk(!showBulk)}>{t('discountCodes.bulk')}</Button>
         </div>
       </div>
 
       {showCreate && (
         <div style={styles.form}>
-          <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="Code (e.g., WELCOME20)" style={styles.input} />
+          <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder={t('discountCodes.codePlaceholder')} style={styles.input} />
           <select value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value })} style={styles.input}>
-            <option value="percentage">Percentage</option>
-            <option value="fixed">Fixed Amount</option>
+            <option value="percentage">{t('discountCodes.percentage')}</option>
+            <option value="fixed">{t('discountCodes.fixed')}</option>
           </select>
-          <input type="number" value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: parseInt(e.target.value) || 0 })} placeholder="Value" style={styles.input} />
-          <Button onClick={handleCreate}>Save</Button>
+          <input type="number" value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: parseInt(e.target.value) || 0 })} placeholder={t('shared.value')} style={styles.input} />
+          <Button onClick={handleCreate}>{t('common:save')}</Button>
         </div>
       )}
 
       {showBulk && (
         <div style={styles.form}>
-          <input value={bulkForm.prefix} onChange={(e) => setBulkForm({ ...bulkForm, prefix: e.target.value })} placeholder="Prefix" style={styles.input} />
-          <input type="number" value={bulkForm.count} onChange={(e) => setBulkForm({ ...bulkForm, count: parseInt(e.target.value) || 10 })} placeholder="Count" style={styles.input} />
+          <input value={bulkForm.prefix} onChange={(e) => setBulkForm({ ...bulkForm, prefix: e.target.value })} placeholder={t('discountCodes.prefix')} style={styles.input} />
+          <input type="number" value={bulkForm.count} onChange={(e) => setBulkForm({ ...bulkForm, count: parseInt(e.target.value) || 10 })} placeholder={t('discountCodes.count')} style={styles.input} />
           <select value={bulkForm.discount_type} onChange={(e) => setBulkForm({ ...bulkForm, discount_type: e.target.value })} style={styles.input}>
-            <option value="percentage">Percentage</option>
-            <option value="fixed">Fixed Amount</option>
+            <option value="percentage">{t('discountCodes.percentage')}</option>
+            <option value="fixed">{t('discountCodes.fixed')}</option>
           </select>
-          <input type="number" value={bulkForm.discount_value} onChange={(e) => setBulkForm({ ...bulkForm, discount_value: parseInt(e.target.value) || 0 })} placeholder="Value" style={styles.input} />
-          <Button onClick={handleBulk}>Generate</Button>
+          <input type="number" value={bulkForm.discount_value} onChange={(e) => setBulkForm({ ...bulkForm, discount_value: parseInt(e.target.value) || 0 })} placeholder={t('shared.value')} style={styles.input} />
+          <Button onClick={handleBulk}>{t('discountCodes.generate')}</Button>
         </div>
       )}
 
-      <Table columns={columns} data={codes} loading={loading} emptyMessage="No discount codes" />
+      <Table columns={columns} data={codes} loading={loading} emptyMessage={t('discountCodes.empty')} />
     </div>
   );
 }

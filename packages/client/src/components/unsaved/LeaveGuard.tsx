@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ConfirmDialog } from '../../design-system/components/feedback/ConfirmDialog';
 
 /**
@@ -28,6 +29,7 @@ const SENTINEL = { daystreamLeaveGuard: true };
 
 export function LeaveGuard({ when }: { when: boolean }) {
   const navigate = useNavigate();
+  const { t } = useTranslation('shell');
   const [pending, setPending] = useState<(() => void) | null>(null);
   // The extra history entry that lets the Back button be caught; and whether we are leaving.
   const sentinel = useRef(false);
@@ -104,10 +106,10 @@ export function LeaveGuard({ when }: { when: boolean }) {
       open={pending !== null}
       onClose={stay}
       onConfirm={leave}
-      title="Leave without saving?"
-      message="You have unsaved changes on this page. If you leave now, they are lost."
-      confirmLabel="Leave"
-      cancelLabel="Stay"
+      title={t('unsaved.leave_title')}
+      message={t('unsaved.leave_message')}
+      confirmLabel={t('unsaved.leave')}
+      cancelLabel={t('unsaved.stay')}
     />
   );
 }

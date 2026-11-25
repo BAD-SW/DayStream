@@ -9,6 +9,8 @@ import { useDraft, draftBox, fieldMark, UnsavedTag, RowTag } from '../unsaved/Dr
 import * as addonsApi from '../../api/addons';
 import type { ServiceAddon } from '../../api/addons';
 import { formatCurrency } from '../../utils/currency';
+import { useTranslation } from 'react-i18next';
+import { TranslateButton } from '../TranslationsTable';
 
 /** One add-on of the service as shown and saved; `addon_id` is empty for one added and not saved yet. */
 interface Row { key: string; addon_id: string | null; name: string; description: string | null; price: number }
@@ -22,8 +24,9 @@ const toRow = (a: ServiceAddon): Row => ({ key: a.id, addon_id: a.id, name: a.na
  * the page's Save changes.
  */
 export function ServiceAddonsCard({ serviceId, businessId }: { serviceId: string; businessId: string }) {
+  const { t } = useTranslation('offerings');
   const [editing, setEditing] = useState<Row | 'new' | null>(null);
-  const draft = useDraft<Row[]>('service-addons', 'Add-ons', [], async (rows) => {
+  const draft = useDraft<Row[]>('service-addons', t('addons.title'), [], async (rows) => {
     const saved = await addonsApi.setServiceAddons(serviceId, businessId,
       rows.map((r) => ({ addon_id: r.addon_id, name: r.name, description: r.description, price: r.price })));
     return saved.map(toRow);
@@ -42,10 +45,10 @@ export function ServiceAddonsCard({ serviceId, businessId }: { serviceId: string
   return (
     <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
       <div style={styles.head}>
-        <h3 style={styles.title}>Add-ons<UnsavedTag dirty={draft.dirty} /></h3>
-        <Button size="sm" variant="secondary" onClick={() => setEditing('new')}>Add add-on</Button>
+        <h3 style={styles.title}>{t('addons.title')}<UnsavedTag dirty={draft.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing('new')}>{t('addons.add')}</Button>
       </div>
-      {rows.length === 0 && removedRows.length === 0 && <p style={styles.muted}>No add-ons. Add extras that enhance this service, such as hot stones with a massage. They add no time.</p>}
+      {rows.length === 0 && removedRows.length === 0 && <p style={styles.muted}>{t('addons.empty')}</p>}
       <div style={styles.list}>
         {rows.map((r) => {
           const before = savedRow(r.key);
@@ -55,23 +58,24 @@ export function ServiceAddonsCard({ serviceId, businessId }: { serviceId: string
             <div key={r.key} style={{ ...styles.row, ...(changed ? fieldMark(true) : {}) }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <strong>{r.name}</strong> — {formatCurrency(r.price)}
-                {isNew && <> <RowTag>New</RowTag></>}
-                {changed && <> <RowTag>Changed</RowTag></>}
+                {isNew && <> <RowTag>{t('serviceDetail.rowNew')}</RowTag></>}
+                {changed && <> <RowTag>{t('serviceDetail.rowChanged')}</RowTag></>}
                 {r.description && <div style={styles.desc}>{r.description}</div>}
               </div>
-              <button type="button" style={styles.iconBtn} onClick={() => setEditing(r)} title="Edit" aria-label={`Edit ${r.name}`}>✏️</button>
-              <button type="button" style={styles.iconBtn} onClick={() => draft.setValue(rows.filter((x) => x.key !== r.key))} title="Delete" aria-label={`Delete ${r.name}`}>×</button>
+              {r.addon_id && <TranslateButton entityType="addon" entityId={r.addon_id} title={r.name} label={t('serviceDetail.translate')} />}
+              <button type="button" style={styles.iconBtn} onClick={() => setEditing(r)} title={t('common:edit')} aria-label={t('addons.editNamed', { name: r.name })}>✏️</button>
+              <button type="button" style={styles.iconBtn} onClick={() => draft.setValue(rows.filter((x) => x.key !== r.key))} title={t('common:delete')} aria-label={t('addons.deleteNamed', { name: r.name })}>×</button>
             </div>
           );
         })}
         {removedRows.map((r) => (
           <div key={r.key} style={{ ...styles.row, opacity: 0.6 }}>
-            <div style={{ flex: 1 }}><s><strong>{r.name}</strong> — {formatCurrency(r.price)}</s> <RowTag>Deleted when you save</RowTag></div>
+            <div style={{ flex: 1 }}><s><strong>{r.name}</strong> — {formatCurrency(r.price)}</s> <RowTag>{t('serviceDetail.rowDeleted')}</RowTag></div>
             <Button size="sm" variant="ghost" onClick={() => {
               // put it back where it was
               const order = draft.saved.map((s) => s.key);
               draft.setValue([...rows, r].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key)));
-            }}>Undo</Button>
+            }}>{t('serviceDetail.undo')}</Button>
           </div>
         ))}
       </div>
@@ -88,27 +92,28 @@ export function ServiceAddonsCard({ serviceId, businessId }: { serviceId: string
 }
 
 function AddonModal({ row, onClose, onDone }: { row: Row | null; onClose: () => void; onDone: (data: { name: string; description: string | null; price: number }) => void }) {
+  const { t } = useTranslation('offerings');
   const [name, setName] = useState(row?.name || '');
   const [description, setDescription] = useState(row?.description || '');
   const [price, setPrice] = useState(row?.price ?? 0);
   const [err, setErr] = useState('');
   const done = () => {
-    if (!name.trim()) { setErr('Enter a name.'); return; }
+    if (!name.trim()) { setErr(t('addons.enterName')); return; }
     onDone({ name: name.trim(), description: description.trim() || null, price });
   };
   return (
-    <Modal open onClose={onClose} title={row ? 'Edit add-on' : 'Add add-on'} size="sm"
+    <Modal open onClose={onClose} title={row ? t('addons.edit') : t('addons.add')} size="sm"
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button onClick={done}>{row ? 'Done' : 'Add add-on'}</Button>
+        <Button variant="ghost" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button onClick={done}>{row ? t('serviceDetail.done') : t('addons.add')}</Button>
       </>}>
       <div style={styles.form}>
-        <Input label="Name" name="addon-name" required value={name} onChange={(v) => { setName(v); if (err) setErr(''); }} maxLength={200} error={err || undefined} />
-        <Textarea label="Description" name="addon-description" value={description} onChange={setDescription} rows={3} />
-        <FormField label="Price" name="addon-price" required>
+        <Input label={t('shared.name')} name="addon-name" required value={name} onChange={(v) => { setName(v); if (err) setErr(''); }} maxLength={200} error={err || undefined} />
+        <Textarea label={t('shared.description')} name="addon-description" value={description} onChange={setDescription} rows={3} />
+        <FormField label={t('addons.price')} name="addon-price" required>
           <CurrencyInput id="addon-price" value={price} onChange={setPrice} style={styles.input} />
         </FormField>
-        <p style={styles.desc}>Saved with the page's Save changes.</p>
+        <p style={styles.desc}>{t('serviceDetail.savedWithPage')}</p>
       </div>
     </Modal>
   );

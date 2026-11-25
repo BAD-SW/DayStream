@@ -1,5 +1,8 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { LanguageSelect } from '../components/LanguageSelect';
+import { useBusinessLanguages } from '../context/useBusinessLanguages';
 import { Table, applyTableFilters } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -23,7 +26,8 @@ import * as payApi from '../api/payments';
 import type { PayTransaction, Invoice, PaymentMethod } from '../api/payments';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly } from '../utils/date';
-import { lifecycleStageLabel, personSourceLabel } from '@daystream/shared';
+import { stageText, sourceText } from '../utils/peopleColumns';
+import { formatDate as fmtDate, formatDateTime as fmtDateTime, formatNumber } from '../utils/format';
 import {
   ProfilePhoto, VisitsCreditsCard, CommunicationCard, ReferralsCard, ReviewsCard,
   MessagesTab, TasksTab, DocumentsTab, AssignStaffDialog, PasswordResetDialog, PersonalDataDialog,
@@ -38,22 +42,23 @@ const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
 };
 
-const PROFILE_TABS: { key: string; label: string }[] = [
-  { key: 'overview', label: 'Overview' }, { key: 'messages', label: 'Messages' }, { key: 'timeline', label: 'Timeline' },
-  { key: 'billing', label: 'Billing' }, { key: 'packages', label: 'Packages' }, { key: 'notes', label: 'Notes' }, { key: 'tasks', label: 'Tasks' },
-  { key: 'documents', label: 'Documents' }, { key: 'forms', label: 'Forms' }, { key: 'charts', label: 'Charts' }, { key: 'preferences', label: 'Consent' },
+// The tab's words are detail.tab.<key> in the translation file.
+const PROFILE_TABS: { key: string }[] = [
+  { key: 'overview' }, { key: 'messages' }, { key: 'timeline' },
+  { key: 'billing' }, { key: 'packages' }, { key: 'notes' }, { key: 'tasks' },
+  { key: 'documents' }, { key: 'forms' }, { key: 'charts' }, { key: 'preferences' },
 ];
 
-// Stage and source names come from one shared map ('trial' is shown as "New customer").
-const formatStage = lifecycleStageLabel;
+// Stage and source names come from the translation file (stage.*, source.*; 'trial' is shown as "New customer").
+const formatStage = stageText;
 
 function formatWhen(value?: string | null): string {
-  return value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  return value ? fmtDateTime(value, undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 }
 
 /** The day only, so the facts fit on one line; the time is in the tooltip. */
 function formatDay(value?: string | null): string {
-  return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
+  return value ? fmtDate(value, { dateStyle: 'medium' }) : '—';
 }
 
 // One Save for the profile (David, 2026-11-01, as in Settings): the contact details wait for
@@ -67,6 +72,7 @@ export function CustomerDetail() {
 }
 
 function CustomerProfilePage() {
+  const { t } = useTranslation('customers');
   // Treatment charts are only for clinical roles (spec 51, gap 2); other roles don't see the tab.
   const canCharts = useClinicalAccess();
   const { id } = useParams<{ id: string }>();
@@ -96,7 +102,7 @@ function CustomerProfilePage() {
   useEffect(() => { setSaveResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
   const saveChanges = async () => {
     const { failed } = await saveAll();
-    setSaveResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
+    setSaveResult(failed.length ? { ok: false, text: t('detail.notSaved', { list: failed.map((f) => `${f.label} (${f.error})`).join('; ') }) } : { ok: true, text: t('detail.allSaved') });
   };
 
   const businessId = localStorage.getItem('business_id') || '';
@@ -106,7 +112,7 @@ function CustomerProfilePage() {
     setLoading(true);
     // A link can open a section directly, e.g. /customers/:id?tab=forms from a booking.
     const wanted = new URLSearchParams(window.location.search).get('tab');
-    setTab(PROFILE_TABS.some((t) => t.key === wanted) ? (wanted as string) : 'overview');
+    setTab(PROFILE_TABS.some((tb) => tb.key === wanted) ? (wanted as string) : 'overview');
     Promise.all([
       customersApi.getCustomer(id, businessId),
       customersApi.getNotes(id, businessId).catch(() => []),
@@ -129,12 +135,12 @@ function CustomerProfilePage() {
     customersApi.getOwners(businessId).then(setStaff).catch(() => setStaff([]));
   }, [businessId]);
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
-  if (!customer) return <div style={styles.loading}>Customer not found</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
+  if (!customer) return <div style={styles.loading}>{t('detail.notFound')}</div>;
 
   // Switching a marketing channel ON records the person's consent, so the Consent tab
   // sends how it was obtained as `evidence`.
-  const displayName = customer.display_name || `${customer.first_name} ${customer.last_name}`.trim() || customer.email || customer.phone || 'Unknown';
+  const displayName = customer.display_name || `${customer.first_name} ${customer.last_name}`.trim() || customer.email || customer.phone || t('detail.unknown');
   const initials = `${(customer.first_name || displayName)[0]?.toUpperCase() || ''}${customer.last_name?.[0]?.toUpperCase() || ''}`;
   // Reload the person (and the Timeline) after an action changed something on them.
   const refresh = () => {
@@ -143,64 +149,51 @@ function CustomerProfilePage() {
   };
 
   const handleArchive = async () => {
-    if (!confirm('Archive this customer? They will be hidden from active lists.')) return;
+    if (!(await askConfirm({ message: t('detail.archiveConfirm'), confirmLabel: t('common:action.archive'), destructive: true }))) return;
     try { setCustomer(await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' })); setTimelineVersion((n) => n + 1); }
-    catch { alert('Failed to archive'); }
+    catch { void showMessage({ message: t('detail.archiveFailed'), tone: 'error' }); }
   };
   const handleReactivate = async () => {
     try { setCustomer(await customersApi.updateCustomer(customer.id, businessId, { status: 'active' })); setTimelineVersion((n) => n + 1); }
-    catch { alert('Failed to reactivate'); }
+    catch { void showMessage({ message: t('detail.reactivateFailed'), tone: 'error' }); }
   };
   const handleAnonymize = async () => {
-    const confirmed = confirm(
-      '⚠️ GDPR Data Anonymization\n\n' +
-      'This will PERMANENTLY and IRREVERSIBLY anonymize all personal data for this customer including:\n' +
-      '• Name, email, phone, address, date of birth, photo and sign-in link\n' +
-      '• Notes, and the wording of the activity timeline\n' +
-      '• Completed forms and waivers (the signed PDFs), uploaded documents and data exports\n' +
-      '• All files stored for this customer, with their folders\n\n' +
-      'Bookings and payments stay, as financial records, without a name attached.\n\n' +
-      'This action cannot be undone. Are you sure you want to proceed?'
-    );
+    const confirmed = await askConfirm({ message: t('detail.anonymizeConfirm'), confirmLabel: t('common:action.anonymize'), destructive: true });
     if (!confirmed) return;
-    const doubleConfirm = confirm(
-      'Final confirmation: Type OK to permanently anonymize this customer\'s data.\n\n' +
-      'Customer: ' + customer.first_name + ' ' + customer.last_name + '\n' +
-      'This is IRREVERSIBLE.'
-    );
+    const doubleConfirm = await askConfirm({ message: t('detail.anonymizeFinal', { name: customer.first_name + ' ' + customer.last_name }), confirmLabel: t('common:action.anonymize'), destructive: true });
     if (!doubleConfirm) return;
     try {
       await customersApi.anonymizeCustomer(customer.id, businessId);
-      alert('Customer data has been anonymized successfully.');
+      void showMessage({ message: t('detail.anonymizeDone'), tone: 'success' });
       window.location.reload();
     } catch {
-      alert('Failed to anonymize customer data.');
+      void showMessage({ message: t('detail.anonymizeFailed'), tone: 'error' });
     }
   };
 
   // Header actions: Contact opens Messages, Add task opens the task form; the rest are in More.
   const moreItems = [
-    { id: 'order', label: 'New order', onClick: () => guardedNavigate(`/checkout?new=true&customer=${customer.id}`) },
-    { id: 'payment', label: 'Record payment', onClick: () => setDialog('payment') },
+    { id: 'order', label: t('detail.more.newOrder'), onClick: () => guardedNavigate(`/checkout?new=true&customer=${customer.id}`) },
+    { id: 'payment', label: t('detail.more.recordPayment'), onClick: () => setDialog('payment') },
     { id: 'd1', label: '', divider: true },
-    { id: 'assign', label: 'Assign staff member', onClick: () => { setTab('overview'); setTimeout(() => document.getElementById('f-staff')?.focus(), 50); } },
-    { id: 'reset', label: 'Request password reset', disabled: !customer.has_account, onClick: () => setDialog('reset') },
-    { id: 'data', label: 'Send personal data (GDPR)', disabled: !customer.email, onClick: () => setDialog('data') },
+    { id: 'assign', label: t('detail.more.assignStaff'), onClick: () => { setTab('overview'); setTimeout(() => document.getElementById('f-staff')?.focus(), 50); } },
+    { id: 'reset', label: t('detail.more.passwordReset'), disabled: !customer.has_account, onClick: () => setDialog('reset') },
+    { id: 'data', label: t('detail.more.personalData'), disabled: !customer.email, onClick: () => setDialog('data') },
     { id: 'd2', label: '', divider: true },
     customer.status === 'archived'
-      ? { id: 'reactivate', label: 'Reactivate', onClick: handleReactivate }
-      : { id: 'archive', label: 'Archive', danger: true, disabled: customer.status !== 'active', onClick: handleArchive },
-    { id: 'anonymize', label: 'GDPR anonymise', danger: true, onClick: handleAnonymize },
+      ? { id: 'reactivate', label: t('detail.more.reactivate'), onClick: handleReactivate }
+      : { id: 'archive', label: t('detail.more.archive'), danger: true, disabled: customer.status !== 'active', onClick: handleArchive },
+    { id: 'anonymize', label: t('detail.more.anonymise'), danger: true, onClick: handleAnonymize },
   ];
 
   const facts: Array<[string, string, string?]> = [
-    ['Source', personSourceLabel(customer.source, customer.source_detail)],
-    ['Staff member', customer.owner_name || 'Unassigned'],
-    ['Home location', customer.home_location_name || '—'],
-    ['Last activity', formatDay(customer.last_activity_at), formatWhen(customer.last_activity_at)],
-    ['Last visit', formatDay(customer.last_visit_at), formatWhen(customer.last_visit_at)],
-    ['Last login', customer.has_account ? formatDay(customer.last_login_at) : 'No account', customer.has_account ? formatWhen(customer.last_login_at) : undefined],
-    ['Known since', formatDay(customer.created_at), formatWhen(customer.created_at)],
+    [t('detail.facts.source'), sourceText(t, customer.source, customer.source_detail)],
+    [t('detail.facts.staffMember'), customer.owner_name || t('people.unassigned')],
+    [t('detail.facts.homeLocation'), customer.home_location_name || '—'],
+    [t('detail.facts.lastActivity'), formatDay(customer.last_activity_at), formatWhen(customer.last_activity_at)],
+    [t('detail.facts.lastVisit'), formatDay(customer.last_visit_at), formatWhen(customer.last_visit_at)],
+    [t('detail.facts.lastLogin'), customer.has_account ? formatDay(customer.last_login_at) : t('detail.facts.noAccount'), customer.has_account ? formatWhen(customer.last_login_at) : undefined],
+    [t('detail.facts.knownSince'), formatDay(customer.created_at), formatWhen(customer.created_at)],
   ];
 
   return (
@@ -212,7 +205,7 @@ function CustomerProfilePage() {
 
       <LeaveGuard when={dirty} />
       {/* Back button */}
-      <button style={styles.back} onClick={() => guardedNavigate('/customers')}>← Back to People</button>
+      <button style={styles.back} onClick={() => guardedNavigate('/customers')}>{t('segments.back')}</button>
 
       <StickyPageTop>
       {/* Profile header: who, the actions, and the facts on one line (THE-16) */}
@@ -224,21 +217,21 @@ function CustomerProfilePage() {
             <div style={styles.headerBadges}>
               <span style={styles.refNum}>{customer.reference_number}</span>
               <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
-                {formatStage(customer.lifecycle_stage)}
+                {formatStage(t, customer.lifecycle_stage)}
               </Badge>
               {/* The record's own status only when it is not the usual "active". */}
-              {customer.status !== 'active' && <Badge variant="neutral">{customer.status === 'anonymized' ? 'Anonymised' : customer.status === 'archived' ? 'Archived' : customer.status}</Badge>}
-              {customer.incomplete && <Badge variant="warning">Incomplete</Badge>}
-              <span style={styles.refNum}>In this stage since {formatDay(customer.lifecycle_changed_at)}</span>
+              {customer.status !== 'active' && <Badge variant="neutral">{customer.status === 'anonymized' ? t('detail.status.anonymised') : customer.status === 'archived' ? t('people.archived') : customer.status}</Badge>}
+              {customer.incomplete && <Badge variant="warning">{t('people.incomplete')}</Badge>}
+              <span style={styles.refNum}>{t('detail.inStageSince', { date: formatDay(customer.lifecycle_changed_at) })}</span>
             </div>
           </div>
           <div style={styles.headerActions}>
-            {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+            {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>{t('detail.unsaved')}</span>
               : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
-            <Button size="sm" onClick={saveChanges} loading={saving} disabled={!dirty}>Save changes</Button>
-            <Button size="sm" variant="secondary" onClick={() => setTab('messages')}>Contact</Button>
-            <Button size="sm" variant="secondary" onClick={() => { setTab('tasks'); setAddTaskSignal((n) => n + 1); }}>Add task</Button>
-            <Dropdown trigger={<Button size="sm" variant="secondary">More ▾</Button>} items={moreItems} />
+            <Button size="sm" onClick={saveChanges} loading={saving} disabled={!dirty}>{t('detail.saveChanges')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => setTab('messages')}>{t('detail.contact')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setTab('tasks'); setAddTaskSignal((n) => n + 1); }}>{t('profile.tasks.add')}</Button>
+            <Dropdown trigger={<Button size="sm" variant="secondary">{t('detail.more.label')}</Button>} items={moreItems} />
           </div>
         </div>
         <dl style={styles.factStrip}>
@@ -255,7 +248,7 @@ function CustomerProfilePage() {
       }} />
 
       {/* Tabs (order agreed on THE-16) */}
-      <TabBar aria-label="Profile sections" tabs={PROFILE_TABS.filter((t) => t.key !== 'charts' || canCharts).map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={tab} onChange={setTab} />
+      <TabBar aria-label={t('detail.sections')} tabs={PROFILE_TABS.filter((tb) => tb.key !== 'charts' || canCharts).map((tb) => ({ key: tb.key, label: t('detail.tab.' + tb.key), changed: dirtySections.some((d) => d.tab === tb.key) }))} active={tab} onChange={setTab} />
       </StickyPageTop>
       {/* Forms still to complete: shown on every tab, so staff see it as soon as they open the person. */}
       <FormsNeededNotice customerId={customer.id} businessId={businessId} refreshKey={formsRefresh} onOpenForms={() => setTab('forms')} />
@@ -282,6 +275,7 @@ function CustomerProfilePage() {
 
 /** What the person owes, what they have paid in total and their unused credit, in the business currency. */
 function FinancialSummaryCard({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const { t } = useTranslation('customers');
   const [summary, setSummary] = useState<customersApi.FinancialSummary | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -293,26 +287,26 @@ function FinancialSummaryCard({ customerId, businessId }: { customerId: string; 
 
   const money = (cents: number) => (summary ? formatCurrency(cents, summary.currency) : '—');
   const invoiceNote = !summary || summary.open_invoices === 0
-    ? 'Nothing outstanding'
-    : `${summary.open_invoices} open invoice${summary.open_invoices === 1 ? '' : 's'}${summary.overdue_invoices ? `, ${summary.overdue_invoices} overdue` : ''}`;
+    ? t('detail.fin.nothing')
+    : t('detail.fin.openInvoices', { count: summary.open_invoices }) + (summary.overdue_invoices ? t('detail.fin.overdueSuffix', { n: summary.overdue_invoices }) : '');
 
   return (
     <div style={styles.card}>
-      <h3 style={styles.cardTitle}>Financial Summary</h3>
-      {failed && <p style={styles.empty}>The figures could not be loaded.</p>}
+      <h3 style={styles.cardTitle}>{t('detail.fin.title')}</h3>
+      {failed && <p style={styles.empty}>{t('profile.visitsCredits.failed')}</p>}
       {!failed && (
         <div style={styles.financialGrid}>
           <div style={styles.financialItem}>
-            <span style={styles.financialLabel}>Balance due</span>
+            <span style={styles.financialLabel}>{t('detail.fin.balanceDue')}</span>
             <span style={styles.financialValue}>{summary ? money(summary.balance_due_cents) : '…'}</span>
             {summary && <span style={styles.financialLabel}>{invoiceNote}</span>}
           </div>
           <div style={styles.financialItem}>
-            <span style={styles.financialLabel}>Lifetime value</span>
+            <span style={styles.financialLabel}>{t('detail.fin.lifetimeValue')}</span>
             <span style={styles.financialValue}>{summary ? money(summary.lifetime_value_cents) : '…'}</span>
           </div>
           <div style={styles.financialItem}>
-            <span style={styles.financialLabel}>Account credit</span>
+            <span style={styles.financialLabel}>{t('detail.fin.accountCredit')}</span>
             <span style={styles.financialValue}>{summary ? money(summary.account_credit_cents) : '…'}</span>
           </div>
         </div>
@@ -337,6 +331,8 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
   customer: Customer; tags: any[]; preferences: any; staff: Array<{ id: string; first_name: string; last_name: string }>;
   onUpdate: (c: Customer) => void; onOpenConsent: () => void;
 }) {
+  const { t } = useTranslation('customers');
+  const { languages: businessLanguages } = useBusinessLanguages();
   const fromCustomer = () => ({
     first_name: customer.first_name,
     last_name: customer.last_name,
@@ -355,7 +351,7 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
     region: customer.region || '',
   });
   const businessId = localStorage.getItem('business_id') || '';
-  const draft = useDraft('profile-contact', 'Contact information', fromCustomer(), async (values) => {
+  const draft = useDraft('profile-contact', t('detail.contact.draft'), fromCustomer(), async (values) => {
     const updated = await customersApi.updateCustomer(customer.id, businessId, values);
     onUpdate(updated);
   });
@@ -386,52 +382,52 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
       <div style={styles.overviewGrid}>
         {/* Contact Information Card — always editable */}
         <div style={{ ...styles.card, gridColumn: '1 / -1', ...draftBox(draft.dirty) }}>
-          <h3 style={styles.cardTitle}>Contact Information<UnsavedTag dirty={draft.dirty} /></h3>
+          <h3 style={styles.cardTitle}>{t('detail.contact.title')}<UnsavedTag dirty={draft.dirty} /></h3>
           <div style={styles.contactGrid}>
-            {text('first_name', 'First Name')}
-            {text('last_name', 'Last Name')}
-            {text('email', 'Email', { type: 'email' })}
-            {text('phone', 'Phone')}
-            {text('date_of_birth', 'Date of Birth', { type: 'date' })}
-            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-gender">Gender</label>
+            {text('first_name', t('detail.contact.firstName'))}
+            {text('last_name', t('detail.contact.lastName'))}
+            {text('email', t('create.email'), { type: 'email' })}
+            {text('phone', t('create.phone'))}
+            {text('date_of_birth', t('create.dateOfBirth'), { type: 'date' })}
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-gender">{t('create.gender')}</label>
               <select id="f-gender" style={{ ...styles.fieldInput, ...mark('gender') }} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
-                <option value="">Not specified</option><option value="male">Male</option><option value="female">Female</option><option value="non-binary">Non-binary</option><option value="other">Other</option>
+                <option value="">{t('detail.contact.notSpecified')}</option><option value="male">{t('cond.gender.male')}</option><option value="female">{t('cond.gender.female')}</option><option value="non-binary">{t('detail.contact.nonBinary')}</option><option value="other">{t('cond.gender.other')}</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-lang">Language</label>
-              <LanguageSelect id="f-lang" style={{ ...styles.fieldInput, ...mark('preferred_language') }} value={form.preferred_language} onChange={(v) => setForm({ ...form, preferred_language: v })} />
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-lang">{t('create.language')}</label>
+              <LanguageSelect languages={businessLanguages} id="f-lang" style={{ ...styles.fieldInput, ...mark('preferred_language') }} value={form.preferred_language} onChange={(v) => setForm({ ...form, preferred_language: v })} />
             </div>
-            {text('country', 'Country')}
-            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-stage">Lifecycle Stage</label>
+            {text('country', t('create.country'))}
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-stage">{t('detail.contact.lifecycleStage')}</label>
               <select id="f-stage" style={{ ...styles.fieldInput, ...mark('lifecycle_stage') }} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
-                <option value="lead">Lead</option>
-                <option value="trial">New customer</option>
-                <option value="active">Active</option>
-                <option value="at_risk">At risk</option>
-                <option value="churned">Former</option>
-                <option value="winback">Won back</option>
+                <option value="lead">{t('stage.lead')}</option>
+                <option value="trial">{t('stage.trial')}</option>
+                <option value="active">{t('stage.active')}</option>
+                <option value="at_risk">{t('stage.at_risk')}</option>
+                <option value="churned">{t('stage.churned')}</option>
+                <option value="winback">{t('stage.winback')}</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-staff">Staff member</label>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-staff">{t('detail.facts.staffMember')}</label>
               <select id="f-staff" style={{ ...styles.fieldInput, ...mark('owner_user_id') }} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
-                <option value="">Unassigned</option>
+                <option value="">{t('people.unassigned')}</option>
                 {staff.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-home">Home location</label>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-home">{t('detail.facts.homeLocation')}</label>
               <select id="f-home" style={{ ...styles.fieldInput, ...mark('home_location_id') }} value={form.home_location_id} onChange={(e) => setForm({ ...form, home_location_id: e.target.value })}>
-                <option value="">Not set</option>
+                <option value="">{t('detail.contact.notSet')}</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                {form.home_location_id && !locations.some((l) => l.id === form.home_location_id) && <option value={form.home_location_id}>{customer.home_location_name || 'Current location'}</option>}
+                {form.home_location_id && !locations.some((l) => l.id === form.home_location_id) && <option value={form.home_location_id}>{customer.home_location_name || t('detail.contact.currentLocation')}</option>}
               </select>
             </div>
           </div>
-          <h4 style={styles.subTitle}>Address</h4>
+          <h4 style={styles.subTitle}>{t('detail.contact.address')}</h4>
           <div style={styles.contactGrid}>
-            <div style={{ gridColumn: 'span 2' }}>{text('address_line', 'Street address')}</div>
-            {text('city', 'City')}
-            {text('postal_code', 'Postal code')}
-            {text('region', 'Province / region')}
+            <div style={{ gridColumn: 'span 2' }}>{text('address_line', t('detail.contact.streetAddress'))}</div>
+            {text('city', t('cond.l.city'))}
+            {text('postal_code', t('detail.contact.postalCode'))}
+            {text('region', t('detail.contact.region'))}
           </div>
         </div>
 
@@ -447,14 +443,14 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
         <div style={styles.card}>
           <PaymentMethods
             owner={{ owner_level: 'customer', customer_id: customer.id, business_id: businessId }}
-            title="Payment Methods on File"
+            title={t('detail.contact.paymentMethods')}
           />
         </div>
 
         {/* Tags Card */}
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Tags</h3>
-          {tags.length === 0 && <p style={styles.cardMuted}>No tags.</p>}
+          <h3 style={styles.cardTitle}>{t('leads.col.tags')}</h3>
+          {tags.length === 0 && <p style={styles.cardMuted}>{t('detail.contact.noTags')}</p>}
           <div style={styles.tagsList}>
             {tags.map((tag: any) => (
               <span key={tag.id} style={{ ...styles.tag, borderColor: tag.color }}>{tag.name}</span>
@@ -470,6 +466,7 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
 }
 
 function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any[]; customerId: string; businessId: string; onRefresh: (n: any[]) => void }) {
+  const { t } = useTranslation('customers');
   const [newNote, setNewNote] = useState('');
   const [category, setCategory] = useState('');
   const [categories, setCategories] = useState<any[]>([]);
@@ -509,7 +506,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
 
   // New notes and deletions wait for the page's Save changes (David, 2026-11-01).
   type PendingNotes = { added: Array<{ key: string; category: string; content: string }>; removed: string[] };
-  const draft = useDraft<PendingNotes>('profile-notes', 'Notes', { added: [], removed: [] }, async (d) => {
+  const draft = useDraft<PendingNotes>('profile-notes', t('detail.tab.notes'), { added: [], removed: [] }, async (d) => {
     const left: PendingNotes = { added: [...d.added], removed: [...d.removed] };
     try {
       for (const n of d.added) { await customersApi.createNote(customerId, businessId, { category: n.category, content: n.content }); left.added.shift(); }
@@ -539,36 +536,36 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
         <textarea
           value={newNote}
           onChange={(e) => setNewNote(e.target.value)}
-          placeholder="Add a note..."
+          placeholder={t('detail.notes.placeholder')}
           style={styles.textarea}
           rows={3}
         />
         <div style={styles.noteActions}>
           {/* The category is optional (David, 2026-11-01). */}
-          <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select} aria-label="Category">
-            <option value="">No category</option>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select} aria-label={t('detail.notes.category')}>
+            <option value="">{t('detail.notes.noCategory')}</option>
             {categories.map((cat) => (
               <option key={cat.id} value={cat.name}>{cat.name}</option>
             ))}
           </select>
-          <Button onClick={handleAddNote} disabled={!newNote.trim()}>Add Note</Button>
+          <Button onClick={handleAddNote} disabled={!newNote.trim()}>{t('detail.notes.add')}</Button>
         </div>
       </div>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: 'var(--space-md)', flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={styles.select}>
-          <option value="">All Categories</option>
+          <option value="">{t('detail.notes.allCategories')}</option>
           {categories.map((cat) => (
             <option key={cat.id} value={cat.name}>{cat.name}</option>
           ))}
         </select>
-        <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title="From" />
-        <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title="To" />
+        <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title={t('cond.l.from')} />
+        <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title={t('cond.l.to')} />
         {(filterCategory || filterDateFrom || filterDateTo) && (
-          <button onClick={() => { setFilterCategory(''); setFilterDateFrom(''); setFilterDateTo(''); }} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>Clear</button>
+          <button onClick={() => { setFilterCategory(''); setFilterDateFrom(''); setFilterDateTo(''); }} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>{t('detail.notes.clear')}</button>
         )}
-        <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{total} note{total !== 1 ? 's' : ''}</span>
+        <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{t('detail.notes.count', { count: total })}</span>
       </div>
 
       {/* Notes list: new ones first, then the stored ones */}
@@ -577,38 +574,38 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {n.category && <Badge variant="neutral">{n.category}</Badge>}
-              <RowTag>New</RowTag>
+              <RowTag>{t('profile.new')}</RowTag>
             </div>
-            <button onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== n.key) })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Remove this new note">×</button>
+            <button onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== n.key) })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title={t('detail.notes.removeNew')}>×</button>
           </div>
           <p style={styles.noteContent}>{n.content}</p>
         </div>
       ))}
-      {notesList.length === 0 && draft.value.added.length === 0 && <p style={styles.empty}>No notes found</p>}
+      {notesList.length === 0 && draft.value.added.length === 0 && <p style={styles.empty}>{t('detail.notes.none')}</p>}
       {notesList.map((note: any) => draft.value.removed.includes(note.id) ? (
         <div key={note.id} style={{ ...styles.noteCard, opacity: 0.6 }}>
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {note.category && <Badge variant="neutral">{note.category}</Badge>}
-              <RowTag>Deleted when you save</RowTag>
+              <RowTag>{t('profile.deletedOnSave')}</RowTag>
             </div>
-            <Button size="sm" variant="ghost" onClick={() => toggleDelete(note.id)}>Undo</Button>
+            <Button size="sm" variant="ghost" onClick={() => toggleDelete(note.id)}>{t('profile.undo')}</Button>
           </div>
-          <p style={{ ...styles.noteContent, textDecoration: 'line-through' }}>{note.content || '(encrypted)'}</p>
+          <p style={{ ...styles.noteContent, textDecoration: 'line-through' }}>{note.content || t('detail.notes.encrypted')}</p>
         </div>
       ) : (
         <div key={note.id} style={styles.noteCard}>
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {note.category && <Badge variant="neutral">{note.category}</Badge>}
-              {note.is_sensitive && <Badge variant="error">Sensitive</Badge>}
+              {note.is_sensitive && <Badge variant="error">{t('detail.notes.sensitive')}</Badge>}
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={styles.noteDate}>{new Date(note.created_at).toLocaleDateString()}</span>
-              <button onClick={() => toggleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
+              <span style={styles.noteDate}>{fmtDate(note.created_at)}</span>
+              <button onClick={() => toggleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title={t('detail.notes.delete')}>×</button>
             </div>
           </div>
-          <p style={styles.noteContent}>{note.content || '(encrypted)'}</p>
+          <p style={styles.noteContent}>{note.content || t('detail.notes.encrypted')}</p>
         </div>
       ))}
 
@@ -616,25 +613,20 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
       {totalPages > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: 'var(--space-md)' }}>
           <button disabled={offset === 0} onClick={() => fetchNotes(offset - LIMIT)}
-            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: offset === 0 ? 'default' : 'pointer', opacity: offset === 0 ? 0.4 : 1 }}>Previous</button>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}>Page {currentPage} of {totalPages}</span>
+            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: offset === 0 ? 'default' : 'pointer', opacity: offset === 0 ? 0.4 : 1 }}>{t('detail.notes.previous')}</button>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}>{t('detail.notes.pageOf', { page: currentPage, total: totalPages })}</span>
           <button disabled={offset + LIMIT >= total} onClick={() => fetchNotes(offset + LIMIT)}
-            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: offset + LIMIT >= total ? 'default' : 'pointer', opacity: offset + LIMIT >= total ? 0.4 : 1 }}>Next</button>
+            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: offset + LIMIT >= total ? 'default' : 'pointer', opacity: offset + LIMIT >= total ? 0.4 : 1 }}>{t('detail.notes.next')}</button>
         </div>
       )}
     </div>
   );
 }
 
-const TIMELINE_FILTERS: Array<[customersApi.TimelineFilter, string]> = [
-  ['all', 'All'], ['booking', 'Bookings'], ['membership', 'Membership'], ['pack', 'Packs'], ['payment', 'Payments'],
-  ['lifecycle', 'Lifecycle'], ['profile_change', 'Profile changes'], ['message', 'Messages'],
+// The words for a filter are detail.timeline.filter.<key>, for a kind of line detail.timeline.kind.<kind>.
+const TIMELINE_FILTERS: customersApi.TimelineFilter[] = [
+  'all', 'booking', 'membership', 'pack', 'payment', 'lifecycle', 'profile_change', 'message',
 ];
-const TIMELINE_KIND_LABELS: Record<string, string> = {
-  booking: 'Booking', membership: 'Membership', pack: 'Pack', payment: 'Payment', lifecycle: 'Lifecycle',
-  profile_change: 'Profile change', message: 'Message', event: 'Event', campaign: 'Campaign', note: 'Note',
-  tag: 'Tag', document: 'Document', widget_registration: 'Sign-up', identity_match: 'Matched',
-};
 
 /**
  * Every interaction of the person with the business in one place (THE-16): newest first,
@@ -642,6 +634,7 @@ const TIMELINE_KIND_LABELS: Record<string, string> = {
  * one line; its receipt or invoice opens from the Billing tab or the link on the line.
  */
 function TimelineTab({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const { t } = useTranslation('customers');
   const navigate = useNavigate();
   const [filter, setFilter] = useState<customersApi.TimelineFilter>('all');
   const [items, setItems] = useState<customersApi.TimelineItem[] | null>(null);
@@ -657,47 +650,47 @@ function TimelineTab({ customerId, businessId }: { customerId: string; businessI
     try {
       const blob = await payApi.fetchReceiptPdf(link.id, businessId);
       window.open(URL.createObjectURL(blob), '_blank');
-    } catch { alert('The receipt could not be opened.'); }
+    } catch { void showMessage({ message: t('detail.timeline.receiptFailed'), tone: 'error' }); }
   };
 
   return (
     <div style={styles.tabContent}>
       <div style={styles.filterRow}>
-        {TIMELINE_FILTERS.map(([key, label]) => (
+        {TIMELINE_FILTERS.map((key) => (
           <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}
             style={{ ...styles.filterBtn, textTransform: 'none', ...(filter === key ? styles.filterBtnActive : {}) }}>
-            {label}
+            {t('detail.timeline.filter.' + key)}
           </button>
         ))}
       </div>
       <p style={{ ...styles.cardMuted, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-sm)' }}>
         <span aria-hidden="true" style={{ width: '12px', height: '12px', borderRadius: '3px', background: 'var(--color-info-bg)', border: '1px solid var(--color-info)' }} />
-        Highlighted lines are still to come.
+        {t('detail.timeline.highlighted')}
       </p>
-      {failed && <p style={styles.empty}>The timeline could not be loaded.</p>}
-      {!failed && items === null && <p style={styles.empty}>Loading…</p>}
+      {failed && <p style={styles.empty}>{t('detail.timeline.failed')}</p>}
+      {!failed && items === null && <p style={styles.empty}>{t('profile.loading')}</p>}
       {filter === 'message' && items !== null && items.length === 0 && (
-        <p style={styles.empty}>No messages sent yet. Messages received are in the Messages tab.</p>
+        <p style={styles.empty}>{t('detail.timeline.noMessages')}</p>
       )}
-      {filter !== 'message' && items !== null && items.length === 0 && <p style={styles.empty}>Nothing here yet.</p>}
+      {filter !== 'message' && items !== null && items.length === 0 && <p style={styles.empty}>{t('detail.timeline.nothing')}</p>}
       {items !== null && items.length > 0 && (
         <div style={styles.timelineGrid}>
-          <span style={styles.timelineHeaderCell}>Type</span>
-          <span style={styles.timelineHeaderCell}>Description</span>
-          <span style={styles.timelineHeaderCell}>By</span>
-          <span style={styles.timelineHeaderCell}>Date</span>
+          <span style={styles.timelineHeaderCell}>{t('detail.timeline.colType')}</span>
+          <span style={styles.timelineHeaderCell}>{t('detail.timeline.colDescription')}</span>
+          <span style={styles.timelineHeaderCell}>{t('detail.timeline.colBy')}</span>
+          <span style={styles.timelineHeaderCell}>{t('detail.timeline.colDate')}</span>
           {items.map((it) => {
             const tint = it.upcoming ? { background: 'var(--color-info-bg)' } : {};
             return (
               <div key={it.id} style={styles.timelineRow}>
-                <span style={{ ...styles.timelineCell, ...tint, whiteSpace: 'nowrap' }}><Badge variant="neutral">{TIMELINE_KIND_LABELS[it.kind] || it.kind}</Badge></span>
+                <span style={{ ...styles.timelineCell, ...tint, whiteSpace: 'nowrap' }}><Badge variant="neutral">{t('detail.timeline.kind.' + it.kind, { defaultValue: it.kind })}</Badge></span>
                 <span style={{ ...styles.timelineDesc, ...tint, gap: '8px', flexWrap: 'wrap' }}>
                   {it.description}
-                  {it.link && <button type="button" onClick={() => openLink(it.link!)} style={styles.inlineLink}>Receipt</button>}
+                  {it.link && <button type="button" onClick={() => openLink(it.link!)} style={styles.inlineLink}>{t('detail.timeline.receipt')}</button>}
                 </span>
                 <span style={{ ...styles.timelineActor, ...tint }}>{it.actor_name}</span>
                 <span style={{ ...styles.timelineDate, ...tint, ...(it.upcoming ? { color: 'var(--color-info-dark)', fontWeight: 700 } : {}) }}>
-                  {it.upcoming ? 'Upcoming · ' : ''}{new Date(it.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                  {it.upcoming ? t('detail.timeline.upcoming') + ' · ' : ''}{fmtDateTime(it.at, undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                 </span>
               </div>
             );
@@ -710,6 +703,7 @@ function TimelineTab({ customerId, businessId }: { customerId: string; businessI
 
 // --- Billing tab: transaction history + outstanding invoices (Section C, task 4.10) ---
 function BillingTab({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const { t: tr } = useTranslation('customers');
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<PayTransaction[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -718,6 +712,9 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // Whether the message is an error (red) or not (green); it was guessed from the English words before.
+  const [badMessage, setBadMessage] = useState(false);
+  const say = (text: string | null, bad = false) => { setMessage(text); setBadMessage(bad); };
   const [refundTxn, setRefundTxn] = useState<PayTransaction | null>(null);
   // Order-linked charges refund through the shared line-item modal (Option B).
   const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
@@ -805,6 +802,8 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
     if (kind === 'transaction') { setRefundTxn(t); }
   };
 
+  // A stored or displayed status is shown through detail.bill.status.<status>.
+  const statusText = (s: string) => tr('detail.bill.status.' + s, { defaultValue: s });
   const outstanding = invoices.filter((i) => i.status === 'issued' || i.status === 'overdue');
 
   const statusVariant = (s: string): 'success' | 'warning' | 'error' | 'info' | 'neutral' => {
@@ -819,14 +818,14 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
 
   const payInvoice = async (invoiceId: string) => {
     const method = methods.find((m) => m.is_default) ?? methods[0];
-    if (!method) { setMessage('Add a stored payment method before settling an invoice.'); return; }
-    setPayingId(invoiceId); setMessage(null);
+    if (!method) { say(tr('detail.bill.addMethod')); return; }
+    setPayingId(invoiceId); say(null);
     try {
       const res = await payApi.settleInvoice(invoiceId, businessId, method.id);
-      setMessage(res.status === 'failed' ? (res.failureReason || 'Payment declined.') : `Invoice paid (ref ${res.referenceNumber}).`);
+      say(res.status === 'failed' ? (res.failureReason || tr('detail.bill.declined')) : tr('detail.bill.paid', { ref: res.referenceNumber }), res.status === 'failed');
       await load();
     } catch (err: any) {
-      setMessage(err?.response?.data?.error || 'Failed to settle invoice.');
+      say(err?.response?.data?.error || tr('detail.bill.settleFailed'), true);
     } finally { setPayingId(null); }
   };
 
@@ -836,36 +835,33 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch { setMessage('Failed to open invoice PDF.'); }
+    } catch { say(tr('detail.bill.invoicePdfFailed'), true); }
   };
 
   // Email the issued invoice to the customer (Outstanding Invoices card).
   const emailInvoiceDoc = async (invoiceId: string) => {
-    setMessage(null);
+    say(null);
     try {
       await payApi.emailInvoice(invoiceId, businessId);
-      setMessage('Invoice emailed to the customer.');
+      say(tr('detail.bill.invoiceEmailed'));
     } catch (err: any) {
-      setMessage(err?.response?.data?.message || 'Failed to email invoice.');
+      say(err?.response?.data?.message || tr('detail.bill.invoiceEmailFailed'), true);
     }
   };
 
   // Email (re-send) the document that corresponds to a transaction row. The
   // server derives which document (invoice / receipt / credit note) from the row.
-  const DOC_LABELS: Record<string, string> = {
-    'invoice.issued': 'Adjustment', 'payment.receipt': 'Payment Receipt',
-  };
   const emailTxnDoc = async (t: PayTransaction) => {
-    setMessage(null);
+    say(null);
     try {
       const res = await payApi.emailTransaction(t.id, businessId);
-      const label = DOC_LABELS[res.document] ?? 'Document';
-      setMessage(`${label} emailed to ${res.recipient}.`);
+      const label = tr('detail.bill.doc.' + res.document, { defaultValue: tr('detail.bill.doc.document') });
+      say(tr('detail.bill.docEmailed', { label, recipient: res.recipient }));
     } catch (err: any) {
       const code = err?.response?.data?.code;
-      setMessage(code === 'NO_RECIPIENT'
-        ? 'Customer has no email address on file.'
-        : (err?.response?.data?.message || 'Failed to email document.'));
+      say(code === 'NO_RECIPIENT'
+        ? tr('detail.bill.noRecipient')
+        : (err?.response?.data?.message || tr('detail.bill.docEmailFailed')), true);
     }
   };
 
@@ -880,7 +876,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch { setMessage('Failed to open receipt PDF.'); }
+    } catch { say(tr('detail.bill.receiptPdfFailed'), true); }
   };
 
   // Open the branded credit-note (Adjustment) PDF for a credit-note row.
@@ -890,7 +886,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch { setMessage('Failed to open credit note PDF.'); }
+    } catch { say(tr('detail.bill.creditPdfFailed'), true); }
   };
 
   // Open the branded debit-note (Adjustment) PDF for a debit-note row.
@@ -900,7 +896,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch { setMessage('Failed to open debit note PDF.'); }
+    } catch { say(tr('detail.bill.debitPdfFailed'), true); }
   };
 
   // Which document a charge row prints: a credit/debit-note row prints its note;
@@ -927,26 +923,23 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   };
 
   const applyCredit = async (invoiceId: string) => {
-    setApplyingCreditTo(invoiceId); setMessage(null);
+    setApplyingCreditTo(invoiceId); say(null);
     try {
       const res = await payApi.applyAccountCredit(businessId, invoiceId);
-      setMessage(
-        `Applied ${formatCurrency(res.appliedCents, creditBalance?.currency || 'USD')} of account credit`
-        + ` (ref ${res.referenceNumber}). Invoice ${res.invoiceStatus}.`,
-      );
+      say(tr('detail.bill.applied', { amount: formatCurrency(res.appliedCents, creditBalance?.currency || 'USD'), ref: res.referenceNumber, status: tr('detail.bill.status.' + res.invoiceStatus, { defaultValue: res.invoiceStatus }) }));
       await load();
     } catch (err: any) {
-      setMessage(err?.response?.data?.error || 'Failed to apply account credit.');
+      say(err?.response?.data?.error || tr('detail.bill.applyFailed'), true);
     } finally { setApplyingCreditTo(null); }
   };
 
   const availableCredit = creditBalance?.availableCents ?? 0;
 
-  if (loading) return <div style={styles.tabContent}><p style={styles.empty}>Loading billing…</p></div>;
+  if (loading) return <div style={styles.tabContent}><p style={styles.empty}>{tr('detail.bill.loading')}</p></div>;
 
   return (
     <div style={styles.tabContent}>
-      {message && <p style={{ fontSize: 'var(--font-size-sm)', color: message.toLowerCase().includes('fail') || message.toLowerCase().includes('declin') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: 'var(--space-md)' }}>{message}</p>}
+      {message && <p style={{ fontSize: 'var(--font-size-sm)', color: badMessage ? 'var(--color-error)' : 'var(--color-success)', marginBottom: 'var(--space-md)' }}>{message}</p>}
 
       {/* Account credit (unapplied payments). Only shown when the customer holds
           a positive balance — a payment taken "on account" sits here as a
@@ -955,9 +948,9 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
         <div style={{ ...styles.card, borderLeft: '3px solid var(--color-accent)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <h3 style={{ ...styles.cardTitle, margin: 0 }}>Account Credit</h3>
+              <h3 style={{ ...styles.cardTitle, margin: 0 }}>{tr('detail.bill.accountCredit')}</h3>
               <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                Unapplied balance available to apply to an invoice
+                {tr('detail.bill.unapplied')}
               </span>
             </div>
             <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-accent)' }}>
@@ -970,33 +963,33 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       {/* Outstanding invoices */}
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Outstanding Invoices</h3>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>{tr('detail.bill.outstanding')}</h3>
           {invoicingEnabled && (
-            <Button size="sm" variant="secondary" onClick={() => setShowIssueInvoice(true)}>New Adjustment</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowIssueInvoice(true)}>{tr('detail.bill.newAdjustment')}</Button>
           )}
         </div>
         {outstanding.length === 0 ? (
-          <p style={styles.cardMuted}>No outstanding invoices.</p>
+          <p style={styles.cardMuted}>{tr('detail.bill.noOutstanding')}</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {outstanding.map((inv) => (
               <div key={inv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>Invoice #{inv.invoice_number}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{tr('detail.bill.invoiceNumber', { number: inv.invoice_number })}</span>
                   <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                    Due {formatDateOnly(inv.due_date)} · {formatCurrency(inv.total_cents, inv.currency)}
+                    {tr('detail.bill.due', { date: formatDateOnly(inv.due_date) })} · {formatCurrency(inv.total_cents, inv.currency)}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
-                  <button style={membershipActionStyle} onClick={() => openPdf(inv.id)}>PDF</button>
-                  <button style={membershipActionStyle} onClick={() => emailInvoiceDoc(inv.id)}>Email</button>
+                  <Badge variant={statusVariant(inv.status)}>{statusText(inv.status)}</Badge>
+                  <button style={membershipActionStyle} onClick={() => openPdf(inv.id)}>{tr('detail.bill.pdf')}</button>
+                  <button style={membershipActionStyle} onClick={() => emailInvoiceDoc(inv.id)}>{tr('detail.bill.email')}</button>
                   {availableCredit > 0 && (
                     <Button size="sm" variant="secondary" loading={applyingCreditTo === inv.id} onClick={() => applyCredit(inv.id)}>
-                      Apply Credit
+                      {tr('detail.bill.applyCredit')}
                     </Button>
                   )}
-                  <Button size="sm" loading={payingId === inv.id} onClick={() => payInvoice(inv.id)}>Pay</Button>
+                  <Button size="sm" loading={payingId === inv.id} onClick={() => payInvoice(inv.id)}>{tr('detail.bill.pay')}</Button>
                 </div>
               </div>
             ))}
@@ -1007,7 +1000,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       {/* Transaction history */}
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Transaction History</h3>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>{tr('detail.bill.history')}</h3>
         </div>
         <Table
           rowId={(t: PayTransaction) => t.id}
@@ -1015,18 +1008,18 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
           filterSource={transactions}
           filters={txFilters}
           onFiltersChange={setTxFilters}
-          emptyMessage={dateFrom ? 'No transactions in this date range.' : 'No transactions yet.'}
+          emptyMessage={dateFrom ? tr('detail.bill.noneInRange') : tr('detail.bill.none')}
           clientSort initialSort={{ key: 'created_at', order: 'desc' }}
           columns={[
-            { key: 'created_at', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
-            { key: 'purpose_label', header: 'For', sortable: true, render: (_: any, t: PayTransaction) => (
+            { key: 'created_at', header: tr('detail.bill.colDate'), sortable: true, filter: 'date' as const, render: (v: string) => fmtDate(v) },
+            { key: 'purpose_label', header: tr('detail.bill.colFor'), sortable: true, render: (_: any, t: PayTransaction) => (
               <>
                 {t.purpose_link ? (
                   <button
                     type="button"
                     onClick={() => openPurpose(t.purpose_link!)}
                     style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', textAlign: 'left', font: 'inherit', textDecoration: 'underline' }}
-                    title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'credit_note' ? 'Open credit note PDF' : t.purpose_link.type === 'debit_note' ? 'Open debit note PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
+                    title={tr('detail.bill.open.' + t.purpose_link.type, { defaultValue: tr('detail.bill.open.details') })}
                   >
                     {t.purpose_label}
                   </button>
@@ -1036,27 +1029,27 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
                 {t.reference_number && (
                   <span
                     style={{ display: 'block', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-mono, monospace)' }}
-                    title="Payment reference (for reconciliation with the processor)"
+                    title={tr('detail.bill.referenceTitle')}
                   >
                     {t.reference_number}
                   </span>
                 )}
               </>
             ) },
-            { key: 'payment_method', header: 'Method', sortable: true },
-            { key: 'type', header: 'Type', sortable: true },
-            { key: 'amount', header: 'Amount', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), transactions[0]?.currency), render: (v: number, t: PayTransaction) => <div style={{ textAlign: 'right' }}>{formatCurrency(v, t.currency)}</div> },
-            { key: 'status', header: 'Status', sortable: true, filterValue: (t: PayTransaction) => displayStatus(t), render: (_: any, t: PayTransaction) => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{ds}</Badge>; } },
+            { key: 'payment_method', header: tr('detail.bill.colMethod'), sortable: true, filterLabel: (v: string) => tr('detail.bill.method.' + v, { defaultValue: v }), render: (v: string) => tr('detail.bill.method.' + v, { defaultValue: v }) },
+            { key: 'type', header: tr('detail.bill.colType'), sortable: true, filterLabel: (v: string) => tr('detail.bill.type.' + v, { defaultValue: v }), render: (v: string) => tr('detail.bill.type.' + v, { defaultValue: v }) },
+            { key: 'amount', header: tr('detail.bill.colAmount'), align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), transactions[0]?.currency), render: (v: number, t: PayTransaction) => <div style={{ textAlign: 'right' }}>{formatCurrency(v, t.currency)}</div> },
+            { key: 'status', header: tr('detail.bill.colStatus'), sortable: true, filterValue: (t: PayTransaction) => displayStatus(t), filterLabel: (v: string) => statusText(v), render: (_: any, t: PayTransaction) => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{statusText(ds)}</Badge>; } },
             { key: 'actions', header: '', filter: false as const, render: (_: any, t: PayTransaction) => (
               <div style={{ textAlign: 'right' }}>
                 <Dropdown
-                  trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label="Row actions" size="sm" variant="ghost" />}
+                  trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label={tr('detail.bill.rowActions')} size="sm" variant="ghost" />}
                   items={(() => {
                     const print = printForRow(t);
                     return [
-                      ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
-                      { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
-                      ...(print ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: print }] : []),
+                      ...(refundKindOf(t) ? [{ id: 'refund', label: tr('detail.bill.refund'), icon: '↩', onClick: () => startRefund(t) }] : []),
+                      { id: 'email', label: tr('detail.bill.email'), icon: '✉', onClick: () => emailTxnDoc(t) },
+                      ...(print ? [{ id: 'print', label: tr('detail.bill.print'), icon: '🖨', onClick: print }] : []),
                     ];
                   })()}
                 />
@@ -1101,14 +1094,15 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
 function RefundModal({ transaction, businessId, remainingCents, onClose, onRefunded }: {
   transaction: PayTransaction; businessId: string; remainingCents: number; onClose: () => void; onRefunded: () => void;
 }) {
+  const { t } = useTranslation('customers');
   const [amount, setAmount] = useState(remainingCents);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
-    if (!reason.trim()) { setError('A reason is required.'); return; }
-    if (amount <= 0 || amount > remainingCents) { setError(`Amount must be between 0.01 and ${(remainingCents / 100).toFixed(2)}.`); return; }
+    if (!reason.trim()) { setError(t('detail.refund.reasonRequired')); return; }
+    if (amount <= 0 || amount > remainingCents) { setError(t('detail.refund.amountRange', { max: formatNumber(remainingCents / 100, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })); return; }
     setBusy(true); setError(null);
     try {
       // Send amount only for a partial refund; omit for a full refund of the remainder.
@@ -1117,30 +1111,29 @@ function RefundModal({ transaction, businessId, remainingCents, onClose, onRefun
     } catch (err: any) {
       const code = err?.response?.data?.code;
       setError(code === 'FORBIDDEN'
-        ? 'You do not have permission to issue refunds (Manager or Owner required).'
-        : err?.response?.data?.error || 'Failed to process the refund.');
+        ? t('detail.refund.forbidden')
+        : err?.response?.data?.error || t('detail.refund.failed'));
     } finally { setBusy(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title="Issue Refund"
+    <Modal open onClose={onClose} title={t('detail.refund.title')}
       footer={<>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button variant="destructive" loading={busy} onClick={submit}>Refund</Button>
+        <Button variant="outline" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button variant="destructive" loading={busy} onClick={submit}>{t('detail.bill.refund')}</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
-          Refunding charge {transaction.reference_number || transaction.id.slice(0, 8)} ·
-          {' '}refundable {formatCurrency(remainingCents, transaction.currency)}
-          {transaction.is_processed ? ' (returns to the original method)' : ' (recorded only — manual method)'}
+          {t('detail.refund.help', { ref: transaction.reference_number || transaction.id.slice(0, 8), amount: formatCurrency(remainingCents, transaction.currency) })}
+          {' '}{transaction.is_processed ? t('detail.refund.processed') : t('detail.refund.manual')}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Amount</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{t('detail.refund.amount')}</label>
           <CurrencyInput value={amount} onChange={setAmount} style={refundInputStyle} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Reason <span style={{ color: 'var(--color-error)' }}>*</span></label>
-          <input style={refundInputStyle} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. cancelled booking" />
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{t('detail.refund.reason')} <span style={{ color: 'var(--color-error)' }}>*</span></label>
+          <input style={refundInputStyle} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('detail.refund.reasonPlaceholder')} />
         </div>
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error}</p>}
       </div>
@@ -1150,12 +1143,13 @@ function RefundModal({ transaction, businessId, remainingCents, onClose, onRefun
 
 interface InvoiceLineRow { description: string; quantity: number; unitPriceCents: number; taxCents: number; itemType: payApi.InvoiceItemType; }
 
-const INVOICE_ITEM_TYPES: { value: payApi.InvoiceItemType; label: string }[] = [
-  { value: 'service', label: 'Service' },
-  { value: 'product', label: 'Product' },
-  { value: 'membership', label: 'Membership' },
-  { value: 'package', label: 'Package' },
-  { value: 'no_show_fee', label: 'No-show fee' },
+// The words for a type are detail.invoiceType.<value>.
+const INVOICE_ITEM_TYPES: { value: payApi.InvoiceItemType }[] = [
+  { value: 'service' },
+  { value: 'product' },
+  { value: 'membership' },
+  { value: 'package' },
+  { value: 'no_show_fee' },
 ];
 
 // --- Adjustment modal: a Debit (invoice) or Credit (credit note). A debit charges
@@ -1163,6 +1157,7 @@ const INVOICE_ITEM_TYPES: { value: payApi.InvoiceItemType; label: string }[] = [
 function IssueInvoiceModal({ businessId, customerId, onClose, onIssued }: {
   businessId: string; customerId: string; onClose: () => void; onIssued: () => void;
 }) {
+  const { t } = useTranslation('customers');
   const [mode, setMode] = useState<'debit' | 'credit'>('debit');
   const [reason, setReason] = useState('');
   const [lines, setLines] = useState<InvoiceLineRow[]>([{ description: '', quantity: 1, unitPriceCents: 0, taxCents: 0, itemType: 'service' }]);
@@ -1180,8 +1175,8 @@ function IssueInvoiceModal({ businessId, customerId, onClose, onIssued }: {
 
   const submit = async () => {
     const valid = lines.filter((l) => l.description.trim() && l.unitPriceCents > 0);
-    if (valid.length === 0) { setError('Add at least one line item with a description and price.'); return; }
-    if (!reason.trim()) { setError('A reason is required.'); return; }
+    if (valid.length === 0) { setError(t('detail.invoice.needLine')); return; }
+    if (!reason.trim()) { setError(t('detail.refund.reasonRequired')); return; }
     const lineItems = valid.map((l) => ({ description: l.description.trim(), quantity: l.quantity || 1, unit_price_cents: l.unitPriceCents, tax_cents: l.taxCents || null, item_type: l.itemType }));
     setBusy(true); setError(null);
     try {
@@ -1192,78 +1187,78 @@ function IssueInvoiceModal({ businessId, customerId, onClose, onIssued }: {
       }
       onIssued();
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.response?.data?.error || `Failed to issue the ${mode === 'credit' ? 'credit note' : 'debit note'}.`);
+      setError(err?.response?.data?.message || err?.response?.data?.error || (mode === 'credit' ? t('detail.invoice.creditFailed') : t('detail.invoice.debitFailed')));
     } finally { setBusy(false); }
   };
 
   const isCredit = mode === 'credit';
 
   return (
-    <Modal open onClose={onClose} title="New Adjustment" size="lg"
+    <Modal open onClose={onClose} title={t('detail.bill.newAdjustment')} size="lg"
       footer={<>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>{t('common:cancel')}</Button>
         <Button variant="primary" loading={busy} onClick={submit}>
-          {isCredit ? `Issue credit note (${formatCurrency(total, 'USD')})` : `Issue debit note (${formatCurrency(total, 'USD')})`}
+          {isCredit ? t('detail.invoice.issueCredit', { amount: formatCurrency(total, 'USD') }) : t('detail.invoice.issueDebit', { amount: formatCurrency(total, 'USD') })}
         </Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
         {/* Debit note vs Credit note — a debit is a credit with the opposite sign. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Adjustment type</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{t('detail.invoice.type')}</label>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button type="button" onClick={() => { setMode('debit'); setError(null); }}
               style={{ ...membershipActionStyle, padding: '6px 14px', background: !isCredit ? 'var(--color-primary)' : 'transparent', color: !isCredit ? '#fff' : 'var(--color-text-secondary)' }}>
-              Debit (Debit Note)
+              {t('detail.invoice.debit')}
             </button>
             <button type="button" onClick={() => { setMode('credit'); setError(null); }}
               style={{ ...membershipActionStyle, padding: '6px 14px', background: isCredit ? 'var(--color-primary)' : 'transparent', color: isCredit ? '#fff' : 'var(--color-text-secondary)' }}>
-              Credit (Credit Note)
+              {t('detail.invoice.credit')}
             </button>
           </div>
           <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
             {isCredit
-              ? 'A credit note reverses revenue and grants the customer drawable account credit. No cash is returned.'
-              : 'A debit note re-recognises revenue and draws the customer\u2019s account balance down (the mirror of a credit note). No cash is collected.'}
+              ? t('detail.invoice.creditHelp')
+              : t('detail.invoice.debitHelp')}
           </span>
         </div>
 
         {/* Apply date — same position, read-only for both: a debit note and a
             credit note both take effect immediately (today). */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '220px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Apply date</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{t('detail.invoice.applyDate')}</label>
           <input type="date" style={{ ...refundInputStyle, opacity: 0.7 }} value={todayStr} readOnly aria-readonly="true" />
         </div>
 
         {/* Reason — required for both, same position. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Reason <span style={{ color: 'var(--color-error)' }}>*</span></label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{t('detail.refund.reason')} <span style={{ color: 'var(--color-error)' }}>*</span></label>
           <input style={refundInputStyle} value={reason} onChange={(e) => setReason(e.target.value)}
-            placeholder={isCredit ? 'e.g. goodwill credit for cancelled class' : 'e.g. correction of over-credited amount'} />
+            placeholder={isCredit ? t('detail.invoice.creditReasonExample') : t('detail.invoice.debitReasonExample')} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Line items</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{t('detail.invoice.lineItems')}</label>
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <input style={{ ...refundInputStyle, flex: 1 }} placeholder="Description" value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
+              <input style={{ ...refundInputStyle, flex: 1 }} placeholder={t('detail.invoice.description')} value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
               <select
                 style={{ ...refundInputStyle, width: '120px' }}
                 value={l.itemType}
                 onChange={(e) => updateLine(i, { itemType: e.target.value as payApi.InvoiceItemType })}
-                aria-label="Line item type"
+                aria-label={t('detail.invoice.lineType')}
               >
-                {INVOICE_ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {INVOICE_ITEM_TYPES.map((ty) => <option key={ty.value} value={ty.value}>{t('detail.invoiceType.' + ty.value)}</option>)}
               </select>
               <input style={{ ...refundInputStyle, width: '56px' }} type="number" min={1} value={l.quantity} onChange={(e) => updateLine(i, { quantity: parseInt(e.target.value, 10) || 1 })} />
               <CurrencyInput value={l.unitPriceCents} onChange={(c) => updateLine(i, { unitPriceCents: c })} style={{ ...refundInputStyle, width: '110px' }} />
               <CurrencyInput value={l.taxCents} onChange={(c) => updateLine(i, { taxCents: c })} style={{ ...refundInputStyle, width: '90px' }} />
-              <button style={membershipActionStyle} onClick={() => removeLine(i)} aria-label="Remove line">×</button>
+              <button style={membershipActionStyle} onClick={() => removeLine(i)} aria-label={t('detail.invoice.removeLine')}>×</button>
             </div>
           ))}
           <div style={{ display: 'flex', gap: '8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-            <span style={{ flex: 1 }}>Description</span><span style={{ width: '120px' }}>Type</span><span style={{ width: '56px' }}>Qty</span><span style={{ width: '110px' }}>Unit price</span><span style={{ width: '90px' }}>Tax</span><span style={{ width: '24px' }} />
+            <span style={{ flex: 1 }}>{t('detail.invoice.description')}</span><span style={{ width: '120px' }}>{t('detail.timeline.colType')}</span><span style={{ width: '56px' }}>{t('detail.invoice.qty')}</span><span style={{ width: '110px' }}>{t('detail.invoice.unitPrice')}</span><span style={{ width: '90px' }}>{t('detail.invoice.tax')}</span><span style={{ width: '24px' }} />
           </div>
-          <button type="button" style={{ ...membershipActionStyle, alignSelf: 'flex-start' }} onClick={addLine}>+ Add line</button>
+          <button type="button" style={{ ...membershipActionStyle, alignSelf: 'flex-start' }} onClick={addLine}>{t('detail.invoice.addLine')}</button>
         </div>
 
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error}</p>}
@@ -1277,14 +1272,12 @@ const refundInputStyle: React.CSSProperties = {
   background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)',
 };
 
-const CONSENT_METHOD_LABELS: Record<string, string> = {
-  form: 'Form', portal: 'Customer portal', unsubscribe_link: 'Unsubscribe link', staff_entry: 'Recorded by staff',
-  import: 'Import', keyword_reply: 'Reply keyword', merge: 'Merge', migration: 'Carried over',
-};
-const CONSENT_CHANNEL_LABELS: Record<string, string> = { email: 'Email', sms: 'SMS', whatsapp: 'WhatsApp', in_app: 'In-app', push: 'Push' };
+// How consent was given (detail.consent.method.<method>) and on which channel (detail.consent.channel.<channel>)
+// are shown through the translation file.
 
 /** Possible duplicates flagged for this person, with review-and-merge (Phase 46 R3, R12). */
 function DuplicateBanner({ customer, businessId, onMerged }: { customer: Customer; businessId: string; onMerged: (c: Customer) => void }) {
+  const { t } = useTranslation('customers');
   const [flags, setFlags] = useState<customersApi.DuplicateFlag[]>([]);
   const [preview, setPreview] = useState<customersApi.MergePreview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1298,7 +1291,7 @@ function DuplicateBanner({ customer, businessId, onMerged }: { customer: Custome
 
   const review = async (flag: customersApi.DuplicateFlag) => {
     try { setPreview(await customersApi.previewMerge(customer.id, flag.other_id, businessId)); }
-    catch (err: any) { alert(err.response?.data?.error || 'Could not prepare the merge'); }
+    catch (err: any) { void showMessage({ message: err.response?.data?.error || t('detail.dup.prepareFailed'), tone: 'error' }); }
   };
   const merge = async () => {
     if (!preview) return;
@@ -1308,7 +1301,7 @@ function DuplicateBanner({ customer, businessId, onMerged }: { customer: Custome
       setPreview(null);
       onMerged(merged);
       load();
-    } catch (err: any) { alert(err.response?.data?.error || 'Merge failed'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('detail.dup.mergeFailed'), tone: 'error' }); }
     finally { setBusy(false); }
   };
   const dismiss = async (flag: customersApi.DuplicateFlag) => {
@@ -1318,36 +1311,35 @@ function DuplicateBanner({ customer, businessId, onMerged }: { customer: Custome
 
   return (
     <div style={styles.duplicateBanner} role="status">
-      <strong>Possible duplicate{flags.length > 1 ? 's' : ''}</strong>
+      <strong>{t('detail.dup.title', { count: flags.length })}</strong>
       {flags.map((f) => (
         <div key={f.id} style={styles.duplicateRow}>
-          <span>{f.other_name} · {f.other_reference} · same {f.match_type === 'phone' ? 'phone number' : 'email'}</span>
+          <span>{t('detail.dup.row', { name: f.other_name, ref: f.other_reference, what: f.match_type === 'phone' ? t('detail.dup.samePhone') : t('detail.dup.sameEmail') })}</span>
           <span style={{ display: 'flex', gap: '8px' }}>
-            <Button size="sm" variant="secondary" onClick={() => review(f)}>Review and merge</Button>
-            <Button size="sm" variant="outline" onClick={() => dismiss(f)}>Different people</Button>
+            <Button size="sm" variant="secondary" onClick={() => review(f)}>{t('detail.dup.review')}</Button>
+            <Button size="sm" variant="outline" onClick={() => dismiss(f)}>{t('detail.dup.different')}</Button>
           </span>
         </div>
       ))}
-      <Modal open={!!preview} onClose={() => setPreview(null)} title="Merge these two records?">
+      <Modal open={!!preview} onClose={() => setPreview(null)} title={t('detail.dup.mergeTitle')}>
         {preview && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
             <p style={{ margin: 0 }}>
-              Everything on <strong>{preview.secondary.name}</strong> ({preview.secondary.reference_number}) moves to{' '}
-              <strong>{preview.primary.name}</strong> ({preview.primary.reference_number}). This cannot be undone.
+              <Trans t={t} i18nKey="detail.dup.mergeBody" values={{ secondary: preview.secondary.name, secondaryRef: preview.secondary.reference_number, primary: preview.primary.name, primaryRef: preview.primary.reference_number }} components={[<strong />, <strong />]} />
             </p>
             {preview.moves.length > 0 ? (
               <ul style={{ margin: 0, paddingLeft: 'var(--space-lg)' }}>
                 {preview.moves.map((m) => <li key={m.table}>{m.label}: {m.count}</li>)}
               </ul>
-            ) : <p style={{ margin: 0 }}>The other record has nothing linked to it.</p>}
+            ) : <p style={{ margin: 0 }}>{t('detail.dup.nothingLinked')}</p>}
             {preview.blockers.length > 0 && (
               <p style={{ margin: 0, color: 'var(--color-error)' }}>
-                Cannot merge yet: both records have {preview.blockers.map((b) => b.label.toLowerCase()).join(', ')} that must be resolved first.
+                {t('detail.dup.blocked', { list: preview.blockers.map((b) => b.label.toLocaleLowerCase()).join(', ') })}
               </p>
             )}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="outline" onClick={() => setPreview(null)}>Cancel</Button>
-              <Button onClick={merge} loading={busy} disabled={preview.blockers.length > 0}>Merge</Button>
+              <Button variant="outline" onClick={() => setPreview(null)}>{t('common:cancel')}</Button>
+              <Button onClick={merge} loading={busy} disabled={preview.blockers.length > 0}>{t('detail.dup.merge')}</Button>
             </div>
           </div>
         )}
@@ -1363,17 +1355,20 @@ const needsEvidence = (key: string) => key !== 'booking_reminders' && key !== 't
 function PreferencesTab({ preferences, onSaved, customerId, businessId }: {
   preferences: any; onSaved: (prefs: any) => void; customerId: string; businessId: string;
 }) {
+  const { t } = useTranslation('customers');
   const [history, setHistory] = useState<customersApi.ConsentEvent[] | null>(null);
   const pick = (p: any) => Object.fromEntries(CONSENT_KEYS.map((k) => [k, !!p?.[k]]));
+  // The channel a consent key is about, in words.
+  const consentChannel = (key: string) => t('detail.consent.channel.' + (key === 'email_marketing' ? 'email' : key === 'sms_marketing' ? 'sms' : key === 'push_notifications' ? 'push' : key), { defaultValue: key });
   // The switches wait for the page's Save changes (David, 2026-11-01); each change is then
   // recorded in the consent history with its evidence.
-  const draft = useDraft<{ values: Record<string, boolean>; evidence: Record<string, string> }>('profile-consent', 'Consent', { values: pick(preferences), evidence: {} }, async (d) => {
+  const draft = useDraft<{ values: Record<string, boolean>; evidence: Record<string, string> }>('profile-consent', t('detail.tab.preferences'), { values: pick(preferences), evidence: {} }, async (d) => {
     const before = pick(preferences);
     let latest = preferences;
     for (const key of CONSENT_KEYS) {
       if (d.values[key] === before[key]) continue;
       if (d.values[key] && needsEvidence(key) && !(d.evidence[key] || '').trim()) {
-        throw new Error(`say how the person gave consent for ${CONSENT_CHANNEL_LABELS[key] || key}`);
+        throw new Error(t('detail.consent.sayHow', { channel: consentChannel(key) }));
       }
       const payload: Record<string, any> = { [key]: d.values[key] };
       if (d.values[key] && needsEvidence(key)) payload.evidence = d.evidence[key].trim();
@@ -1397,10 +1392,10 @@ function PreferencesTab({ preferences, onSaved, customerId, businessId }: {
         </div>
         {asking && (
           <div style={styles.consentEvidence}>
-            <label htmlFor={`consent-evidence-${key}`} style={styles.fieldLabel}>How did this person give their consent? (needed to save)</label>
+            <label htmlFor={`consent-evidence-${key}`} style={styles.fieldLabel}>{t('detail.consent.howGiven')}</label>
             <input
               id={`consent-evidence-${key}`} autoFocus style={{ ...styles.fieldInput, ...fieldMark(true) }} value={draft.value.evidence[key] || ''}
-              placeholder="For example: ticked the box on the sign-up form"
+              placeholder={t('detail.consent.example')}
               onChange={(e) => draft.setValue({ ...draft.value, evidence: { ...draft.value.evidence, [key]: e.target.value } })}
             />
           </div>
@@ -1414,31 +1409,31 @@ function PreferencesTab({ preferences, onSaved, customerId, businessId }: {
     customersApi.getConsentHistory(customerId, businessId).then(setHistory).catch(() => setHistory([]));
   }, [customerId, businessId, preferences]);
 
-  if (!preferences) return <p style={styles.empty}>Loading preferences...</p>;
+  if (!preferences) return <p style={styles.empty}>{t('detail.consent.loading')}</p>;
 
   return (
     <div style={{ ...styles.tabContent, ...draftBox(draft.dirty) }}>
       <UnsavedTag dirty={draft.dirty} />
       <p style={styles.empty}>
-        Marketing needs the person's own agreement, channel by channel. Transactional emails (confirmations, cancellations, receipts and purchases) are on unless the person asks to stop them; when off, none are sent.
+        {t('detail.consent.intro')}
       </p>
-      {channelRow('email_marketing', 'Email Marketing')}
-      {channelRow('sms_marketing', 'SMS Marketing')}
-      {channelRow('push_notifications', 'Push Notifications')}
-      {channelRow('booking_reminders', 'Booking Reminders')}
-      {channelRow('transactional_emails', 'Transactional Emails')}
+      {channelRow('email_marketing', t('detail.consent.emailMarketing'))}
+      {channelRow('sms_marketing', t('detail.consent.smsMarketing'))}
+      {channelRow('push_notifications', t('detail.consent.push'))}
+      {channelRow('booking_reminders', t('detail.consent.reminders'))}
+      {channelRow('transactional_emails', t('detail.consent.transactional'))}
 
-      <h3 style={styles.cardTitle}>Consent history</h3>
-      {history === null && <p style={styles.empty}>Loading…</p>}
-      {history !== null && history.length === 0 && <p style={styles.empty}>No consent has been recorded or withdrawn yet.</p>}
+      <h3 style={styles.cardTitle}>{t('detail.consent.history')}</h3>
+      {history === null && <p style={styles.empty}>{t('profile.loading')}</p>}
+      {history !== null && history.length === 0 && <p style={styles.empty}>{t('detail.consent.noHistory')}</p>}
       {history !== null && history.length > 0 && (
         <ul style={styles.consentHistory}>
           {history.map((e) => (
             <li key={e.id} style={styles.consentHistoryRow}>
               <span>
-                <strong>{CONSENT_CHANNEL_LABELS[e.channel] || e.channel}</strong>{' '}
-                {e.category === 'reminders' ? 'reminders' : e.category === 'transactional' ? 'transactional emails' : 'marketing'}: {e.new_state ? 'given' : 'withdrawn'}
-                {' · '}{CONSENT_METHOD_LABELS[e.method] || e.method}{e.actor_name ? ` by ${e.actor_name}` : ''}
+                <strong>{t('detail.consent.channel.' + e.channel, { defaultValue: e.channel })}</strong>{' '}
+                {e.category === 'reminders' ? t('detail.consent.cat.reminders') : e.category === 'transactional' ? t('detail.consent.cat.transactional') : t('detail.consent.cat.marketing')}: {e.new_state ? t('detail.consent.given') : t('detail.consent.withdrawn')}
+                {' · '}{t('detail.consent.method.' + e.method, { defaultValue: e.method })}{e.actor_name ? ` ${t('detail.consent.by', { name: e.actor_name })}` : ''}
                 {e.evidence ? ` · "${e.evidence}"` : ''}
               </span>
               <span style={{ color: 'var(--color-text-secondary)' }}>{formatWhen(e.created_at)}</span>
@@ -1453,6 +1448,9 @@ function PreferencesTab({ preferences, onSaved, customerId, businessId }: {
 // --- Membership Card ---
 
 function MembershipCard({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const { t } = useTranslation('customers');
+  // A billing frequency is shown through detail.membership.frequency.<value>.
+  const frequency = (value: string) => t('detail.membership.frequency.' + value, { defaultValue: value });
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnroll, setShowEnroll] = useState(false);
@@ -1502,7 +1500,7 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       await fetchEnrollments();
       setEditingMethodFor(null);
     } catch (err: any) {
-      alert(err?.response?.data?.error || 'Failed to update the renewal card.');
+      void showMessage({ message: err?.response?.data?.error || t('detail.membership.cardFailed'), tone: 'error' });
     } finally { setSavingMethod(false); }
   };
 
@@ -1525,7 +1523,7 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       await fetchEnrollments();
       setShowEnroll(false);
       setSelectedPlanId('');
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to enroll'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('detail.membership.enrollFailed'), tone: 'error' }); }
     finally { setEnrolling(false); }
   };
 
@@ -1540,18 +1538,18 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       await apiClient.put(`/v1/memberships/${pausingEnrollmentId}/pause?business_id=${businessId}`, { max_pause_days: pauseDays });
       await fetchEnrollments();
       setPausingEnrollmentId(null);
-    } catch { alert('Failed to pause'); }
+    } catch { void showMessage({ message: t('detail.membership.pauseFailed'), tone: 'error' }); }
   };
 
   const handleResume = async (enrollmentId: string) => {
     try { await apiClient.put(`/v1/memberships/${enrollmentId}/resume?business_id=${businessId}`); await fetchEnrollments(); }
-    catch { alert('Failed to resume'); }
+    catch { void showMessage({ message: t('detail.membership.resumeFailed'), tone: 'error' }); }
   };
 
   const handleCancel = async (enrollmentId: string) => {
-    if (!confirm('Cancel this membership? This cannot be undone.')) return;
+    if (!(await askConfirm({ message: t('detail.membership.cancelConfirm'), confirmLabel: t('common:action.yes'), destructive: true }))) return;
     try { await apiClient.put(`/v1/memberships/${enrollmentId}/cancel?business_id=${businessId}`); await fetchEnrollments(); }
-    catch { alert('Failed to cancel'); }
+    catch { void showMessage({ message: t('detail.membership.cancelFailed'), tone: 'error' }); }
   };
 
   const handleChangePlan = async (enrollment: any) => {
@@ -1570,25 +1568,25 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       setShowChangePlan(null);
       setSelectedPlanId('');
       if (result.type === 'upgrade' && result.proratedCharge > 0) {
-        alert(`Upgraded to ${result.newPlan}. Prorated charge: €${(result.proratedCharge / 100).toFixed(2)}`);
+        void showMessage({ message: t('detail.membership.upgraded', { plan: result.newPlan, amount: formatCurrency(result.proratedCharge, 'EUR') }), tone: 'success' });
       } else if (result.type === 'downgrade') {
-        alert(`Downgrade to ${result.newPlan} will take effect at the start of the next billing period.`);
+        void showMessage({ message: t('detail.membership.downgraded', { plan: result.newPlan }), tone: 'success' });
       }
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to change plan'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('detail.membership.changeFailed'), tone: 'error' }); }
     finally { setEnrolling(false); }
   };
 
   return (
     <div style={styles.card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Membership</h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('detail.tab.membership', { defaultValue: 'Membership' })}</h3>
         {enrollments.length === 0 && !loading && (
-          <Button size="sm" variant="secondary" onClick={openEnroll}>Enroll</Button>
+          <Button size="sm" variant="secondary" onClick={openEnroll}>{t('detail.membership.enroll')}</Button>
         )}
       </div>
 
-      {loading && <p style={styles.cardMuted}>Loading...</p>}
-      {!loading && enrollments.length === 0 && !showEnroll && <p style={styles.cardMuted}>No membership</p>}
+      {loading && <p style={styles.cardMuted}>{t('common:loading')}</p>}
+      {!loading && enrollments.length === 0 && !showEnroll && <p style={styles.cardMuted}>{t('detail.membership.none')}</p>}
 
       {enrollments.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1598,43 +1596,43 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
                 <strong>{e.plan_name}</strong>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
                   {/* Past-due (dunning) and expired need to stand out so staff can act / re-cultivate. */}
-                  {e.status === 'renewing' && <Badge variant="warning">Past due</Badge>}
-                  {e.status === 'expired' && <Badge variant="error">Expired</Badge>}
-                  {e.billing_frequency}
-                  {e.pending_plan_id && <span style={{ color: 'var(--color-info, #4A90A4)', marginLeft: '8px' }}>↓ Downgrade pending</span>}
+                  {e.status === 'renewing' && <Badge variant="warning">{t('detail.membership.pastDue')}</Badge>}
+                  {e.status === 'expired' && <Badge variant="error">{t('detail.membership.expired')}</Badge>}
+                  {frequency(e.billing_frequency)}
+                  {e.pending_plan_id && <span style={{ color: 'var(--color-info, #4A90A4)', marginLeft: '8px' }}>{t('detail.membership.downgradePending')}</span>}
                 </span>
               </div>
               <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                Since {formatDateOnly(e.start_date)}
+                {t('detail.membership.since', { date: formatDateOnly(e.start_date) })}
                 {e.cancelled_at ? (
-                  <span style={{ color: 'var(--color-error)' }}> · Cancels {formatDateOnly(e.current_period_end)}</span>
+                  <span style={{ color: 'var(--color-error)' }}>{' · '}{t('detail.membership.cancels', { date: formatDateOnly(e.current_period_end) })}</span>
                 ) : e.status === 'renewing' ? (
-                  <span style={{ color: 'var(--color-warning, #E6A817)' }}> · Payment failed — retrying</span>
+                  <span style={{ color: 'var(--color-warning, #E6A817)' }}>{' · '}{t('detail.membership.paymentFailed')}</span>
                 ) : e.status === 'expired' ? (
-                  <span style={{ color: 'var(--color-error)' }}> · Expired after failed renewals</span>
+                  <span style={{ color: 'var(--color-error)' }}>{' · '}{t('detail.membership.expiredAfter')}</span>
                 ) : e.status === 'paused' ? (
-                  <span style={{ color: 'var(--color-warning, #E6A817)' }}> · Paused{e.resume_at ? ` · Resumes ${formatDateOnly(e.resume_at)}` : ' indefinitely'}</span>
+                  <span style={{ color: 'var(--color-warning, #E6A817)' }}>{' · '}{t('detail.membership.paused')}{e.resume_at ? ` · ${t('detail.membership.resumes', { date: formatDateOnly(e.resume_at) })}` : ` ${t('detail.membership.indefinitely')}`}</span>
                 ) : (
-                  e.next_billing_date && ` · Next billing: ${formatDateOnly(e.next_billing_date)}`
+                  e.next_billing_date && ` · ${t('detail.membership.nextBilling', { date: formatDateOnly(e.next_billing_date) })}`
                 )}
               </div>
 
               {/* Renewal card: the pinned method, or the customer's default as fallback. */}
               <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                Renewal card:{' '}
+                {t('detail.membership.renewalCard')}{' '}
                 {e.payment_method_id
-                  ? <strong style={{ color: 'var(--color-text)' }}>{e.renewal_method_brand || e.renewal_method_type || 'Card'}{e.renewal_method_last4 ? ` ···· ${e.renewal_method_last4}` : ''}</strong>
-                  : <span>Customer default card</span>}
+                  ? <strong style={{ color: 'var(--color-text)' }}>{e.renewal_method_brand || e.renewal_method_type || t('detail.membership.card')}{e.renewal_method_last4 ? ` ···· ${e.renewal_method_last4}` : ''}</strong>
+                  : <span>{t('detail.membership.defaultCard')}</span>}
                 {!e.cancelled_at && (
                   <button style={{ ...membershipActionStyle, marginLeft: '8px', padding: '0 4px' }} onClick={() => setEditingMethodFor(editingMethodFor === e.id ? null : e.id)}>
-                    {editingMethodFor === e.id ? 'Close' : 'Change'}
+                    {editingMethodFor === e.id ? t('detail.membership.close') : t('detail.membership.change')}
                   </button>
                 )}
               </div>
               {editingMethodFor === e.id && (
                 <div style={{ marginTop: '6px', padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {storedMethods.length === 0 ? (
-                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>No stored cards. Add one under Payment Methods on File, then pick it here.</span>
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{t('detail.membership.noCards')}</span>
                   ) : (
                     <>
                       <select
@@ -1643,39 +1641,39 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
                         disabled={savingMethod}
                         onChange={(ev) => setRenewalMethod(e.id, ev.target.value || null)}
                       >
-                        <option value="">Use customer default card</option>
+                        <option value="">{t('detail.membership.useDefault')}</option>
                         {storedMethods.filter((m) => m.method_type !== 'bank_draw' || true).map((m) => (
                           <option key={m.id} value={m.id}>
-                            {m.display_brand || m.method_type}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ' (default)' : ''}
+                            {m.display_brand || m.method_type}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ` ${t('detail.membership.default')}` : ''}
                           </option>
                         ))}
                       </select>
-                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Pin a card for this membership, or use the customer's default.</span>
+                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{t('detail.membership.pinHelp')}</span>
                     </>
                   )}
                 </div>
               )}
 
               <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                {e.status === 'active' && !e.cancelled_at && <button style={membershipActionStyle} onClick={() => handlePause(e.id)}>Pause</button>}
-                {e.status === 'paused' && <button style={membershipActionStyle} onClick={() => handleResume(e.id)}>Resume</button>}
-                {!e.cancelled_at && <button style={membershipActionStyle} onClick={() => handleChangePlan(e)}>Change Plan</button>}
-                {(e.status === 'active' || e.status === 'paused') && !e.cancelled_at && <button style={{ ...membershipActionStyle, color: 'var(--color-error)' }} onClick={() => handleCancel(e.id)}>Cancel</button>}
+                {e.status === 'active' && !e.cancelled_at && <button style={membershipActionStyle} onClick={() => handlePause(e.id)}>{t('detail.membership.pause')}</button>}
+                {e.status === 'paused' && <button style={membershipActionStyle} onClick={() => handleResume(e.id)}>{t('detail.membership.resume')}</button>}
+                {!e.cancelled_at && <button style={membershipActionStyle} onClick={() => handleChangePlan(e)}>{t('detail.membership.changePlan')}</button>}
+                {(e.status === 'active' || e.status === 'paused') && !e.cancelled_at && <button style={{ ...membershipActionStyle, color: 'var(--color-error)' }} onClick={() => handleCancel(e.id)}>{t('common:cancel')}</button>}
               </div>
               {pausingEnrollmentId === e.id && (
                 <div style={{ marginTop: '8px', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
-                  <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Pause duration</p>
+                  <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>{t('detail.membership.pauseDuration')}</p>
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                     {[15, 30, 45].map((d) => (
                       <button key={d} type="button" onClick={() => setPauseDays(d)}
                         style={{ padding: '6px 14px', fontSize: 'var(--font-size-sm)', borderRadius: '20px', cursor: 'pointer', border: pauseDays === d ? '2px solid var(--color-primary)' : '1px solid var(--color-border)', background: pauseDays === d ? 'var(--color-primary)' : 'transparent', color: pauseDays === d ? '#fff' : 'var(--color-text)' }}>
-                        {d} days
+                        {t('detail.membership.days', { count: d })}
                       </button>
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <Button size="sm" onClick={confirmPause}>Confirm Pause</Button>
-                    <Button size="sm" variant="secondary" onClick={() => setPausingEnrollmentId(null)}>Cancel</Button>
+                    <Button size="sm" onClick={confirmPause}>{t('detail.membership.confirmPause')}</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setPausingEnrollmentId(null)}>{t('common:cancel')}</Button>
                   </div>
                 </div>
               )}
@@ -1688,26 +1686,26 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
         <div style={{ marginTop: '8px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
-              <option value="">Select a plan...</option>
-              {plans.map((p: any) => <option key={p.id} value={p.id}>{p.name} — {p.billing_frequency}</option>)}
+              <option value="">{t('detail.membership.selectPlan')}</option>
+              {plans.map((p: any) => <option key={p.id} value={p.id}>{p.name} — {frequency(p.billing_frequency)}</option>)}
             </select>
-            <Button size="sm" onClick={handleEnroll} loading={enrolling} disabled={!selectedPlanId}>Enroll</Button>
-            <Button size="sm" variant="secondary" onClick={() => setShowEnroll(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleEnroll} loading={enrolling} disabled={!selectedPlanId}>{t('detail.membership.enroll')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowEnroll(false)}>{t('common:cancel')}</Button>
           </div>
-          {plans.length === 0 && <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>No active membership plans available. Create plans under Offerings → Memberships.</p>}
+          {plans.length === 0 && <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>{t('detail.membership.noPlans')}</p>}
         </div>
       )}
 
       {showChangePlan && (
         <div style={{ marginTop: '8px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
-          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Change from <strong>{showChangePlan.plan_name}</strong> to:</p>
+          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}><Trans t={t} i18nKey="detail.membership.changeFrom" values={{ plan: showChangePlan.plan_name }} components={[<strong />]} /></p>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
-              <option value="">Select new plan...</option>
-              {plans.filter((p: any) => p.id !== showChangePlan.plan_id).map((p: any) => <option key={p.id} value={p.id}>{p.name} — {p.billing_frequency}</option>)}
+              <option value="">{t('detail.membership.selectNewPlan')}</option>
+              {plans.filter((p: any) => p.id !== showChangePlan.plan_id).map((p: any) => <option key={p.id} value={p.id}>{p.name} — {frequency(p.billing_frequency)}</option>)}
             </select>
-            <Button size="sm" onClick={confirmChangePlan} loading={enrolling} disabled={!selectedPlanId}>Confirm</Button>
-            <Button size="sm" variant="secondary" onClick={() => setShowChangePlan(null)}>Cancel</Button>
+            <Button size="sm" onClick={confirmChangePlan} loading={enrolling} disabled={!selectedPlanId}>{t('common:confirm')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowChangePlan(null)}>{t('common:cancel')}</Button>
           </div>
         </div>
       )}

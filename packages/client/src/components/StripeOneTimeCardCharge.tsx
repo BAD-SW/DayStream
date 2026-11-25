@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import { loadStripe, Stripe, StripeCardElement } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Button } from '../design-system/components/actions/Button';
@@ -29,6 +31,7 @@ function stripeFor(pk: string): Promise<Stripe | null> {
 }
 
 function ChargeForm({ clientSecret, onPaid, onCancel, busyLabel }: Omit<Props, 'publishableKey'>) {
+  const { t } = useTranslation('checkout');
   const stripe = useStripe();
   const elements = useElements();
   const [busy, setBusy] = useState(false);
@@ -41,13 +44,13 @@ function ChargeForm({ clientSecret, onPaid, onCancel, busyLabel }: Omit<Props, '
     setBusy(true); setErr(null);
     const result = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
     if (result.error) {
-      setErr(result.error.message || 'The card could not be charged.');
+      setErr(result.error.message || t('stripe.chargeFailed'));
       setBusy(false);
       return;
     }
     const pi = result.paymentIntent;
     if (!pi || (pi.status !== 'succeeded' && pi.status !== 'processing')) {
-      setErr('The payment did not complete.');
+      setErr(t('stripe.paymentIncomplete'));
       setBusy(false);
       return;
     }
@@ -62,9 +65,9 @@ function ChargeForm({ clientSecret, onPaid, onCancel, busyLabel }: Omit<Props, '
       {err && <p style={styles.err}>{err}</p>}
       <div style={styles.actions}>
         <Button size="sm" variant="primary" loading={busy} disabled={!stripe} onClick={handleConfirm}>
-          {busyLabel || 'Charge card'}
+          {busyLabel || t('stripe.chargeCard')}
         </Button>
-        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>{t('common:cancel')}</button>
       </div>
     </div>
   );
@@ -80,11 +83,11 @@ function DeferredCardForm({ onReady }: { onReady: (charge: DeferredCardCharge | 
     if (!stripe || !elements) { onReady(null); return; }
     onReady(async (clientSecret: string) => {
       const card = elements.getElement(CardElement) as StripeCardElement | null;
-      if (!card) throw new Error('Enter the card first.');
+      if (!card) throw new Error(i18n.t('checkout:stripe.enterCardFirst'));
       const result = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
-      if (result.error) throw new Error(result.error.message || 'The card could not be charged.');
+      if (result.error) throw new Error(result.error.message || i18n.t('checkout:stripe.chargeFailed'));
       const pi = result.paymentIntent;
-      if (!pi || (pi.status !== 'succeeded' && pi.status !== 'processing')) throw new Error('The payment did not complete.');
+      if (!pi || (pi.status !== 'succeeded' && pi.status !== 'processing')) throw new Error(i18n.t('checkout:stripe.paymentIncomplete'));
       return pi.id;
     });
     return () => onReady(null);

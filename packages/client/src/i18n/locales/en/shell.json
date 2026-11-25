@@ -1,0 +1,21 @@
+{
+  "unsaved.leave_title": "Leave without saving?",
+  "unsaved.leave_message": "You have unsaved changes on this page. If you leave now, they are lost.",
+  "unsaved.leave": "Leave",
+  "unsaved.stay": "Stay",
+  "unsaved.you_have_changes": "You have unsaved changes.",
+  "unsaved.all_saved": "All changes saved.",
+  "unsaved.save_changes": "Save changes",
+  "unsaved.not_saved": "Not saved: {{items}}",
+  "unsaved.not_saved_default": "Not saved",
+  "unsaved.tag": "Unsaved changes",
+
+  "error_boundary.title": "Something went wrong",
+  "error_boundary.fallback_message": "An unexpected error occurred.",
+  "error_boundary.reload": "Reload page",
+
+  "topbar.profile_settings": "Profile settings",
+  "topbar.sign_out": "Sign out",
+  "topbar.profile_title": "Profile",
+  "topbar.close": "Close"
+}

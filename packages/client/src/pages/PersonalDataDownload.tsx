@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '../api/client';
+import { useTranslation } from 'react-i18next';
+import { PublicLanguageBar } from '../components/PublicLanguageBar';
 
 /**
  * Personal data download — reached from the emailed link (/personal-data?token=...).
@@ -8,6 +10,8 @@ import { apiClient } from '../api/client';
  * a password-protected PDF; the business gives the person the password separately.
  */
 export function PersonalDataDownload() {
+  const { t } = useTranslation('account');
+  const { t: tc } = useTranslation('common');
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
   const [loading, setLoading] = useState(false);
@@ -24,7 +28,7 @@ export function PersonalDataDownload() {
       setDone(true);
     } catch (err: any) {
       // The error body arrives as a blob because of responseType.
-      let msg = 'This link has expired or is not valid. Ask the business to send it again.';
+      let msg = t('download.invalidLink');
       try { const body = JSON.parse(await err?.response?.data?.text?.()); if (body?.error) msg = body.error; } catch { /* keep default */ }
       setError(msg);
     } finally { setLoading(false); }
@@ -32,16 +36,17 @@ export function PersonalDataDownload() {
 
   return (
     <div style={styles.container}>
+      <PublicLanguageBar />
       <div style={styles.card}>
-        <h1 style={styles.title}>DayStream</h1>
-        <p style={styles.subtitle}>Your personal data</p>
+        <h1 style={styles.title}>{tc('app_name')}</h1>
+        <p style={styles.subtitle}>{t('download.title')}</p>
         <div style={styles.form}>
-          {!token && <p style={styles.error}>This link is missing its key. Please use the link from your email.</p>}
+          {!token && <p style={styles.error}>{t('download.missingKey')}</p>}
           {token && (
             <>
-              <p style={styles.text}>The file is protected with a password. The business gives you the password separately. The link works for 24 hours.</p>
-              <button type="button" onClick={download} disabled={loading} style={styles.button}>{loading ? 'Downloading…' : 'Download'}</button>
-              {done && <p style={styles.success}>✓ The file has been downloaded.</p>}
+              <p style={styles.text}>{t('download.intro')}</p>
+              <button type="button" onClick={download} disabled={loading} style={styles.button}>{loading ? t('download.downloading') : t('download.button')}</button>
+              {done && <p style={styles.success}>{t('download.done')}</p>}
               {error && <p role="alert" style={styles.error}>{error}</p>}
             </>
           )}
@@ -52,7 +57,7 @@ export function PersonalDataDownload() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-background)', fontFamily: 'var(--font-family)', padding: '16px' },
+  container: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-background)', fontFamily: 'var(--font-family)', padding: '16px', paddingTop: 'var(--space-xl)', position: 'relative' },
   card: { backgroundColor: 'var(--color-surface)', borderRadius: '12px', padding: '48px 40px', width: '100%', maxWidth: '400px', border: '1px solid var(--color-border)' },
   title: { color: 'var(--color-text)', fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: '0 0 8px 0', textAlign: 'center' as const },
   subtitle: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', margin: '0 0 32px 0', textAlign: 'center' as const },

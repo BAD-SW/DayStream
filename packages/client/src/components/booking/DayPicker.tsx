@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { formatDate } from '../../utils/format';
 import './DayPicker.css';
 
 export type DayStatus = 'available' | 'unavailable' | 'closed';
@@ -12,7 +14,10 @@ interface DayPickerProps {
   onRetry?: () => void;
 }
 
-const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** Short weekday names, Sunday first, in the language shown (2026-01-04 is a Sunday). */
+function weekdayLabels(): string[] {
+  return Array.from({ length: 7 }, (_, i) => formatDate(new Date(2026, 0, 4 + i), { weekday: 'short' }));
+}
 
 /** Maps a day's status to the CSS variable that colours its cell. */
 export function statusCssVar(status: DayStatus | undefined): string {
@@ -44,7 +49,7 @@ export function shiftMonth(month: string, delta: number): string {
 
 function monthLabel(month: string): string {
   const [year, mon] = month.split('-').map(Number);
-  return new Date(year, mon - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  return formatDate(new Date(year, mon - 1, 1), { month: 'long', year: 'numeric' });
 }
 
 function buildGridCells(viewedMonth: string): Array<string | null> {
@@ -58,6 +63,7 @@ function buildGridCells(viewedMonth: string): Array<string | null> {
 }
 
 export function DayPicker({ dayStatuses, viewedMonth, onMonthChange, onDaySelect, loading, error, onRetry }: DayPickerProps) {
+  const { t } = useTranslation('booking');
   const today = todayStr();
   const prevDisabled = viewedMonth <= currentMonthStr();
   const cells = buildGridCells(viewedMonth);
@@ -70,7 +76,7 @@ export function DayPicker({ dayStatuses, viewedMonth, onMonthChange, onDaySelect
           className="day-picker__nav"
           disabled={prevDisabled || loading}
           onClick={() => onMonthChange(shiftMonth(viewedMonth, -1))}
-          aria-label="Previous month"
+          aria-label={t('day.previousMonth')}
         >
           ‹
         </button>
@@ -80,7 +86,7 @@ export function DayPicker({ dayStatuses, viewedMonth, onMonthChange, onDaySelect
           className="day-picker__nav"
           disabled={loading}
           onClick={() => onMonthChange(shiftMonth(viewedMonth, 1))}
-          aria-label="Next month"
+          aria-label={t('day.nextMonth')}
         >
           ›
         </button>
@@ -90,13 +96,13 @@ export function DayPicker({ dayStatuses, viewedMonth, onMonthChange, onDaySelect
         <div className="day-picker__error">
           <p className="day-picker__error-message">{error}</p>
           {onRetry && (
-            <button type="button" className="day-picker__retry" onClick={onRetry}>Retry</button>
+            <button type="button" className="day-picker__retry" onClick={onRetry}>{t('day.retry')}</button>
           )}
         </div>
       ) : (
         <div className="day-picker__body">
           <div className="day-picker__weekdays">
-            {WEEKDAY_LABELS.map((w) => <span key={w} className="day-picker__weekday">{w}</span>)}
+            {weekdayLabels().map((w) => <span key={w} className="day-picker__weekday">{w}</span>)}
           </div>
           <div className="day-picker__grid">
             {cells.map((date, idx) => {
@@ -121,7 +127,7 @@ export function DayPicker({ dayStatuses, viewedMonth, onMonthChange, onDaySelect
             })}
           </div>
           {loading && (
-            <div className="day-picker__loading-overlay" role="status" aria-label="Loading availability">
+            <div className="day-picker__loading-overlay" role="status" aria-label={t('day.loadingAvailability')}>
               <span className="day-picker__spinner" />
             </div>
           )}

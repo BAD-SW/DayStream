@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadStripe, Stripe, StripeCardElement } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Button } from '../design-system/components/actions/Button';
@@ -27,6 +28,7 @@ function stripeFor(pk: string): Promise<Stripe | null> {
 }
 
 function CardForm({ clientSecret, onCaptured, onCancel }: Omit<Props, 'publishableKey'>) {
+  const { t } = useTranslation('checkout');
   const stripe = useStripe();
   const elements = useElements();
   const [busy, setBusy] = useState(false);
@@ -41,13 +43,13 @@ function CardForm({ clientSecret, onCaptured, onCancel }: Omit<Props, 'publishab
     setBusy(true); setErr(null);
     const result = await stripe.confirmCardSetup(clientSecret, { payment_method: { card } });
     if (result.error) {
-      setErr(result.error.message || 'Could not save the card.');
+      setErr(result.error.message || t('stripe.cardSaveFailed'));
       setBusy(false);
       return;
     }
     const pmId = result.setupIntent?.payment_method;
     if (typeof pmId !== 'string') {
-      setErr('Card setup did not return a payment method.');
+      setErr(t('stripe.cardNoMethod'));
       setBusy(false);
       return;
     }
@@ -61,8 +63,8 @@ function CardForm({ clientSecret, onCaptured, onCancel }: Omit<Props, 'publishab
       </div>
       {err && <p style={styles.err}>{err}</p>}
       <div style={styles.actions}>
-        <Button size="sm" variant="primary" loading={busy} disabled={!stripe} onClick={handleConfirm}>Save card</Button>
-        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>Cancel</button>
+        <Button size="sm" variant="primary" loading={busy} disabled={!stripe} onClick={handleConfirm}>{t('stripe.saveCard')}</Button>
+        <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>{t('common:cancel')}</button>
       </div>
     </div>
   );

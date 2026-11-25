@@ -8,6 +8,7 @@ import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import { StockError } from '../services/inventory.service';
 import * as po from '../services/purchase-orders.service';
+import { msg } from '../i18n';
 
 /**
  * Purchase orders (spec 51, gap 7; design 7.7), in Accounting next to Vendors and Bills. Every
@@ -34,7 +35,7 @@ async function belongs(table: 'fin_vendors' | 'sys_locations', businessId: strin
 function fail(res: Response, err: unknown, what: string) {
   if (err instanceof StockError) { error(res, err.message, err.code, err.code === 'NOT_TRACKED' || err.code === 'INVALID' ? 400 : 409); return; }
   console.error(`Failed to ${what}`, (err as Error).message);
-  error(res, `Failed to ${what}`, 'INTERNAL_ERROR', 500);
+  error(res, msg('errors:purchaseOrders.failedTo', { what }), 'INTERNAL_ERROR', 500);
 }
 
 const lineSchema = Joi.object({
@@ -55,8 +56,8 @@ const linesOf = (b: { lines: Array<{ merchandise_id: string; variant_id?: string
   b.lines.map((l) => ({ merchandiseId: l.merchandise_id, variantId: l.variant_id || null, qtyOrdered: l.qty_ordered, unitCostCents: l.unit_cost_cents }));
 
 async function checkVendorAndLocation(res: Response, businessId: string, vendorId: string, locationId: string): Promise<boolean> {
-  if (!(await belongs('fin_vendors', businessId, vendorId))) { error(res, "Choose one of this business's vendors.", 'VALIDATION_ERROR', 400); return false; }
-  if (!(await belongs('sys_locations', businessId, locationId))) { error(res, 'Choose a location of this business.', 'VALIDATION_ERROR', 400); return false; }
+  if (!(await belongs('fin_vendors', businessId, vendorId))) { error(res, msg('errors:purchaseOrders.chooseOneOfThisBusinessS'), 'VALIDATION_ERROR', 400); return false; }
+  if (!(await belongs('sys_locations', businessId, locationId))) { error(res, msg('errors:purchaseOrders.chooseALocationOfThisBusiness'), 'VALIDATION_ERROR', 400); return false; }
   return true;
 }
 
@@ -64,7 +65,7 @@ async function checkVendorAndLocation(res: Response, businessId: string, vendorI
 purchaseOrdersRouter.get('/', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = bizOf(req);
-    if (!(await ownsBusiness(req, businessId))) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownsBusiness(req, businessId))) { error(res, msg('errors:purchaseOrders.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await po.listPos(businessId));
   } catch (err) { fail(res, err, 'load purchase orders'); }
 });
@@ -73,9 +74,9 @@ purchaseOrdersRouter.get('/', requirePermission('settings:*'), async (req: Reque
 purchaseOrdersRouter.get('/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = bizOf(req);
-    if (!(await ownsBusiness(req, businessId))) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownsBusiness(req, businessId))) { error(res, msg('errors:purchaseOrders.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const found = UUID_RE.test(req.params.id) ? await po.getPo(businessId, req.params.id) : null;
-    if (!found) { error(res, 'Purchase order not found', 'NOT_FOUND', 404); return; }
+    if (!found) { error(res, msg('errors:purchaseOrders.purchaseOrderNotFound'), 'NOT_FOUND', 404); return; }
     success(res, found);
   } catch (err) { fail(res, err, 'load the purchase order'); }
 });
@@ -84,7 +85,7 @@ purchaseOrdersRouter.get('/:id', requirePermission('settings:*'), async (req: Re
 purchaseOrdersRouter.post('/', requirePermission('settings:*'), validate(poSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:purchaseOrders.businessNotFound'), 'NOT_FOUND', 404); return; }
     if (!(await checkVendorAndLocation(res, b.business_id, b.vendor_id, b.location_id))) return;
     success(res, await po.createPo({
       businessId: b.business_id, vendorId: b.vendor_id, locationId: b.location_id, expectedOn: b.expected_on || null, note: b.note || null,
@@ -97,8 +98,8 @@ purchaseOrdersRouter.post('/', requirePermission('settings:*'), validate(poSchem
 purchaseOrdersRouter.put('/:id', requirePermission('settings:*'), validate(poSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    if (!UUID_RE.test(req.params.id)) { error(res, 'Purchase order not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:purchaseOrders.businessNotFound'), 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.id)) { error(res, msg('errors:purchaseOrders.purchaseOrderNotFound'), 'NOT_FOUND', 404); return; }
     if (!(await checkVendorAndLocation(res, b.business_id, b.vendor_id, b.location_id))) return;
     await po.updatePo({
       businessId: b.business_id, poId: req.params.id, vendorId: b.vendor_id, locationId: b.location_id,
@@ -114,8 +115,8 @@ const sendSchema = Joi.object({ business_id: Joi.string().uuid().required(), ema
 purchaseOrdersRouter.post('/:id/send', requirePermission('settings:*'), validate(sendSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    if (!UUID_RE.test(req.params.id)) { error(res, 'Purchase order not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:purchaseOrders.businessNotFound'), 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.id)) { error(res, msg('errors:purchaseOrders.purchaseOrderNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await po.sendPo(b.business_id, req.params.id, { email: b.email }));
   } catch (err) { fail(res, err, 'send the purchase order'); }
 });
@@ -134,8 +135,8 @@ const receiveSchema = Joi.object({
 purchaseOrdersRouter.post('/:id/receive', requirePermission('settings:*'), validate(receiveSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    if (!UUID_RE.test(req.params.id)) { error(res, 'Purchase order not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:purchaseOrders.businessNotFound'), 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.id)) { error(res, msg('errors:purchaseOrders.purchaseOrderNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await po.receivePo({
       businessId: b.business_id, poId: req.params.id, userId: userOf(req), note: b.note || null,
       lines: b.lines.map((l: { line_id: string; qty: number; unit_cost_cents?: number | null }) => ({ lineId: l.line_id, qty: l.qty, unitCostCents: l.unit_cost_cents ?? null })),
@@ -153,8 +154,8 @@ const billSchema = Joi.object({
 purchaseOrdersRouter.post('/:id/bill', requirePermission('settings:*'), validate(billSchema), async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    if (!(await ownsBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    if (!UUID_RE.test(req.params.id)) { error(res, 'Purchase order not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, b.business_id))) { error(res, msg('errors:purchaseOrders.businessNotFound'), 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.id)) { error(res, msg('errors:purchaseOrders.purchaseOrderNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await po.billPo({ businessId: b.business_id, poId: req.params.id, userId: userOf(req), invoiceNumber: b.invoice_number || null, dueDate: b.due_date || null }), undefined, 201);
   } catch (err) { fail(res, err, 'create the bill'); }
 });
@@ -163,8 +164,8 @@ purchaseOrdersRouter.post('/:id/bill', requirePermission('settings:*'), validate
 purchaseOrdersRouter.post('/:id/close', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = bizOf(req);
-    if (!(await ownsBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    if (!UUID_RE.test(req.params.id)) { error(res, 'Purchase order not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownsBusiness(req, businessId))) { error(res, msg('errors:purchaseOrders.businessNotFound'), 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.id)) { error(res, msg('errors:purchaseOrders.purchaseOrderNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await po.closePo(businessId, req.params.id));
   } catch (err) { fail(res, err, 'close the purchase order'); }
 });

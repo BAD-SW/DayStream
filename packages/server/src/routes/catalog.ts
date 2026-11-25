@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { success, error } from '../utils/response';
 import * as catalogService from '../services/service-catalog.service';
+import { msg } from '../i18n';
 
 export const catalogRouter = Router();
 
@@ -19,12 +20,12 @@ catalogRouter.get('/:businessSlug', async (req: Request, res: Response) => {
     };
 
     const catalog = await catalogService.getCatalog(req.params.businessSlug, filters);
-    if (!catalog) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!catalog) { error(res, msg('errors:catalog.businessNotFound'), 'NOT_FOUND', 404); return; }
 
     success(res, catalog);
   } catch (err: any) {
     console.error('Failed to load catalog', err?.message || err);
-    error(res, 'Failed to load catalog', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:catalog.failedToLoadCatalog'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -32,11 +33,11 @@ catalogRouter.get('/:businessSlug', async (req: Request, res: Response) => {
 catalogRouter.get('/:businessSlug/:serviceSlug', async (req: Request, res: Response) => {
   try {
     const detail = await catalogService.getCatalogServiceDetail(req.params.businessSlug, req.params.serviceSlug);
-    if (!detail) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
+    if (!detail) { error(res, msg('errors:catalog.serviceNotFound'), 'NOT_FOUND', 404); return; }
 
     success(res, detail);
   } catch (err: any) {
     console.error('Failed to load service detail', err?.message || err);
-    error(res, 'Failed to load service detail', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:catalog.failedToLoadServiceDetail'), 'INTERNAL_ERROR', 500);
   }
 });

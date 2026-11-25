@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Alert } from '../design-system/components/feedback/Alert';
@@ -7,10 +8,13 @@ import * as bookingsApi from '../api/bookings';
 import * as servicesApi from '../api/services';
 import type { ServiceVariant, AvailableSlot } from '../api/services';
 import { formatCurrency } from '../utils/currency';
+import { formatDate, formatDateTime, formatTime } from '../utils/format';
+import { formatDuration } from './booking-widget/format';
 
 type Step = 'variant' | 'date' | 'slot' | 'staff' | 'confirm' | 'done';
 
 export function BookingFlow() {
+  const { t } = useTranslation('widget');
   const { serviceSlug } = useParams<{ serviceSlug: string }>();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('variant');
@@ -67,21 +71,21 @@ export function BookingFlow() {
       setBookingResult(result);
       setStep('done');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create booking');
+      setError(err.response?.data?.error || t('flow.createFailed'));
     } finally {
       setLoading(false);
     }
   };
 
-  if (!service) return <div style={styles.loading}>Loading service...</div>;
+  if (!service) return <div style={styles.loading}>{t('flow.loading')}</div>;
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Book: {service.name}</h1>
+      <h1 style={styles.title}>{t('flow.title', { name: service.name })}</h1>
 
       {/* Step indicator */}
       <div style={styles.steps}>
-        {['Variant', 'Date', 'Time', 'Staff', 'Confirm'].map((label, i) => {
+        {[t('flow.stepVariant'), t('flow.stepDate'), t('flow.stepTime'), t('flow.stepStaff'), t('flow.stepConfirm')].map((label, i) => {
           const stepNames: Step[] = ['variant', 'date', 'slot', 'staff', 'confirm'];
           const isActive = stepNames.indexOf(step) >= i;
           return (
@@ -98,31 +102,31 @@ export function BookingFlow() {
       {/* Step 1: Select variant */}
       {step === 'variant' && (
         <div style={styles.stepContent}>
-          <h2 style={styles.subtitle}>Select Duration & Price</h2>
+          <h2 style={styles.subtitle}>{t('flow.selectVariant')}</h2>
           <div style={styles.variantGrid}>
             {variants.filter((v) => v.status === 'active').map((v) => (
               <button key={v.id} style={{ ...styles.variantCard, ...(selectedVariant?.id === v.id ? styles.variantSelected : {}) }}
                 onClick={() => setSelectedVariant(v)}>
                 <strong>{v.name}</strong>
-                <span>{v.duration} min</span>
+                <span>{formatDuration(v.duration)}</span>
                 <span style={styles.price}>{formatCurrency(v.price)}</span>
-                {v.pricing_model === 'subscription' && <Badge variant="info">{v.billing_interval}</Badge>}
+                {v.pricing_model === 'subscription' && <Badge variant="info">{t(`frequency.${v.billing_interval}`, { defaultValue: v.billing_interval })}</Badge>}
               </button>
             ))}
           </div>
-          {selectedVariant && <Button onClick={() => setStep('date')}>Next</Button>}
+          {selectedVariant && <Button onClick={() => setStep('date')}>{t('common:next')}</Button>}
         </div>
       )}
 
       {/* Step 2: Select date */}
       {step === 'date' && (
         <div style={styles.stepContent}>
-          <h2 style={styles.subtitle}>Select Date</h2>
+          <h2 style={styles.subtitle}>{t('flow.selectDate')}</h2>
           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
             min={new Date().toISOString().slice(0, 10)} style={styles.dateInput} />
           <div style={styles.navActions}>
-            <Button onClick={() => setStep('variant')}>Back</Button>
-            {selectedDate && <Button onClick={() => setStep('slot')}>Next</Button>}
+            <Button onClick={() => setStep('variant')}>{t('common:back')}</Button>
+            {selectedDate && <Button onClick={() => setStep('slot')}>{t('common:next')}</Button>}
           </div>
         </div>
       )}
@@ -130,21 +134,21 @@ export function BookingFlow() {
       {/* Step 3: Select time slot */}
       {step === 'slot' && (
         <div style={styles.stepContent}>
-          <h2 style={styles.subtitle}>Select Time</h2>
-          {loading && <p style={styles.loading}>Loading available slots...</p>}
+          <h2 style={styles.subtitle}>{t('flow.selectTime')}</h2>
+          {loading && <p style={styles.loading}>{t('flow.loadingSlots')}</p>}
           <div style={styles.slotGrid}>
             {slots.map((slot) => (
               <button key={slot.start_time} style={{ ...styles.slotBtn, ...(selectedSlot?.start_time === slot.start_time ? styles.slotSelected : {}) }}
                 onClick={() => setSelectedSlot(slot)}>
-                {new Date(slot.start_time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                {slot.capacity_remaining !== undefined && <span style={styles.capacity}>{slot.capacity_remaining} left</span>}
+                {formatTime(slot.start_time, undefined, { hour: '2-digit', minute: '2-digit' })}
+                {slot.capacity_remaining !== undefined && <span style={styles.capacity}>{t('flow.capacityLeft', { count: slot.capacity_remaining })}</span>}
               </button>
             ))}
           </div>
-          {slots.length === 0 && !loading && <p style={styles.empty}>No available slots for this date</p>}
+          {slots.length === 0 && !loading && <p style={styles.empty}>{t('flow.noSlots')}</p>}
           <div style={styles.navActions}>
-            <Button onClick={() => setStep('date')}>Back</Button>
-            {selectedSlot && <Button onClick={() => setStep('staff')}>Next</Button>}
+            <Button onClick={() => setStep('date')}>{t('common:back')}</Button>
+            {selectedSlot && <Button onClick={() => setStep('staff')}>{t('common:next')}</Button>}
           </div>
         </div>
       )}
@@ -152,10 +156,10 @@ export function BookingFlow() {
       {/* Step 4: Select staff (optional) */}
       {step === 'staff' && (
         <div style={styles.stepContent}>
-          <h2 style={styles.subtitle}>Select Provider (Optional)</h2>
+          <h2 style={styles.subtitle}>{t('flow.selectProvider')}</h2>
           <div style={styles.staffGrid}>
             <button style={{ ...styles.staffBtn, ...(!selectedStaff ? styles.staffSelected : {}) }}
-              onClick={() => setSelectedStaff('')}>No preference</button>
+              onClick={() => setSelectedStaff('')}>{t('flow.noPreference')}</button>
             {selectedSlot?.available_staff.map((s) => (
               <button key={s.id} style={{ ...styles.staffBtn, ...(selectedStaff === s.id ? styles.staffSelected : {}) }}
                 onClick={() => setSelectedStaff(s.id)}>
@@ -164,8 +168,8 @@ export function BookingFlow() {
             ))}
           </div>
           <div style={styles.navActions}>
-            <Button onClick={() => setStep('slot')}>Back</Button>
-            <Button onClick={() => setStep('confirm')}>Next</Button>
+            <Button onClick={() => setStep('slot')}>{t('common:back')}</Button>
+            <Button onClick={() => setStep('confirm')}>{t('common:next')}</Button>
           </div>
         </div>
       )}
@@ -173,20 +177,20 @@ export function BookingFlow() {
       {/* Step 5: Confirm */}
       {step === 'confirm' && (
         <div style={styles.stepContent}>
-          <h2 style={styles.subtitle}>Confirm Booking</h2>
+          <h2 style={styles.subtitle}>{t('flow.confirmBooking')}</h2>
           <div style={styles.summary}>
-            <SummaryRow label="Service" value={service.name} />
-            <SummaryRow label="Duration" value={`${selectedVariant?.duration} min`} />
-            <SummaryRow label="Date" value={new Date(selectedSlot!.start_time).toLocaleDateString()} />
-            <SummaryRow label="Time" value={new Date(selectedSlot!.start_time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} />
-            <SummaryRow label="Price" value={formatCurrency(selectedVariant?.price || 0)} />
+            <SummaryRow label={t('flow.service')} value={service.name} />
+            <SummaryRow label={t('flow.duration')} value={formatDuration(selectedVariant?.duration ?? 0)} />
+            <SummaryRow label={t('flow.date')} value={formatDate(selectedSlot!.start_time)} />
+            <SummaryRow label={t('flow.time')} value={formatTime(selectedSlot!.start_time, undefined, { hour: '2-digit', minute: '2-digit' })} />
+            <SummaryRow label={t('flow.price')} value={formatCurrency(selectedVariant?.price || 0)} />
             {selectedStaff && selectedSlot?.available_staff.find((s) => s.id === selectedStaff) && (
-              <SummaryRow label="Provider" value={`${selectedSlot!.available_staff.find((s) => s.id === selectedStaff)!.first_name} ${selectedSlot!.available_staff.find((s) => s.id === selectedStaff)!.last_name}`} />
+              <SummaryRow label={t('flow.provider')} value={`${selectedSlot!.available_staff.find((s) => s.id === selectedStaff)!.first_name} ${selectedSlot!.available_staff.find((s) => s.id === selectedStaff)!.last_name}`} />
             )}
           </div>
           <div style={styles.navActions}>
-            <Button onClick={() => setStep('staff')}>Back</Button>
-            <Button onClick={handleConfirm} disabled={loading}>{loading ? 'Booking...' : 'Confirm Booking'}</Button>
+            <Button onClick={() => setStep('staff')}>{t('common:back')}</Button>
+            <Button onClick={handleConfirm} disabled={loading}>{loading ? t('flow.booking') : t('flow.confirmBooking')}</Button>
           </div>
         </div>
       )}
@@ -194,13 +198,13 @@ export function BookingFlow() {
       {/* Done */}
       {step === 'done' && bookingResult && (
         <div style={styles.stepContent}>
-          <Alert variant="success">Booking confirmed!</Alert>
+          <Alert variant="success">{t('flow.confirmed')}</Alert>
           <div style={styles.summary}>
-            <SummaryRow label="Reference" value={bookingResult.booking_reference} />
-            <SummaryRow label="Status" value={bookingResult.status} />
-            <SummaryRow label="Date" value={new Date(bookingResult.start_time).toLocaleString()} />
+            <SummaryRow label={t('flow.reference')} value={bookingResult.booking_reference} />
+            <SummaryRow label={t('flow.status')} value={t(`flow.status.${bookingResult.status}`, { defaultValue: bookingResult.status })} />
+            <SummaryRow label={t('flow.date')} value={formatDateTime(bookingResult.start_time)} />
           </div>
-          <Button onClick={() => navigate('/bookings')}>View My Bookings</Button>
+          <Button onClick={() => navigate('/bookings')}>{t('flow.viewBookings')}</Button>
         </div>
       )}
     </div>

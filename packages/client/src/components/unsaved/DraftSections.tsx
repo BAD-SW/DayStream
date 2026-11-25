@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
@@ -27,6 +28,7 @@ const DraftContext = createContext<DraftContextValue | null>(null);
 const TabContext = createContext<string>('');
 
 export function DraftSectionsProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation('shell');
   const entries = useRef(new Map<string, SectionEntry>());
   const [version, setVersion] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -49,11 +51,11 @@ export function DraftSectionsProvider({ children }: { children: ReactNode }) {
     try {
       for (const e of [...entries.current.values()].filter((x) => x.dirty)) {
         try { await e.save(); }
-        catch (err: any) { failed.push({ label: e.label, error: err?.response?.data?.error || err?.message || 'Not saved' }); }
+        catch (err: any) { failed.push({ label: e.label, error: err?.response?.data?.error || err?.message || t('unsaved.not_saved_default') }); }
       }
     } finally { setSaving(false); }
     return { failed };
-  }, []);
+  }, [t]);
 
   const value = useMemo(() => ({ register, unregister, dirtySections, saveAll, saving }), [register, unregister, dirtySections, saveAll, saving]);
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
@@ -205,10 +207,11 @@ export function RowTag({ children }: { children: ReactNode }) {
 }
 
 export function UnsavedTag({ dirty }: { dirty: boolean }) {
+  const { t } = useTranslation('shell');
   if (!dirty) return null;
   return (
     <span style={{ display: 'inline-block', marginLeft: '8px', padding: '2px 8px', borderRadius: 'var(--radius-full)', background: 'var(--color-warning-bg)', color: 'var(--color-warning-dark)', fontSize: 'var(--font-size-xs)', fontWeight: 600, verticalAlign: 'middle' }}>
-      Unsaved changes
+      {t('unsaved.tag')}
     </span>
   );
 }

@@ -10,6 +10,8 @@ import {
   isSignedForm, validateFormAnswers,
 } from '@daystream/shared';
 import type { FormDefinition, FormAnswer } from '@daystream/shared';
+import { msg } from '../i18n';
+import { getBusinessLanguages } from './business-languages.service';
 
 /**
  * Completing a form (spec 51, gap 1).
@@ -74,7 +76,7 @@ async function loadCustomer(businessId: string, customerId: string) {
       WHERE c.id = $1 AND c.business_id = $2`,
     [customerId, businessId],
   );
-  if (!rows[0]) throw new FormCompletionError('Customer not found', 'NOT_FOUND');
+  if (!rows[0]) throw new FormCompletionError(msg('errors:formCompletion.customerNotFound'), 'NOT_FOUND');
   return rows[0] as {
     id: string; first_name: string; last_name: string; email: string | null; preferred_language: string | null;
     tenant_id: string; business_name: string; timezone: string | null;
@@ -109,9 +111,9 @@ export async function createRequest(input: {
 }): Promise<CreatedRequest> {
   const customer = await loadCustomer(input.businessId, input.customerId);
   const versions = await activeVersions(input.businessId, input.groupId);
-  if (versions.length === 0) throw new FormCompletionError('That form is not available.', 'NO_ACTIVE_FORM');
+  if (versions.length === 0) throw new FormCompletionError(msg('errors:formCompletion.thatFormIsNotAvailable'), 'NO_ACTIVE_FORM');
   if (input.channel === 'email' && !customer.email) {
-    throw new FormCompletionError('This customer has no email address.', 'NO_EMAIL');
+    throw new FormCompletionError(msg('errors:formCompletion.thisCustomerHasNoEmailAddress'), 'NO_EMAIL');
   }
 
   // A newer request replaces any earlier open one for the same form.
@@ -150,7 +152,7 @@ export async function createRequest(input: {
     } catch (e) {
       // Nothing was sent, so the link is useless: cancel it and tell staff.
       await adminPool.query(`UPDATE frm_requests SET status = 'cancelled' WHERE id = $1`, [rows[0].id]);
-      throw new FormCompletionError('The email could not be sent. Try again, or use a device instead.', 'EMAIL_FAILED', (e as Error).message);
+      throw new FormCompletionError(msg('errors:formCompletion.theEmailCouldNotBeSent'), 'EMAIL_FAILED', (e as Error).message);
     }
   }
 
@@ -173,6 +175,8 @@ export interface PublicForm {
   business: { name: string; logoUrl: string | null; primaryColor: string | null };
   customerFirstName: string;
   initialLanguage: string | null;
+  /** The business's languages, for the language menu (Phase 44, requirement 8). */
+  languages: string[];
   versions: { language: string | null; name: string; definition: FormDefinition }[];
 }
 
@@ -209,6 +213,7 @@ export async function getPublicForm(token: string): Promise<PublicForm> {
     channel: r.channel,
     expiresAt: new Date(r.expires_at).toISOString(),
     business: { name: biz[0].name, logoUrl: biz[0].logo_url ?? null, primaryColor: biz[0].primary_color ?? null },
+    languages: (await getBusinessLanguages(r.business_id))?.languages ?? [],
     customerFirstName: customer.first_name,
     initialLanguage: initial?.language ?? null,
     versions: versions.map((v) => ({ language: v.language, name: v.name, definition: v.definition })),
@@ -228,7 +233,7 @@ function checkAnswers(def: FormDefinition, raw: unknown): Record<string, FormAns
   for (const [id, v] of Object.entries(input)) {
     if (!known.has(id)) continue;
     if (typeof v === 'string') {
-      if (v.length > MAX_TEXT) throw new FormCompletionError('An answer is too long.', 'INVALID_ANSWERS', [{ itemId: id, message: 'Too long.' }]);
+      if (v.length > MAX_TEXT) throw new FormCompletionError(msg('errors:formCompletion.anAnswerIsTooLong'), 'INVALID_ANSWERS', [{ itemId: id, message: 'Too long.' }]);
       answers[id] = v;
     } else if (typeof v === 'boolean') {
       answers[id] = v;
@@ -237,16 +242,16 @@ function checkAnswers(def: FormDefinition, raw: unknown): Record<string, FormAns
     }
   }
   const issues = validateFormAnswers(def, answers);
-  if (issues.length > 0) throw new FormCompletionError('Some answers need attention.', 'INVALID_ANSWERS', issues);
+  if (issues.length > 0) throw new FormCompletionError(msg('errors:formCompletion.someAnswersNeedAttention'), 'INVALID_ANSWERS', issues);
   return answers;
 }
 
 function decodeSignature(dataUrl: unknown): Buffer {
   const m = typeof dataUrl === 'string' ? /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl) : null;
-  if (!m) throw new FormCompletionError('Please sign the form.', 'SIGNATURE_REQUIRED');
+  if (!m) throw new FormCompletionError(msg('errors:formCompletion.pleaseSignTheForm'), 'SIGNATURE_REQUIRED');
   const png = Buffer.from(m[1], 'base64');
   const isPng = png.length > 8 && png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47;
-  if (!isPng || png.length > MAX_SIGNATURE_BYTES) throw new FormCompletionError('Please sign the form again.', 'SIGNATURE_REQUIRED');
+  if (!isPng || png.length > MAX_SIGNATURE_BYTES) throw new FormCompletionError(msg('errors:formCompletion.pleaseSignTheFormAgain'), 'SIGNATURE_REQUIRED');
   return png;
 }
 
@@ -314,7 +319,7 @@ async function finalize(input: FinalizeInput, db: PoolClient | typeof adminPool)
   try {
     await storage.save(storagePath, pdf);
   } catch (e) {
-    throw new FormCompletionError('The form could not be saved. Please try again.', 'STORAGE_FAILED', (e as Error).message);
+    throw new FormCompletionError(msg('errors:formCompletion.theFormCouldNotBeSaved'), 'STORAGE_FAILED', (e as Error).message);
   }
 
   try {
@@ -394,10 +399,10 @@ export async function completeByStaff(input: {
   await loadCustomer(input.businessId, input.customerId);
   const versions = await activeVersions(input.businessId, input.groupId);
   const form = pickVersion(versions, input.language);
-  if (!form) throw new FormCompletionError('That form is not available.', 'NO_ACTIVE_FORM');
+  if (!form) throw new FormCompletionError(msg('errors:formCompletion.thatFormIsNotAvailable'), 'NO_ACTIVE_FORM');
   if (isSignedForm(form.definition)) {
     throw new FormCompletionError(
-      'A signed form must be signed by the customer. Use a device or send them the link.', 'SIGNED_FORM_STAFF',
+      msg('errors:formCompletion.aSignedFormMustBeSigned'), 'SIGNED_FORM_STAFF',
     );
   }
   const answers = checkAnswers(form.definition, input.answers);
@@ -436,14 +441,14 @@ async function loadSubmission(businessId: string, customerId: string, submission
     `SELECT id, form_name, storage_path FROM frm_submissions WHERE id = $1 AND business_id = $2 AND customer_id = $3`,
     [submissionId, businessId, customerId],
   );
-  if (!rows[0]) throw new FormCompletionError('Form not found', 'NOT_FOUND');
+  if (!rows[0]) throw new FormCompletionError(msg('errors:formCompletion.formNotFound'), 'NOT_FOUND');
   return rows[0] as { id: string; form_name: string; storage_path: string };
 }
 
 export async function getSubmissionFile(businessId: string, customerId: string, submissionId: string): Promise<{ filename: string; data: Buffer }> {
   const s = await loadSubmission(businessId, customerId, submissionId);
   const data = await storage.read(s.storage_path);
-  if (!data) throw new FormCompletionError('The file could not be found.', 'FILE_MISSING');
+  if (!data) throw new FormCompletionError(msg('errors:formCompletion.theFileCouldNotBeFound'), 'FILE_MISSING');
   return { filename: `${s.form_name.replace(/[^\w\- ]+/g, '').trim() || 'form'}.pdf`, data };
 }
 
@@ -452,7 +457,7 @@ export async function emailSubmissionCopy(
   businessId: string, customerId: string, submissionId: string, sentBy: string,
 ): Promise<{ sentTo: string }> {
   const customer = await loadCustomer(businessId, customerId);
-  if (!customer.email) throw new FormCompletionError('This customer has no email address.', 'NO_EMAIL');
+  if (!customer.email) throw new FormCompletionError(msg('errors:formCompletion.thisCustomerHasNoEmailAddress'), 'NO_EMAIL');
   const file = await getSubmissionFile(businessId, customerId, submissionId);
   const lang = (customer.preferred_language ?? 'en').slice(0, 2);
   const body: Record<string, string> = {
@@ -472,7 +477,7 @@ export async function emailSubmissionCopy(
       attachments: [{ filename: file.filename, content: file.data, contentType: 'application/pdf' }],
     });
   } catch (e) {
-    throw new FormCompletionError('The email could not be sent.', 'EMAIL_FAILED', (e as Error).message);
+    throw new FormCompletionError(msg('errors:formCompletion.theEmailCouldNotBeSent2'), 'EMAIL_FAILED', (e as Error).message);
   }
   await createActivity({
     customerId,

@@ -1,5 +1,8 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation, Trans } from 'react-i18next';
+import i18n from '../i18n';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as checkoutApi from '../api/checkout';
@@ -14,6 +17,7 @@ import { CurrencyInput } from '../components/CurrencyInput';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly } from '../utils/date';
+import { formatDateTime } from '../utils/format';
 import { TipPanel } from '../components/TipPanel';
 import { RemovePaidAddonModal } from '../components/booking/RemovePaidAddonModal';
 import { LineBenefitPicker } from '../components/LineBenefitPicker';
@@ -32,26 +36,28 @@ const clampQty = (raw: string, max: number | null) => {
   return Math.max(1, max != null && max > 0 ? Math.min(n, max) : n);
 };
 
-const stockText = (s: StockInfo) => (s.onHand === 0 ? 'Out of stock' : `${s.onHand} in stock`);
+/** Translated where shown, never at module load. */
+const tr = (key: string, values?: Record<string, unknown>) => i18n.t(`checkout:${key}`, values) as string;
+const stockText = (s: StockInfo) => (s.onHand === 0 ? tr('co.outOfStock') : tr('co.inStock', { count: s.onHand }));
 const stockColor = (s: StockInfo) => (s.onHand === 0 ? 'var(--color-error)' : s.low ? 'var(--color-warning)' : 'var(--color-text-secondary)');
 const limitedText = (l: NonNullable<Order['stock_limited']>, name: string, changed: boolean) =>
-  `${name}: only ${l.onHand} in stock, so ${changed ? `the quantity is ${l.added}` : `${l.added} ${l.added === 1 ? 'was' : 'were'} added`}, not ${l.requested}.`;
+  changed
+    ? tr('co.limitedChanged', { name, onHand: l.onHand, added: l.added, requested: l.requested })
+    : tr('co.limitedAdded', { name, onHand: l.onHand, count: l.added, added: l.added, requested: l.requested });
 const errText = (e: unknown, fallback: string) =>
   (e as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
 
 /** A line's type as shown before its name ("Service:", "Add-on:", "No-show fee:"). */
-const typeLabel = (t: string) => {
-  const s = t === 'add_on' ? 'add-on' : t.replace(/_/g, ' ');
-  return s.charAt(0).toUpperCase() + s.slice(1);
+const typeLabel = (type: string) => {
+  const s = type === 'add_on' ? 'add-on' : type.replace(/_/g, ' ');
+  return tr(`co.itemType.${type}`, { defaultValue: s.charAt(0).toUpperCase() + s.slice(1) });
 };
 
 /** Visually hidden, still read by screen readers. */
 const srOnly: React.CSSProperties = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 
-const PAY_METHOD_LABEL: Record<string, string> = {
-  cash: 'Cash', card: 'Card', bank_draw: 'Direct debit', bank_transfer: 'Bank transfer',
-  check: 'Check', gift_card: 'Gift card', google_pay: 'Google Pay', apple_pay: 'Apple Pay', other: 'Other',
-};
+/** A stored payment method's name, through checkout:takePayment.method.<value>. */
+const payMethodLabel = (m: string) => tr(`takePayment.method.${m}`, { defaultValue: m });
 
 const paySelectStyle: React.CSSProperties = {
   padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
@@ -70,6 +76,7 @@ function createOnce(key: string, create: () => Promise<Order>): Promise<Order> {
 }
 
 export function Checkout() {
+  const { t } = useTranslation('checkout');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const bookingId = searchParams.get('appointment');
@@ -173,7 +180,7 @@ export function Checkout() {
     if (!order) return;
     try {
       setOrder(await checkoutApi.setOrderLocation(order.id, businessId, locationId));
-    } catch (err) { alert(errText(err, 'Could not change the location.')); }
+    } catch (err) { void showMessage({ message: errText(err, t('co.locationFailed')), tone: 'error' }); }
   };
 
   // Load order
@@ -199,10 +206,10 @@ export function Checkout() {
         setOrder(o);
         window.history.replaceState(null, '', `/checkout?order=${o!.id}`);
       } else {
-        setError('No appointment or order specified');
+        setError(t('co.noOrder'));
       }
     } catch (err: any) {
-      setError(err?.response?.data?.error || 'Failed to load checkout');
+      setError(err?.response?.data?.error || t('co.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -265,7 +272,7 @@ export function Checkout() {
       const customer = await customersApi.createCustomer({ ...newCustomerForm, business_id: businessId });
       await handleSetCustomer(customer.id);
       setNewCustomerForm({ first_name: '', last_name: '', email: '', phone: '' });
-    } catch (err: any) { alert(err?.response?.data?.message || 'Failed to create customer'); }
+    } catch (err: any) { void showMessage({ message: err?.response?.data?.message || t('co.customerCreateFailed'), tone: 'error' }); }
   };
 
   const handleRemoveCustomer = async () => {
@@ -289,7 +296,7 @@ export function Checkout() {
     try {
       const updated = await checkoutApi.removeItem(order.id, item.id);
       setOrder(updated);
-    } catch (err) { alert(errText(err, 'The item could not be removed.')); }
+    } catch (err) { void showMessage({ message: errText(err, t('co.itemRemoveFailed')), tone: 'error' }); }
   };
   // The service of the appointment being checked out stays on the order (owner, 23 Nov 2026).
   const isBookingService = (item: OrderItem) => item.item_type === 'service' && !!item.booking_id && item.booking_id === order?.booking_id;
@@ -330,14 +337,14 @@ export function Checkout() {
     try {
       const session = await checkoutApi.beginOneTimeCharge(order.id, businessId);
       if (!session.clientSecret || !session.publishableKey) {
-        alert('This business has no active card processor connected for one-time charges.');
+        void showMessage({ message: t('co.noCardProcessor'), tone: 'info' });
         return;
       }
       setOneTimeSession(session);
     } catch (err: any) {
       const code = err?.response?.data?.code;
       if (code === 'OUT_OF_STOCK' || code === 'NOT_ENOUGH_STOCK') loadStock();
-      alert(err?.response?.data?.error || 'Could not start the card charge.');
+      void showMessage({ message: err?.response?.data?.error || t('co.cardChargeFailed'), tone: 'error' });
     } finally {
       setStartingOneTime(false);
     }
@@ -351,17 +358,13 @@ export function Checkout() {
     const issued = completed.gift_cards_issued;
     if (issued && issued.length > 0) {
       const lines = issued.map((g) => `• ${g.code} — ${formatCurrency(g.amountCents)}`).join('\n');
-      alert('Gift card(s) issued:\n\n' + lines + '\n\nGive the code(s) to the purchaser.');
+      void showMessage({ message: t('co.giftIssued', { lines }), tone: 'success' });
     }
 
     const warnings = completed.enrollment_warnings;
     if (!warnings || warnings.length === 0) return;
-    const lines = warnings.map((w) => `• ${w.planName || 'Membership'}: ${w.reason}`).join('\n');
-    alert(
-      'Payment was taken, but the following were NOT fulfilled:\n\n'
-      + lines
-      + '\n\nPlease issue them manually or refund.',
-    );
+    const lines = warnings.map((w) => `• ${w.planName || t('co.membershipFallback')}: ${w.reason}`).join('\n');
+    void showMessage({ message: t('co.notFulfilled', { lines }), tone: 'info' });
   };
 
   // The browser confirmed the walk-in PaymentIntent; complete the order referencing it.
@@ -377,7 +380,7 @@ export function Checkout() {
       warnIfEnrollmentFailed(completed);
       navigate(`/receipt/${completed.id}`);
     } catch (err: any) {
-      alert(err?.response?.data?.error || 'The card was charged but completing the order failed. Please check the order.');
+      void showMessage({ message: err?.response?.data?.error || t('co.chargedButFailed'), tone: 'error' });
     } finally {
       setCompleting(false);
     }
@@ -392,7 +395,7 @@ export function Checkout() {
       const paidOrder = await checkoutApi.completeOrder(order.id, businessId, { payment_method: 'other' });
       navigate(`/receipt/${paidOrder.id}`);
     } catch (err: any) {
-      alert(err?.response?.data?.error || 'The appointment could not be finished.');
+      void showMessage({ message: err?.response?.data?.error || t('co.finishFailed'), tone: 'error' });
     } finally { setCompleting(false); }
   };
 
@@ -401,7 +404,7 @@ export function Checkout() {
     // Require customer when order contains a membership or package
     const requiresCustomer = order.items.some((item) => item.item_type === 'membership' || item.item_type === 'package');
     if (requiresCustomer && !order.customer_id) {
-      alert('A customer is required when the order contains a membership or package.');
+      void showMessage({ message: t('co.customerRequired'), tone: 'info' });
       return;
     }
 
@@ -412,15 +415,15 @@ export function Checkout() {
     // own completion handler, not this button.
     if (processed && !order.customer_id) {
       if (payMethod === 'card') {
-        alert('Enter the card above to charge this walk-in sale.');
+        void showMessage({ message: t('co.enterCardAbove'), tone: 'info' });
       } else {
-        alert('Select a customer to pay by direct debit or wallet.');
+        void showMessage({ message: t('co.customerForDebit'), tone: 'info' });
       }
       return;
     }
     // Gift-card payments need a customer (they draw a business gift-card balance).
     if (isGift && !order.customer_id) {
-      alert('Select a customer to pay by gift card.');
+      void showMessage({ message: t('co.customerForGift'), tone: 'info' });
       return;
     }
     // Resolve the effective stored method for the selected class (bank_draw vs card).
@@ -431,11 +434,11 @@ export function Checkout() {
       ? payStoredMethodId : (matchingStored[0]?.id ?? '');
 
     if (processed && !effectiveStoredId) {
-      alert('Select or add a payment method to charge.');
+      void showMessage({ message: t('co.selectOrAddMethod'), tone: 'info' });
       return;
     }
     if (isGift && !payGiftCode.trim()) {
-      alert('Enter a gift card code.');
+      void showMessage({ message: t('takePayment.giftCodeRequired'), tone: 'info' });
       return;
     }
 
@@ -455,27 +458,27 @@ export function Checkout() {
     } catch (err: any) {
       const code = err?.response?.data?.code;
       const msg = code === 'PAYMENT_DECLINED'
-        ? (err?.response?.data?.error || 'The payment was declined.')
+        ? (err?.response?.data?.error || t('takePayment.declined'))
         : code === 'NO_CONNECTION'
-        ? 'This business has no active payment processor connected.'
+        ? t('takePayment.error.noConnection')
         : code === 'GIFT_CARD_INSUFFICIENT'
-          ? 'The gift card balance is less than the order total.'
+          ? t('co.giftInsufficient')
           : code === 'OUT_OF_STOCK' || code === 'NOT_ENOUGH_STOCK'
-            ? `${err?.response?.data?.error} Nothing was charged.`
-            : err?.response?.data?.error || 'Failed to complete payment';
+            ? t('co.nothingCharged', { error: err?.response?.data?.error })
+            : err?.response?.data?.error || t('co.completeFailed');
       if (code === 'OUT_OF_STOCK' || code === 'NOT_ENOUGH_STOCK') loadStock();
-      alert(msg);
+      void showMessage({ message: msg, tone: 'error' });
     } finally {
       setCompleting(false);
     }
   };
 
   const handleVoid = async () => {
-    if (!order || !confirm('Void this order? This cannot be undone.')) return;
+    if (!order || !(await askConfirm({ message: t('co.voidConfirm'), confirmLabel: t('common:action.void'), destructive: true }))) return;
     try {
       await checkoutApi.voidOrder(order.id, businessId);
       navigate('/bookings');
-    } catch { alert('Failed to void order'); }
+    } catch { void showMessage({ message: t('co.voidFailed'), tone: 'error' }); }
   };
 
   // Branded receipt for the paid order (Email / Print / Both). Resolves the order's
@@ -483,12 +486,13 @@ export function Checkout() {
   const handleReceipt = async (mode: 'email' | 'print' | 'both') => {
     if (!order) return;
     setReceiptBusy(true); setReceiptNote(null);
-    const parts: string[] = [];
+    let emailed = false;
+    let printed = false;
     try {
       if (mode !== 'print') {
-        try { await payApi.emailOrderReceipt(order.id, businessId); parts.push('emailed'); }
+        try { await payApi.emailOrderReceipt(order.id, businessId); emailed = true; }
         catch (err: any) {
-          if (err?.response?.data?.code === 'NO_RECIPIENT') { setReceiptNote('No customer email on file — use Print instead.'); setReceiptBusy(false); return; }
+          if (err?.response?.data?.code === 'NO_RECIPIENT') { setReceiptNote(t('co.noRecipient')); setReceiptBusy(false); return; }
           throw err;
         }
       }
@@ -497,18 +501,18 @@ export function Checkout() {
         const url = URL.createObjectURL(blob);
         window.open(url, '_blank');
         setTimeout(() => URL.revokeObjectURL(url), 60000);
-        parts.push('opened for printing');
+        printed = true;
       }
-      setReceiptNote(parts.length ? `Receipt ${parts.join(' and ')}.` : null);
+      setReceiptNote(emailed && printed ? t('takePayment.receiptBoth') : emailed ? t('takePayment.receiptEmailed') : printed ? t('takePayment.receiptPrinted') : null);
     } catch {
-      setReceiptNote('Could not produce the receipt.');
+      setReceiptNote(t('takePayment.receiptFailed'));
     } finally {
       setReceiptBusy(false);
     }
   };
 
-  if (loading) return <div style={styles.page}><p style={styles.loading}>Loading checkout...</p></div>;
-  if (error) return <div style={styles.page}><p style={styles.error}>{error}</p><Button onClick={() => navigate('/bookings')}>Back to Appointments</Button></div>;
+  if (loading) return <div style={styles.page}><p style={styles.loading}>{t('co.loading')}</p></div>;
+  if (error) return <div style={styles.page}><p style={styles.error}>{error}</p><Button onClick={() => navigate('/bookings')}>{t('co.backToAppointmentsPlain')}</Button></div>;
   if (!order) return null;
 
   const isOpen = order.status === 'open';
@@ -522,11 +526,11 @@ export function Checkout() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/bookings')}>← Back to Appointments</button>
+      <button style={styles.back} onClick={() => navigate('/bookings')}>{t('co.backToAppointments')}</button>
 
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Checkout</h1>
+          <h1 style={styles.title}>{t('co.title')}</h1>
           <span style={styles.orderNum}>{order.order_number}</span>
           {order.customer_first_name && !isOpen && (
             <span style={styles.customer}> — {order.customer_first_name} {order.customer_last_name}</span>
@@ -535,7 +539,7 @@ export function Checkout() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
           {locations.length > 1 && (isOpen ? (
             <select style={styles.creditSelect} value={orderLocationId || ''} onChange={(e) => handleSetLocation(e.target.value)}
-              aria-label="Location" title="Where the sale happens; products are sold from this location's stock">
+              aria-label={t('co.location')} title={t('co.locationTitle')}>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           ) : (
@@ -547,7 +551,7 @@ export function Checkout() {
               value={order.credited_to || ''}
               onChange={(e) => handleUpdateOrderCredit(e.target.value || null)}
             >
-              <option value="">— Credit To —</option>
+              <option value="">{t('co.creditTo')}</option>
               {staffList.map((s: any) => (
                 <option key={s.user_id} value={s.user_id}>{s.first_name} {s.last_name}</option>
               ))}
@@ -559,7 +563,7 @@ export function Checkout() {
               </span>
             )
           )}
-          <Badge variant={isCompleted ? 'success' : isOpen ? 'info' : 'error'}>{order.status}</Badge>
+          <Badge variant={isCompleted ? 'success' : isOpen ? 'info' : 'error'}>{t(`orders.status.${order.status}`, { defaultValue: order.status })}</Badge>
         </div>
       </div>
 
@@ -570,7 +574,7 @@ export function Checkout() {
       {isOpen && (
         <div style={{ marginBottom: 'var(--space-md)', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-background)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', minWidth: '70px' }}>Customer</span>
+            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', minWidth: '70px' }}>{t('co.customer')}</span>
             {order.customer_id ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{order.customer_first_name} {order.customer_last_name}</span>
@@ -583,7 +587,7 @@ export function Checkout() {
                   type="text"
                   value={customerSearch}
                   onChange={(e) => setCustomerSearch(e.target.value)}
-                  placeholder="Search by name, email, or phone..."
+                  placeholder={t('co.searchCustomer')}
                   autoComplete="off"
                   onFocus={() => { if (customerResults.length > 0) setShowCustomerDropdown(true); }}
                   onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
@@ -599,21 +603,21 @@ export function Checkout() {
                     ))}
                   </div>
                 )}
-                {customerSearching && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginLeft: '4px' }}>Searching...</span>}
+                {customerSearching && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginLeft: '4px' }}>{t('co.searching')}</span>}
               </div>
             )}
             {!order.customer_id && !showCreateCustomer && (
-              <span onClick={() => setShowCreateCustomer(true)} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}>New Customer</span>
+              <span onClick={() => setShowCreateCustomer(true)} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}>{t('co.newCustomer')}</span>
             )}
           </div>
           {showCreateCustomer && !order.customer_id && (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder="First name *" value={newCustomerForm.first_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, first_name: e.target.value })} />
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder="Last name *" value={newCustomerForm.last_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, last_name: e.target.value })} />
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '180px' }} placeholder="Email" value={newCustomerForm.email} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, email: e.target.value })} />
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder="Phone" value={newCustomerForm.phone} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })} />
-              <Button size="sm" onClick={handleCreateAndSetCustomer}>Create</Button>
-              <button type="button" onClick={() => setShowCreateCustomer(false)} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder={t('co.firstNameRequired')} value={newCustomerForm.first_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, first_name: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder={t('co.lastNameRequired')} value={newCustomerForm.last_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, last_name: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '180px' }} placeholder={t('co.email')} value={newCustomerForm.email} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, email: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder={t('co.phone')} value={newCustomerForm.phone} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })} />
+              <Button size="sm" onClick={handleCreateAndSetCustomer}>{t('co.create')}</Button>
+              <button type="button" onClick={() => setShowCreateCustomer(false)} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>{t('common:cancel')}</button>
             </div>
           )}
         </div>
@@ -625,24 +629,24 @@ export function Checkout() {
       {order.prepaid && (
         <div style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-            <h3 style={styles.cardTitle}>Paid at reservation</h3>
+            <h3 style={styles.cardTitle}>{t('co.paidAtReservation')}</h3>
             <span style={styles.empty}>
-              Order <a href={`/receipt/${order.prepaid.id}`} style={{ color: 'var(--color-primary)' }}
-                onClick={(e) => { e.preventDefault(); navigate(`/receipt/${order.prepaid!.id}`); }}>{order.prepaid.order_number}</a>
+              <Trans t={t} i18nKey="co.orderLink" values={{ number: order.prepaid.order_number }} components={[<a key="a" href={`/receipt/${order.prepaid.id}`} style={{ color: 'var(--color-primary)' }}
+                onClick={(e) => { e.preventDefault(); navigate(`/receipt/${order.prepaid!.id}`); }} />]} />
               {order.prepaid.completed_at ? ` · ${formatDateOnly(order.prepaid.completed_at)}` : ''}
-              {order.prepaid.payment_method ? ` · ${PAY_METHOD_LABEL[order.prepaid.payment_method] || order.prepaid.payment_method}` : ''}
+              {order.prepaid.payment_method ? ` · ${payMethodLabel(order.prepaid.payment_method)}` : ''}
             </span>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <th style={styles.th}>Item</th>
-                <th style={styles.th}>Variant</th>
-                <th style={styles.thRight}>Qty</th>
-                <th style={styles.thRight}>Price</th>
-                <th style={styles.thRight}>Tax</th>
-                <th style={styles.thRight}>Total</th>
-                {isOpen && <th style={styles.th}><span style={srOnly}>Actions</span></th>}
+                <th style={styles.th}>{t('co.col.item')}</th>
+                <th style={styles.th}>{t('co.col.variant')}</th>
+                <th style={styles.thRight}>{t('co.col.qty')}</th>
+                <th style={styles.thRight}>{t('co.col.price')}</th>
+                <th style={styles.thRight}>{t('co.col.tax')}</th>
+                <th style={styles.thRight}>{t('co.col.total')}</th>
+                {isOpen && <th style={styles.th}><span style={srOnly}>{t('co.col.actions')}</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -651,9 +655,9 @@ export function Checkout() {
                   <td style={styles.td}>
                     <span style={styles.itemTypeLabel}>{typeLabel(item.item_type)}:</span>{' '}
                     {(item.refunded_quantity || 0) >= item.quantity ? <s><strong>{item.item_name}</strong></s> : <strong>{item.item_name}</strong>}
-                    {(item.refunded_quantity || 0) > 0 && <div style={styles.overrideInline}>Refunded{(item.refunded_quantity || 0) < item.quantity ? ` (${item.refunded_quantity} of ${item.quantity})` : ''}</div>}
-                    {item.credited_name && <div style={styles.overrideInline}>Credit: {item.credited_name}</div>}
-                    {item.paid_with && <div style={styles.overrideInline}>Paid with {item.paid_with}</div>}
+                    {(item.refunded_quantity || 0) > 0 && <div style={styles.overrideInline}>{(item.refunded_quantity || 0) < item.quantity ? t('co.refundedPartial', { refunded: item.refunded_quantity, quantity: item.quantity }) : t('co.refunded')}</div>}
+                    {item.credited_name && <div style={styles.overrideInline}>{t('co.creditName', { name: item.credited_name })}</div>}
+                    {item.paid_with && <div style={styles.overrideInline}>{t('co.paidWith', { name: item.paid_with })}</div>}
                   </td>
                   <td style={styles.td}>{item.variant_name || '—'}</td>
                   <td style={styles.tdRight}>{item.quantity}</td>
@@ -664,10 +668,10 @@ export function Checkout() {
                     <td style={styles.tdRight}>
                       {/* An add-on paid at reservation can be removed, with a refund (spec 51, gap 15) */}
                       {item.booking_addon_id && order.booking_id && (item.refunded_quantity || 0) < item.quantity && (
-                        <Button size="sm" variant="ghost" aria-label={`Remove ${item.item_name}`}
+                        <Button size="sm" variant="ghost" aria-label={t('co.removeItem', { name: item.item_name })}
                           onClick={() => setRemovingAddon({ bookingAddonId: item.booking_addon_id!, name: item.item_name,
                             amount: Math.round((item.total_price * (item.quantity - (item.refunded_quantity || 0))) / item.quantity) })}>
-                          Remove
+                          {t('co.remove')}
                         </Button>
                       )}
                     </td>
@@ -685,18 +689,18 @@ export function Checkout() {
           {addonNotice && <p style={{ ...styles.empty, margin: 'var(--space-sm) 0 0', color: 'var(--color-success)' }} role="status">{addonNotice}</p>}
           {order.prepaid.status === 'partially_refunded' && (order.prepaid.refunded_amount || 0) > 0 && (
             <div style={{ ...styles.totalRow, marginTop: 'var(--space-sm)' }}>
-              <span>Refunded since</span>
+              <span>{t('co.refundedSince')}</span>
               <span>−{formatCurrency(order.prepaid.refunded_amount || 0)}</span>
             </div>
           )}
           <div style={{ ...styles.totalRow, marginTop: 'var(--space-sm)' }}>
-            <span>{order.prepaid.status === 'refunded' ? 'Refunded' : 'Paid'}</span>
+            <span>{order.prepaid.status === 'refunded' ? t('co.refunded') : t('co.paid')}</span>
             <span>{formatCurrency(order.prepaid.status === 'partially_refunded' ? order.prepaid.total_amount - (order.prepaid.refunded_amount || 0) : order.prepaid.total_amount)}</span>
           </div>
           <p style={{ ...styles.empty, margin: 'var(--space-xs) 0 0' }}>
             {order.prepaid.status === 'refunded'
-              ? 'This payment was refunded on its own order.'
-              : 'Previously paid. Tip not included.'}
+              ? t('co.prepaidRefunded')
+              : t('co.prepaidNote')}
           </p>
         </div>
       )}
@@ -704,8 +708,8 @@ export function Checkout() {
       {/* Line Items */}
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={styles.cardTitle}>Items</h3>
-          {isOpen && <Button variant="secondary" size="sm" onClick={() => { setShowAddItem(true); loadStock(); }}>Add Item</Button>}
+          <h3 style={styles.cardTitle}>{t('co.items')}</h3>
+          {isOpen && <Button variant="secondary" size="sm" onClick={() => { setShowAddItem(true); loadStock(); }}>{t('co.addItem')}</Button>}
         </div>
 
         {isOpen && stockNote && (
@@ -714,19 +718,19 @@ export function Checkout() {
           </div>
         )}
 
-        {order.items.length === 0 && <p style={styles.empty}>{order.prepaid ? 'Nothing else sold at this visit.' : 'No items in cart'}</p>}
+        {order.items.length === 0 && <p style={styles.empty}>{order.prepaid ? t('co.nothingElseSold') : t('co.noItems')}</p>}
 
         {order.items.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <th style={styles.th}>Item</th>
-                <th style={styles.th}>Variant</th>
-                <th style={styles.thRight}>Qty</th>
-                <th style={styles.thRight}>Price</th>
-                <th style={styles.thRight}>Adj</th>
-                <th style={styles.thRight}>Tax</th>
-                <th style={styles.thRight}>Total</th>
+                <th style={styles.th}>{t('co.col.item')}</th>
+                <th style={styles.th}>{t('co.col.variant')}</th>
+                <th style={styles.thRight}>{t('co.col.qty')}</th>
+                <th style={styles.thRight}>{t('co.col.price')}</th>
+                <th style={styles.thRight}>{t('co.col.adj')}</th>
+                <th style={styles.thRight}>{t('co.col.tax')}</th>
+                <th style={styles.thRight}>{t('co.col.total')}</th>
                 {isOpen && <th style={{ width: '50px' }} />}
               </tr>
             </thead>
@@ -758,21 +762,21 @@ export function Checkout() {
                           .filter((o) => o.item_type === 'product' && o.item_id === item.item_id && (o.variant_id ?? null) === (item.variant_id ?? null))
                           .reduce((n, o) => n + o.quantity, 0);
                         return onOrder > s.onHand
-                          ? <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-error)' }}>Only {s.onHand} in stock. Reduce the quantity.</div>
-                          : <div style={{ fontSize: 'var(--font-size-xs)', color: stockColor(s) }}>{s.onHand} in stock</div>;
+                          ? <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-error)' }}>{t('co.onlyInStock', { count: s.onHand })}</div>
+                          : <div style={{ fontSize: 'var(--font-size-xs)', color: stockColor(s) }}>{t('co.inStock', { count: s.onHand })}</div>;
                       })()}
                       {item.credited_to && item.credited_to !== order.credited_to && (
-                        <div style={styles.overrideInline}>Credit: {item.credited_first_name} {item.credited_last_name}</div>
+                        <div style={styles.overrideInline}>{t('co.creditName', { name: `${item.credited_first_name} ${item.credited_last_name}` })}</div>
                       )}
                       {/* Paid with a membership or package (spec 51, gap 19): which one, and change it */}
                       {item.benefit && (
                         <div style={{ ...styles.overrideInline, color: 'var(--color-success, var(--color-text))' }}>
-                          Paid with {item.benefit.name}
-                          {canUseBenefit(item) && benefitLineId !== item.id && <> · <button type="button" style={styles.linkBtn} onClick={() => setBenefitLineId(item.id)}>Change</button></>}
+                          {t('co.paidWith', { name: item.benefit.name })}
+                          {canUseBenefit(item) && benefitLineId !== item.id && <> · <button type="button" style={styles.linkBtn} onClick={() => setBenefitLineId(item.id)}>{t('co.change')}</button></>}
                         </div>
                       )}
                       {!item.benefit && canUseBenefit(item) && benefitLineId !== item.id && (
-                        <div><button type="button" style={styles.linkBtn} onClick={() => setBenefitLineId(item.id)}>Pay with membership or package</button></div>
+                        <div><button type="button" style={styles.linkBtn} onClick={() => setBenefitLineId(item.id)}>{t('co.payWithBenefit')}</button></div>
                       )}
                       {benefitLineId === item.id && (
                         <LineBenefitPicker order={order} itemId={item.id} businessId={businessId} onChanged={setOrder} onClose={() => setBenefitLineId(null)} />
@@ -790,8 +794,8 @@ export function Checkout() {
                     <td style={{ ...styles.tdRight, fontWeight: 600 }}>{formatCurrency(item.total_price)}</td>
                     {isOpen && (
                       <td style={{ ...styles.tdRight, whiteSpace: 'nowrap' as const, verticalAlign: 'middle' as const }}>
-                        <button style={styles.editBtn} onClick={() => setEditingItemId(item.id)} title="Edit">✏️</button>
-                        {!isBookingService(item) && <button style={styles.removeBtn} onClick={() => handleRemoveItem(item)} title="Remove" aria-label={`Remove ${item.item_name}`}>✕</button>}
+                        <button style={styles.editBtn} onClick={() => setEditingItemId(item.id)} title={t('co.edit')}>✏️</button>
+                        {!isBookingService(item) && <button style={styles.removeBtn} onClick={() => handleRemoveItem(item)} title={t('co.remove')} aria-label={t('co.removeItem', { name: item.item_name })}>✕</button>}
                       </td>
                     )}
                   </tr>
@@ -827,16 +831,16 @@ export function Checkout() {
 
       {/* Totals */}
       <div style={styles.card}>
-        <div style={styles.totalRow}><span>Subtotal</span><span>{formatCurrency(order.subtotal)}</span></div>
-        {order.discount_amount > 0 && <div style={styles.totalRow}><span>Discount{order.promo_code ? ` (${order.promo_code})` : ''}</span><span>-{formatCurrency(order.discount_amount)}</span></div>}
-        {order.discount_amount < 0 && <div style={styles.totalRow}><span>Surcharge{order.promo_code ? ` (${order.promo_code})` : ''}</span><span>+{formatCurrency(Math.abs(order.discount_amount))}</span></div>}
-        {order.tax_amount > 0 && <div style={styles.totalRow}><span>Tax</span><span>{formatCurrency(order.tax_amount)}</span></div>}
+        <div style={styles.totalRow}><span>{t('co.subtotal')}</span><span>{formatCurrency(order.subtotal)}</span></div>
+        {order.discount_amount > 0 && <div style={styles.totalRow}><span>{order.promo_code ? t('co.discountCode', { code: order.promo_code }) : t('co.discount')}</span><span>-{formatCurrency(order.discount_amount)}</span></div>}
+        {order.discount_amount < 0 && <div style={styles.totalRow}><span>{order.promo_code ? t('co.surchargeCode', { code: order.promo_code }) : t('co.surcharge')}</span><span>+{formatCurrency(Math.abs(order.discount_amount))}</span></div>}
+        {order.tax_amount > 0 && <div style={styles.totalRow}><span>{t('co.col.tax')}</span><span>{formatCurrency(order.tax_amount)}</span></div>}
         <div style={{ ...styles.totalRow, fontWeight: 700, fontSize: 'var(--font-size-lg)', borderTop: '1px solid var(--color-border)', paddingTop: '8px', marginTop: '8px' }}>
-          <span>Total</span><span>{formatCurrency(order.total_amount)}</span>
+          <span>{t('co.col.total')}</span><span>{formatCurrency(order.total_amount)}</span>
         </div>
         {(order.tip_amount || 0) > 0 && <>
-          <div style={styles.totalRow}><span>Tip</span><span>{formatCurrency(order.tip_amount || 0)}</span></div>
-          <div style={{ ...styles.totalRow, fontWeight: 700 }}><span>{isOpen ? 'Total to pay' : 'Total paid'}</span><span>{formatCurrency(payable)}</span></div>
+          <div style={styles.totalRow}><span>{t('tip.title')}</span><span>{formatCurrency(order.tip_amount || 0)}</span></div>
+          <div style={{ ...styles.totalRow, fontWeight: 700 }}><span>{isOpen ? t('co.totalToPay') : t('co.totalPaid')}</span><span>{formatCurrency(payable)}</span></div>
         </>}
       </div>
 
@@ -850,10 +854,10 @@ export function Checkout() {
       {isOpen && nothingToPay && (
         <div style={styles.card}>
           <p style={{ color: 'var(--color-text)', margin: 0 }}>
-            Nothing is due at this visit. Add anything else sold, or a tip, or finish the appointment.
+            {t('co.nothingDue')}
           </p>
           <div style={{ ...styles.actions, marginTop: 'var(--space-md)' }}>
-            <Button onClick={handleFinishPrepaid} loading={completing}>Finish appointment</Button>
+            <Button onClick={handleFinishPrepaid} loading={completing}>{t('co.finishAppointment')}</Button>
           </div>
         </div>
       )}
@@ -861,34 +865,34 @@ export function Checkout() {
       {/* Payment Actions: what is sold at the visit and the tip (a service paid at reservation is not charged again) */}
       {isOpen && !nothingToPay && (
         <div style={styles.card}>
-          <h3 style={{ color: 'var(--color-text)', margin: '0 0 12px', fontSize: 'var(--font-size-md)' }}>Payment</h3>
+          <h3 style={{ color: 'var(--color-text)', margin: '0 0 12px', fontSize: 'var(--font-size-md)' }}>{t('co.payment')}</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Method</label>
+              <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('takePayment.method')}</label>
               <select
                 style={paySelectStyle}
                 value={payMethod}
                 onChange={(e) => { setPayMethod(e.target.value); setPayAddingMethod(false); setPayStoredMethodId(''); }}
               >
                 {(acceptedMethods.length > 0 ? acceptedMethods : ['cash']).map((m) => (
-                  <option key={m} value={m}>{PAY_METHOD_LABEL[m] || m}</option>
+                  <option key={m} value={m}>{payMethodLabel(m)}</option>
                 ))}
               </select>
             </div>
 
             {isProcessedMethod(payMethod) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Payment card / method</label>
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('takePayment.storedMethod')}</label>
                 {!order.customer_id ? (
                   // Walk-in (no customer): card only, charged once and NOT saved. Direct
                   // debit / wallets require a customer (they vault), so restrict to card.
                   payMethod !== 'card' ? (
-                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning)' }}>Add a customer to pay by {PAY_METHOD_LABEL[payMethod] || payMethod}. A walk-in can pay by card.</span>
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning)' }}>{t('co.addCustomerToPay', { method: payMethodLabel(payMethod) })}</span>
                   ) : oneTimeSession ? (
                     <StripeOneTimeCardCharge
                       clientSecret={oneTimeSession.clientSecret!}
                       publishableKey={oneTimeSession.publishableKey!}
-                      busyLabel={`Charge ${formatCurrency(payable)}`}
+                      busyLabel={t('co.charge', { amount: formatCurrency(payable) })}
                       onPaid={(piId) => handleWalkInCardPaid(piId)}
                       onCancel={() => setOneTimeSession(null)}
                     />
@@ -897,14 +901,14 @@ export function Checkout() {
                       <input
                         style={paySelectStyle}
                         value={walkInName}
-                        placeholder="Name (optional, e.g. for the receipt)"
+                        placeholder={t('co.walkInName')}
                         onChange={(e) => setWalkInName(e.target.value)}
                       />
                       <AddMethodButton
-                        label={`Enter card to charge ${formatCurrency(payable)}`}
+                        label={t('co.enterCard', { amount: formatCurrency(payable) })}
                         onClick={handleStartOneTimeCharge}
                       />
-                      {startingOneTime && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Preparing secure card entry…</span>}
+                      {startingOneTime && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{t('co.preparingCard')}</span>}
                     </div>
                   )
                 ) : (
@@ -918,7 +922,7 @@ export function Checkout() {
                         <select style={paySelectStyle} value={effectiveId} onChange={(e) => setPayStoredMethodId(e.target.value)}>
                           {matching.map((m) => (
                             <option key={m.id} value={m.id}>
-                              {m.display_brand || m.method_type}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ' (default)' : ''}
+                              {m.display_brand || payMethodLabel(m.method_type)}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ` ${t('takePayment.defaultTag')}` : ''}
                             </option>
                           ))}
                         </select>
@@ -937,7 +941,7 @@ export function Checkout() {
                       />
                     ) : (
                       <AddMethodButton
-                        label={storedMethods.length > 0 ? 'Add a new card / method' : 'Add a card / method to charge'}
+                        label={storedMethods.length > 0 ? t('takePayment.addNew') : t('takePayment.addToCharge')}
                         onClick={() => setPayAddingMethod(true)}
                       />
                     )}
@@ -948,14 +952,14 @@ export function Checkout() {
 
             {payMethod === 'gift_card' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Gift card code</label>
-                <input style={paySelectStyle} value={payGiftCode} placeholder="GC-XXXX-XXXX" onChange={(e) => setPayGiftCode(e.target.value)} />
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('takePayment.giftCode')}</label>
+                <input style={paySelectStyle} value={payGiftCode} placeholder={t('takePayment.giftCodePlaceholder')} onChange={(e) => setPayGiftCode(e.target.value)} />
               </div>
             )}
 
             {payMethod === 'check' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Check number (optional)</label>
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('takePayment.checkNumber')}</label>
                 <input style={paySelectStyle} value={payCheckNumber} onChange={(e) => setPayCheckNumber(e.target.value)} />
               </div>
             )}
@@ -963,9 +967,9 @@ export function Checkout() {
 
           <div style={{ ...styles.actions, marginTop: '16px' }}>
             <Button onClick={handleComplete} loading={completing}>
-              Complete Payment ({PAY_METHOD_LABEL[payMethod] || payMethod})
+              {t('co.completePayment', { method: payMethodLabel(payMethod) })}
             </Button>
-            <Button variant="secondary" onClick={handleVoid}>Void Order</Button>
+            <Button variant="secondary" onClick={handleVoid}>{t('co.voidOrder')}</Button>
           </div>
         </div>
       )}
@@ -973,17 +977,17 @@ export function Checkout() {
       {isCompleted && (
         <div style={styles.card}>
           <p style={{ color: 'var(--color-text)', margin: '0 0 12px' }}>
-            Payment completed via <strong>{order.payment_method}</strong> on {new Date(order.completed_at!).toLocaleString()}
+            <Trans t={t} i18nKey="co.completedVia" values={{ method: payMethodLabel(order.payment_method ?? ''), date: formatDateTime(order.completed_at) }} components={[<strong key="s" />]} />
           </p>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Receipt:</span>
-            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('email')}>Email</Button>
-            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('print')}>Print</Button>
-            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('both')}>Both</Button>
+            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('co.receiptLabel')}</span>
+            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('email')}>{t('takePayment.receiptEmail')}</Button>
+            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('print')}>{t('takePayment.receiptPrint')}</Button>
+            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('both')}>{t('takePayment.receiptBothButton')}</Button>
           </div>
           {/* The sale is finished: back to the Bookings screen, ready for the next customer. */}
           <div style={{ marginTop: '16px' }}>
-            <Button onClick={() => navigate('/bookings')}>Done</Button>
+            <Button onClick={() => navigate('/bookings')}>{t('takePayment.done')}</Button>
           </div>
           {receiptNote && <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>{receiptNote}</p>}
         </div>
@@ -1007,6 +1011,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
   onAdded: (order: Order, lineName: string) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('checkout');
   const [itemType, setItemType] = useState<'service' | 'product' | 'membership' | 'package' | 'gift_card'>('product');
   const [selectedId, setSelectedId] = useState('');
   const [variants, setVariants] = useState<any[]>([]);
@@ -1083,7 +1088,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
     // Gift card: a free-form stored-value sale (no catalog item). The amount IS the
     // face value / price; recipient is optional.
     if (itemType === 'gift_card') {
-      if (giftAmount <= 0) { alert('Enter a gift card amount greater than zero.'); return; }
+      if (giftAmount <= 0) { void showMessage({ message: t('co.add.giftAmountRequired'), tone: 'info' }); return; }
       setSaving(true);
       try {
         const updated = await checkoutApi.addItem(orderId, {
@@ -1097,7 +1102,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
           gift_expiry: giftExpiry || null,
         });
         onAdded(updated, 'Gift card');
-      } catch { alert('Failed to add gift card'); }
+      } catch { void showMessage({ message: t('co.add.giftFailed'), tone: 'error' }); }
       finally { setSaving(false); }
       return;
     }
@@ -1112,12 +1117,12 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
         const enrollments = res.data.data || [];
         const activeOrPaused = enrollments.filter((e: any) => e.status === 'active' || e.status === 'paused');
         if (activeOrPaused.length > 0) {
-          if (!confirm('This customer already has an active membership. Are you sure you want to add another?')) return;
+          if (!(await askConfirm({ message: t('co.add.membershipConfirm'), confirmLabel: t('common:action.continue') }))) return;
         }
       } catch { /* proceed if check fails */ }
     }
 
-    if (itemType === 'service' && variants.length > 0 && !selectedVariant) { alert('Choose an option for the service.'); return; }
+    if (itemType === 'service' && variants.length > 0 && !selectedVariant) { void showMessage({ message: t('co.add.chooseOption'), tone: 'info' }); return; }
     const price = selectedVariant?.price ?? selectedItem.price ?? 0;
     const variantName = selectedVariant?.name || undefined;
 
@@ -1137,7 +1142,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
     } catch (err) {
       // A tracked product with none left to add is refused with the reason (spec 51, gap 7).
       const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
-      alert(code === 'OUT_OF_STOCK' ? `${selectedItem.name}: ${errText(err, 'Out of stock.')}` : errText(err, 'Failed to add item'));
+      void showMessage({ message: code === 'OUT_OF_STOCK' ? t('co.add.nameError', { name: selectedItem.name, error: errText(err, t('co.add.outOfStock')) }) : errText(err, t('co.add.failed')), tone: 'error' });
     }
     finally { setSaving(false); }
   };
@@ -1158,31 +1163,30 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
       <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <select style={styles.inlineSelect} value={itemType} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}>
-            <option value="service">Service</option>
-            <option value="product">Product</option>
-            <option value="membership">Membership</option>
-            <option value="package">Package</option>
-            <option value="gift_card">Gift Card</option>
+            <option value="service">{t('co.add.type.service')}</option>
+            <option value="product">{t('co.add.type.product')}</option>
+            <option value="membership">{t('co.add.type.membership')}</option>
+            <option value="package">{t('co.add.type.package')}</option>
+            <option value="gift_card">{t('co.add.type.gift_card')}</option>
           </select>
-          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Amount
+          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('takePayment.amount')}
             <span style={{ marginLeft: '4px', display: 'inline-block' }}>
               <CurrencyInput value={giftAmount} onChange={setGiftAmount} />
             </span>
           </label>
-          <input style={{ ...styles.inlineSelect, minWidth: '150px' }} placeholder="Recipient name (optional)" value={giftRecipientName} onChange={(e) => setGiftRecipientName(e.target.value)} />
-          <input style={{ ...styles.inlineSelect, minWidth: '180px' }} placeholder="Recipient email (optional)" value={giftRecipientEmail} onChange={(e) => setGiftRecipientEmail(e.target.value)} />
+          <input style={{ ...styles.inlineSelect, minWidth: '150px' }} placeholder={t('co.add.recipientName')} value={giftRecipientName} onChange={(e) => setGiftRecipientName(e.target.value)} />
+          <input style={{ ...styles.inlineSelect, minWidth: '180px' }} placeholder={t('co.add.recipientEmail')} value={giftRecipientEmail} onChange={(e) => setGiftRecipientEmail(e.target.value)} />
           <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            Expires
+            {t('co.add.expires')}
             <input type="date" style={{ ...styles.inlineSelect, minWidth: '150px' }} value={giftExpiry} onChange={(e) => setGiftExpiry(e.target.value)} />
           </label>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <Button size="sm" onClick={handleAdd} loading={saving} disabled={giftAmount <= 0}>Add</Button>
+            <Button size="sm" onClick={handleAdd} loading={saving} disabled={giftAmount <= 0}>{t('co.add.add')}</Button>
             <Button variant="secondary" size="sm" onClick={onCancel}>✕</Button>
           </div>
         </div>
         <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>
-          A gift card is sold for its face value (no tax). The card and its code are created when the order is paid.
-          {' '}The expiry is prefilled from your gift-card setting; clear it for no expiry.
+          {t('co.add.giftNote')}
         </p>
       </div>
     );
@@ -1192,19 +1196,19 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
     <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto 45px 120px auto', gap: '6px', alignItems: 'center' }}>
         <select style={styles.inlineSelect} value={itemType} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}>
-          <option value="service">Service</option>
-          <option value="product">Product</option>
-          <option value="membership">Membership</option>
-          <option value="package">Package</option>
-          <option value="gift_card">Gift Card</option>
+          <option value="service">{t('co.add.type.service')}</option>
+          <option value="product">{t('co.add.type.product')}</option>
+          <option value="membership">{t('co.add.type.membership')}</option>
+          <option value="package">{t('co.add.type.package')}</option>
+          <option value="gift_card">{t('co.add.type.gift_card')}</option>
         </select>
         <select style={styles.inlineSelect} value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-          <option value="">— Select item —</option>
+          <option value="">{t('co.add.selectItem')}</option>
           {itemList.map((item: any) => {
             const s = isProduct ? stockOf(item.id, undefined) : null;
             return (
               <option key={item.id} value={item.id} disabled={s?.onHand === 0}>
-                {item.name}{itemType === 'service' ? (item.min_price != null ? ` — from ${formatCurrency(item.min_price)}` : '') : ` — ${formatCurrency(item.price)}`}{s ? ` · ${stockText(s)}` : ''}
+                {item.name}{itemType === 'service' ? (item.min_price != null ? ` — ${t('co.add.from', { price: formatCurrency(item.min_price) })}` : '') : ` — ${formatCurrency(item.price)}`}{s ? ` · ${stockText(s)}` : ''}
               </option>
             );
           })}
@@ -1212,8 +1216,8 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
         {variants.length > 0 ? (
           <select style={{ ...styles.inlineSelect, minWidth: '110px' }} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>
             {itemType === 'service' || stockOf(selectedId, undefined) !== null
-              ? <option value="">— Choose an option —</option>
-              : <option value="">Base ({formatCurrency(selectedItem?.price || 0)})</option>}
+              ? <option value="">{t('co.add.chooseOptionItem')}</option>
+              : <option value="">{t('co.add.base', { price: formatCurrency(selectedItem?.price || 0) })}</option>}
             {variants.map((v: any) => {
               const s = stockOf(selectedId, v.id);
               return <option key={v.id} value={v.id} disabled={s?.onHand === 0}>{v.name} — {formatCurrency(v.price)}{s ? ` · ${stockText(s)}` : ''}</option>;
@@ -1223,22 +1227,22 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
           <span />
         )}
         <input type="number" min="1" max={maxQty != null && maxQty > 0 ? maxQty : undefined}
-          style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(clampQty(e.target.value, maxQty))} aria-label="Quantity" />
+          style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(clampQty(e.target.value, maxQty))} aria-label={t('co.add.quantity')} />
         <select style={styles.inlineSelect} value={creditedTo} onChange={(e) => setCreditedTo(e.target.value)}>
-          <option value="">— Override —</option>
+          <option value="">{t('co.add.override')}</option>
           {staffList.map((s: any) => (
             <option key={s.user_id} value={s.user_id}>{s.first_name} {s.last_name}</option>
           ))}
         </select>
         <div style={{ display: 'flex', gap: '4px' }}>
-          <Button size="sm" onClick={handleAdd} loading={saving} disabled={!selectedId || needsOption || maxQty === 0 || (itemType === 'service' && variants.length > 0 && !selectedVariantId)}>Add</Button>
+          <Button size="sm" onClick={handleAdd} loading={saving} disabled={!selectedId || needsOption || maxQty === 0 || (itemType === 'service' && variants.length > 0 && !selectedVariantId)}>{t('co.add.add')}</Button>
           <Button variant="secondary" size="sm" onClick={onCancel}>✕</Button>
         </div>
       </div>
       {/* The lists show what is in stock; a note only when nothing more can be added (Add is greyed out). */}
       {chosenStock && maxQty === 0 && chosenStock.onHand > 0 && (
         <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>
-          All {chosenStock.onHand} in stock are already on this order.
+          {t('co.add.allOnOrder', { count: chosenStock.onHand })}
         </p>
       )}
     </div>
@@ -1250,6 +1254,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
 // ============================================================
 
 function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; businessId: string; onUpdated: (o: Order) => void }) {
+  const { t } = useTranslation('checkout');
   const [code, setCode] = useState('');
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
@@ -1263,7 +1268,7 @@ function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; busine
       onUpdated(updated);
       setCode('');
     } catch (err: any) {
-      setError(err?.response?.data?.error || 'Invalid code');
+      setError(err?.response?.data?.error || t('co.promo.invalid'));
     } finally {
       setApplying(false);
     }
@@ -1282,12 +1287,12 @@ function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; busine
     return (
       <div style={{ ...styles.card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px var(--space-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Promo:</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('co.promo.label')}</span>
           <strong style={{ color: 'var(--color-text)' }}>{order.promo_code}</strong>
           {isDiscount && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success, #2E7D32)' }}>−{formatCurrency(order.discount_amount)}</span>}
           {isSurcharge && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-error, #D32F2F)' }}>+{formatCurrency(Math.abs(order.discount_amount))}</span>}
         </div>
-        <button style={styles.removeBtn} onClick={handleRemove} title="Remove code">✕</button>
+        <button style={styles.removeBtn} onClick={handleRemove} title={t('co.promo.remove')}>✕</button>
       </div>
     );
   }
@@ -1298,10 +1303,10 @@ function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; busine
         style={{ ...styles.inlineSelect, flex: 1, maxWidth: '200px' }}
         value={code}
         onChange={(e) => { setCode(e.target.value); setError(''); }}
-        placeholder="Promo code"
+        placeholder={t('co.promo.placeholder')}
         onKeyDown={(e) => { if (e.key === 'Enter') handleApply(); }}
       />
-      <Button size="sm" variant="secondary" onClick={handleApply} loading={applying} disabled={!code.trim()}>Apply</Button>
+      <Button size="sm" variant="secondary" onClick={handleApply} loading={applying} disabled={!code.trim()}>{t('co.promo.apply')}</Button>
       {error && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-error)' }}>{error}</span>}
     </div>
   );
@@ -1319,6 +1324,7 @@ function InlineEditItem({ item, orderId, staffList, maxQty, onSaved, onCancel }:
   onSaved: (order: Order) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('checkout');
   const [quantity, setQuantity] = useState(item.quantity);
   // A tracked product: the quantity cannot be raised above what is in stock (less the order's other lines).
   const cap = maxQty != null ? Math.max(1, maxQty) : null;
@@ -1350,7 +1356,7 @@ function InlineEditItem({ item, orderId, staffList, maxQty, onSaved, onCancel }:
         credited_to: creditedTo || null,
       });
       onSaved(updated);
-    } catch (err) { alert(errText(err, 'Failed to update item')); }
+    } catch (err) { void showMessage({ message: errText(err, t('co.edit.failed')), tone: 'error' }); }
     finally { setSaving(false); }
   };
 
@@ -1361,7 +1367,7 @@ function InlineEditItem({ item, orderId, staffList, maxQty, onSaved, onCancel }:
         <strong style={{ color: 'var(--color-text)', fontSize: 'var(--font-size-sm)' }}>{item.item_name}</strong>
         {variants.length > 0 ? (
           <select style={{ ...styles.inlineSelect, minWidth: '110px' }} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>
-            <option value="">Base ({formatCurrency(item.unit_price)})</option>
+            <option value="">{t('co.add.base', { price: formatCurrency(item.unit_price) })}</option>
             {variants.map((v: any) => (
               <option key={v.id} value={v.id}>{v.name} — {formatCurrency(v.price)}</option>
             ))}
@@ -1369,15 +1375,15 @@ function InlineEditItem({ item, orderId, staffList, maxQty, onSaved, onCancel }:
         ) : (
           <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.variant_name ? `(${item.variant_name})` : ''} {formatCurrency(currentPrice)}</span>
         )}
-        <input type="number" min="1" max={cap ?? undefined} style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(clampQty(e.target.value, cap))} title="Quantity" />
+        <input type="number" min="1" max={cap ?? undefined} style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(clampQty(e.target.value, cap))} title={t('co.add.quantity')} />
         <select style={styles.inlineSelect} value={creditedTo} onChange={(e) => setCreditedTo(e.target.value)}>
-          <option value="">— Override —</option>
+          <option value="">{t('co.add.override')}</option>
           {staffList.map((s: any) => (
             <option key={s.user_id} value={s.user_id}>{s.first_name} {s.last_name}</option>
           ))}
         </select>
         <div style={{ display: 'flex', gap: '4px' }}>
-          <Button size="sm" onClick={handleSave} loading={saving}>Save</Button>
+          <Button size="sm" onClick={handleSave} loading={saving}>{t('common:save')}</Button>
           <Button variant="secondary" size="sm" onClick={onCancel}>✕</Button>
         </div>
       </div>

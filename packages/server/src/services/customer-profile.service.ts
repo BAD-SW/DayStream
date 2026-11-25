@@ -6,6 +6,7 @@ import { storagePaths } from '../utils/storage-paths';
 import { createActivity } from './customer-activity.service';
 import { canContact } from './contactability.service';
 import { queueNotification } from './booking-notifications.service';
+import { msg } from '../i18n';
 
 /**
  * Customer profile (Linear THE-16): the figures, Timeline, referrals, reviews, tasks,
@@ -28,7 +29,7 @@ async function person(customerId: string, businessId: string): Promise<PersonRow
        FROM cus_customers WHERE id = $1 AND business_id = $2`,
     [customerId, businessId],
   );
-  if (!rows[0]) throw new ProfileError('Person not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ProfileError(msg('errors:customerProfile.personNotFound'), 'NOT_FOUND');
   return rows[0];
 }
 
@@ -311,7 +312,7 @@ async function assertStaff(userIds: string[], tenantId: string) {
     `SELECT id FROM usr_users WHERE id = ANY($1::uuid[]) AND tenant_id = $2 AND persona <> 'customer' AND status = 'active'`,
     [userIds, tenantId],
   );
-  if (rows.length !== new Set(userIds).size) throw new ProfileError('Every assigned person must be an active staff member', 'INVALID_STAFF');
+  if (rows.length !== new Set(userIds).size) throw new ProfileError(msg('errors:customerProfile.everyAssignedPersonMustBeAn'), 'INVALID_STAFF');
 }
 
 export async function listTasks(customerId: string, businessId: string) {
@@ -337,7 +338,7 @@ export async function createTask(customerId: string, businessId: string, input: 
   await assertStaff(input.staffIds, p.tenant_id);
   if (input.eventId) {
     const { rows } = await adminPool.query('SELECT id FROM evt_events WHERE id = $1 AND tenant_id = $2', [input.eventId, p.tenant_id]);
-    if (!rows[0]) throw new ProfileError('Event not found', 'INVALID_EVENT');
+    if (!rows[0]) throw new ProfileError(msg('errors:customerProfile.eventNotFound'), 'INVALID_EVENT');
   }
   const client = await adminPool.connect();
   let task: any;
@@ -384,13 +385,13 @@ export async function setTaskStatus(customerId: string, businessId: string, task
       WHERE id = $1 AND customer_id = $2 AND business_id = $3 RETURNING id`,
     [taskId, customerId, businessId, done ? 'done' : 'open', userId],
   );
-  if (!rows[0]) throw new ProfileError('Task not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ProfileError(msg('errors:customerProfile.taskNotFound'), 'NOT_FOUND');
   return (await listTasks(customerId, businessId)).find((t) => t.id === taskId);
 }
 
 export async function deleteTask(customerId: string, businessId: string, taskId: string) {
   const { rowCount } = await adminPool.query('DELETE FROM cus_tasks WHERE id = $1 AND customer_id = $2 AND business_id = $3', [taskId, customerId, businessId]);
-  if (!rowCount) throw new ProfileError('Task not found', 'NOT_FOUND');
+  if (!rowCount) throw new ProfileError(msg('errors:customerProfile.taskNotFound'), 'NOT_FOUND');
 }
 
 // ---------------------------------------------------------------------------
@@ -430,8 +431,8 @@ export async function listDocuments(customerId: string, businessId: string) {
 export async function uploadDocument(customerId: string, businessId: string, file: { originalname: string; mimetype: string; size: number; buffer: Buffer }, userId: string) {
   const p = await person(customerId, businessId);
   const ext = DOCUMENT_TYPES[file.mimetype];
-  if (!ext || !looksLike(file.mimetype, file.buffer)) throw new ProfileError('Only PDF, JPG and PNG files can be uploaded', 'INVALID_FILE_TYPE');
-  if (file.size > MAX_DOCUMENT_BYTES) throw new ProfileError('The file is larger than 10 MB', 'FILE_TOO_LARGE');
+  if (!ext || !looksLike(file.mimetype, file.buffer)) throw new ProfileError(msg('errors:customerProfile.onlyPdfJpgAndPngFiles'), 'INVALID_FILE_TYPE');
+  if (file.size > MAX_DOCUMENT_BYTES) throw new ProfileError(msg('errors:customerProfile.theFileIsLargerThan10'), 'FILE_TOO_LARGE');
   const storagePath = storagePaths.customerDocument(p.tenant_id, businessId, customerId, ext);
   await storage.save(storagePath, file.buffer);
   const { rows } = await adminPool.query(
@@ -449,9 +450,9 @@ export async function readDocument(customerId: string, businessId: string, docum
       WHERE id = $1 AND customer_id = $2 AND business_id = $3 AND deleted_at IS NULL`,
     [documentId, customerId, businessId],
   );
-  if (!rows[0]) throw new ProfileError('Document not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ProfileError(msg('errors:customerProfile.documentNotFound'), 'NOT_FOUND');
   const data = await storage.read(rows[0].storage_path);
-  if (!data) throw new ProfileError('The file is missing from storage', 'FILE_MISSING');
+  if (!data) throw new ProfileError(msg('errors:customerProfile.theFileIsMissingFromStorage'), 'FILE_MISSING');
   return { fileName: rows[0].file_name as string, mimeType: rows[0].mime_type as string, data };
 }
 
@@ -461,7 +462,7 @@ export async function deleteDocument(customerId: string, businessId: string, doc
       WHERE id = $1 AND customer_id = $2 AND business_id = $3 AND deleted_at IS NULL RETURNING file_name, storage_path`,
     [documentId, customerId, businessId, userId],
   );
-  if (!rows[0]) throw new ProfileError('Document not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ProfileError(msg('errors:customerProfile.documentNotFound'), 'NOT_FOUND');
   await storage.delete(rows[0].storage_path).catch((err) => logger.warn('Document file could not be removed', { err: String(err) }));
   await createActivity({ customerId, businessId, activityType: 'document', description: `Document deleted: ${rows[0].file_name}`, createdBy: userId });
 }
@@ -469,8 +470,8 @@ export async function deleteDocument(customerId: string, businessId: string, doc
 export async function savePhoto(customerId: string, businessId: string, file: { mimetype: string; size: number; buffer: Buffer }, userId: string) {
   const p = await person(customerId, businessId);
   const ext = PHOTO_TYPES[file.mimetype];
-  if (!ext || !looksLike(file.mimetype, file.buffer)) throw new ProfileError('The photo must be a JPG, PNG or WebP image', 'INVALID_FILE_TYPE');
-  if (file.size > MAX_PHOTO_BYTES) throw new ProfileError('The photo is larger than 5 MB', 'FILE_TOO_LARGE');
+  if (!ext || !looksLike(file.mimetype, file.buffer)) throw new ProfileError(msg('errors:customerProfile.thePhotoMustBeAJpg'), 'INVALID_FILE_TYPE');
+  if (file.size > MAX_PHOTO_BYTES) throw new ProfileError(msg('errors:customerProfile.thePhotoIsLargerThan5'), 'FILE_TOO_LARGE');
   const { rows: old } = await adminPool.query('SELECT photo_path FROM cus_customers WHERE id = $1', [customerId]);
   const storagePath = storagePaths.customerPhoto(p.tenant_id, businessId, customerId, ext);
   await storage.save(storagePath, file.buffer);
@@ -481,9 +482,9 @@ export async function savePhoto(customerId: string, businessId: string, file: { 
 
 export async function readPhoto(customerId: string, businessId: string) {
   const { rows } = await adminPool.query('SELECT photo_path FROM cus_customers WHERE id = $1 AND business_id = $2', [customerId, businessId]);
-  if (!rows[0]?.photo_path) throw new ProfileError('No photo', 'NOT_FOUND');
+  if (!rows[0]?.photo_path) throw new ProfileError(msg('errors:customerProfile.noPhoto'), 'NOT_FOUND');
   const data = await storage.read(rows[0].photo_path);
-  if (!data) throw new ProfileError('No photo', 'NOT_FOUND');
+  if (!data) throw new ProfileError(msg('errors:customerProfile.noPhoto'), 'NOT_FOUND');
   const ext = rows[0].photo_path.split('.').pop();
   return { data, mimeType: ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg' };
 }
@@ -493,7 +494,7 @@ export async function deletePhoto(customerId: string, businessId: string, userId
     'UPDATE cus_customers c SET photo_path = NULL, updated_at = NOW() FROM (SELECT photo_path FROM cus_customers WHERE id = $1) old WHERE c.id = $1 AND c.business_id = $2 RETURNING old.photo_path',
     [customerId, businessId],
   );
-  if (!rows[0]) throw new ProfileError('Person not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ProfileError(msg('errors:customerProfile.personNotFound'), 'NOT_FOUND');
   if (rows[0].photo_path) await storage.delete(rows[0].photo_path).catch(() => {});
   await createActivity({ customerId, businessId, activityType: 'profile_change', description: 'Photo removed', createdBy: userId });
 }
@@ -504,10 +505,10 @@ export async function deletePhoto(customerId: string, businessId: string, userId
 
 export async function requestPasswordReset(customerId: string, businessId: string, userId: string) {
   const p = await person(customerId, businessId);
-  if (!p.user_id) throw new ProfileError('This person has no account to reset', 'NO_ACCOUNT');
+  if (!p.user_id) throw new ProfileError(msg('errors:customerProfile.thisPersonHasNoAccountTo'), 'NO_ACCOUNT');
   const { rows } = await adminPool.query(`SELECT id, email, status FROM usr_users WHERE id = $1`, [p.user_id]);
   const user = rows[0];
-  if (!user || user.status !== 'active') throw new ProfileError('This person\'s account is not active', 'NO_ACCOUNT');
+  if (!user || user.status !== 'active') throw new ProfileError(msg('errors:customerProfile.thisPersonSAccountIsNot'), 'NO_ACCOUNT');
   const { createPasswordResetToken } = await import('./auth.service');
   const { sendPasswordResetEmail } = await import('./email.service');
   const token = await createPasswordResetToken(user.id);
@@ -597,8 +598,8 @@ function renderPersonalDataPdf(data: any, businessName: string, password: string
  */
 export async function sendPersonalData(customerId: string, businessId: string, userId: string, ip?: string) {
   const p = await person(customerId, businessId);
-  if (!p.email) throw new ProfileError('This person has no email address to send the link to', 'NO_EMAIL');
-  if (p.status === 'anonymized') throw new ProfileError('This person has been anonymised', 'ANONYMIZED');
+  if (!p.email) throw new ProfileError(msg('errors:customerProfile.thisPersonHasNoEmailAddress'), 'NO_EMAIL');
+  if (p.status === 'anonymized') throw new ProfileError(msg('errors:customerProfile.thisPersonHasBeenAnonymised'), 'ANONYMIZED');
   const { rows: biz } = await adminPool.query('SELECT name FROM sys_businesses WHERE id = $1', [businessId]);
   const password = newPassword();
   const pdf = await renderPersonalDataPdf(await gatherPersonalData(customerId, businessId), biz[0]?.name || 'DayStream', password);
@@ -631,15 +632,15 @@ export async function sendPersonalData(customerId: string, businessId: string, u
 
 /** The file behind an emailed link, while the link is valid. Public: the token is the key. */
 export async function downloadPersonalData(token: string) {
-  if (!/^[0-9a-f]{64}$/.test(token || '')) throw new ProfileError('This link is not valid', 'INVALID_LINK');
+  if (!/^[0-9a-f]{64}$/.test(token || '')) throw new ProfileError(msg('errors:customerProfile.thisLinkIsNotValid'), 'INVALID_LINK');
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const { rows } = await adminPool.query(
     `UPDATE cus_data_exports SET downloaded_at = COALESCE(downloaded_at, NOW()), download_count = download_count + 1
       WHERE token_hash = $1 AND expires_at > NOW() RETURNING storage_path`,
     [tokenHash],
   );
-  if (!rows[0]) throw new ProfileError('This link has expired or is not valid. Ask the business to send it again.', 'INVALID_LINK');
+  if (!rows[0]) throw new ProfileError(msg('errors:customerProfile.thisLinkHasExpiredOrIs'), 'INVALID_LINK');
   const data = await storage.read(rows[0].storage_path);
-  if (!data) throw new ProfileError('The file is no longer available. Ask the business to send it again.', 'INVALID_LINK');
+  if (!data) throw new ProfileError(msg('errors:customerProfile.theFileIsNoLongerAvailable'), 'INVALID_LINK');
   return data;
 }

@@ -1,4 +1,6 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
@@ -17,6 +19,7 @@ import { formatCurrency } from '../utils/currency';
 import { getLocations } from '../api/locations';
 import { getTaxCategories } from '../api/services';
 import { getStaffList } from '../api/staff';
+import { formatDate, formatDateTime, formatNumber, formatPercent, formatTime } from '../utils/format';
 import './Events.css';
 import './EventDetail.css';
 
@@ -34,6 +37,7 @@ export function EventDetail() {
 }
 
 function EventDetailPage() {
+  const { t } = useTranslation('events');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [event, setEvent] = useState<Event | null>(null);
@@ -54,7 +58,7 @@ function EventDetailPage() {
   useEffect(() => { setSaveResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
   const saveChanges = async () => {
     const { failed } = await saveAll();
-    setSaveResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
+    setSaveResult(failed.length ? { ok: false, text: t('detail.notSaved', { details: failed.map((f) => `${f.label} (${f.error})`).join('; ') }) } : { ok: true, text: t('detail.allSaved') });
   };
   const [problem, setProblem] = useState('');
 
@@ -63,61 +67,60 @@ function EventDetailPage() {
     eventsApi.getEvent(id).then(setEvent).catch(() => navigate('/events')).finally(() => setLoading(false));
   }, [id, navigate]);
 
-  if (loading) return <ListEmpty>Loading...</ListEmpty>;
-  if (!event) return <ListEmpty>Event not found</ListEmpty>;
+  if (loading) return <ListEmpty>{t('common:loading')}</ListEmpty>;
+  if (!event) return <ListEmpty>{t('detail.notFound')}</ListEmpty>;
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'overview', label: 'Overview' }, { key: 'tickets', label: 'Tickets' },
-    { key: 'registrations', label: 'Registrations' }, { key: 'waitlist', label: 'Waitlist' },
-    { key: 'facilitators', label: 'Facilitators' },
-    { key: 'communications', label: 'Communications' },
+    { key: 'overview', label: t('detail.tab.overview') }, { key: 'tickets', label: t('detail.tab.tickets') },
+    { key: 'registrations', label: t('detail.tab.registrations') }, { key: 'waitlist', label: t('detail.tab.waitlist') },
+    { key: 'facilitators', label: t('detail.tab.facilitators') },
+    { key: 'communications', label: t('detail.tab.communications') },
   ];
 
   const handlePublish = async () => {
     setProblem('');
     try { const e = await eventsApi.publishEvent(event.id); setEvent({ ...event, ...e }); }
-    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be published.'); }
+    catch (err: any) { setProblem(err?.response?.data?.error || t('detail.publishFailed')); }
   };
   // Back to draft, only while nobody is registered or waiting (decision 14).
   const handleUnpublish = async () => {
     setProblem('');
     try { const e = await eventsApi.unpublishEvent(event.id); setEvent({ ...event, ...e }); }
-    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be unpublished.'); }
+    catch (err: any) { setProblem(err?.response?.data?.error || t('detail.unpublishFailed')); }
   };
   // Before cancelling, say what will happen (David, 2026-10-29): registrations cancelled and
   // emailed, paid tickets refunded to the card or account credit, the waiting list emptied.
   const handleCancel = async () => {
     setProblem('');
     try { setCancelPreview(await eventsApi.getCancelPreview(event.id)); }
-    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be cancelled.'); }
+    catch (err: any) { setProblem(err?.response?.data?.error || t('detail.cancelFailed')); }
   };
   const confirmCancel = async () => {
     setCancelling(true); setProblem('');
     try { setEvent({ ...event, ...(await eventsApi.cancelEvent(event.id)) }); setCancelPreview(null); }
-    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be cancelled.'); setCancelPreview(null); }
+    catch (err: any) { setProblem(err?.response?.data?.error || t('detail.cancelFailed')); setCancelPreview(null); }
     finally { setCancelling(false); }
   };
   const cancelText = (p: eventsApi.CancelPreview) => {
     const lines: string[] = [];
-    lines.push(p.registrations === 0 ? 'Nobody is registered.'
-      : `${p.registrations} ${p.registrations === 1 ? 'registration is' : 'registrations are'} cancelled and ${p.registrations === 1 ? 'the customer is' : 'the customers are'} emailed.`);
+    lines.push(p.registrations === 0 ? t('detail.cancel.nobody') : t('detail.cancel.registrations', { count: p.registrations }));
     if (p.paid_tickets > 0) {
-      lines.push(`${p.paid_tickets} paid ${p.paid_tickets === 1 ? 'ticket is' : 'tickets are'} refunded, ${formatCurrency(p.refund_amount, p.currency)} in total, ${p.refund_to === 'credit' ? "to the customers' account credit" : "to the customers' card or original payment"} (as set in Settings › System › Customer cancellations › Events).`);
+      lines.push(t(p.refund_to === 'credit' ? 'detail.cancel.refundCredit' : 'detail.cancel.refundCard', { count: p.paid_tickets, amount: formatCurrency(p.refund_amount, p.currency) }));
     }
-    if (p.waiting > 0) lines.push(`${p.waiting} ${p.waiting === 1 ? 'person leaves' : 'people leave'} the waiting list.`);
-    lines.push('This cannot be undone.');
+    if (p.waiting > 0) lines.push(t('detail.cancel.waiting', { count: p.waiting }));
+    lines.push(t('detail.cancel.undone'));
     return lines.join(' ');
   };
   // Delete archives the event (David, 2026-10-28); it is refused while people are registered or waiting.
   const handleDelete = async () => {
     setProblem('');
     try { await eventsApi.deleteEvent(event.id); navigate('/events'); }
-    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be deleted.'); }
+    catch (err: any) { setProblem(err?.response?.data?.error || t('detail.deleteFailed')); }
   };
   const handleRestore = async () => {
     setProblem('');
     try { setEvent({ ...event, ...(await eventsApi.restoreEvent(event.id)) }); }
-    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be restored.'); }
+    catch (err: any) { setProblem(err?.response?.data?.error || t('detail.restoreFailed')); }
   };
 
   return (
@@ -125,29 +128,29 @@ function EventDetailPage() {
       <LeaveGuard when={dirty} />
       <StickyPageTop>
       <div className="evd-back">
-        <Button variant="ghost" size="sm" onClick={() => confirmLeave(() => navigate('/events'))}>← Back</Button>
+        <Button variant="ghost" size="sm" onClick={() => confirmLeave(() => navigate('/events'))}>{t('detail.back')}</Button>
       </div>
       <PageHeader
         title={event.title}
         subtitle={[event.event_type_name, event.location_name].filter(Boolean).join(' · ')}
         actions={<>
-          {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+          {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>{t('detail.unsaved')}</span>
             : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
-          <Button onClick={saveChanges} loading={saving} disabled={!dirty}>Save changes</Button>
+          <Button onClick={saveChanges} loading={saving} disabled={!dirty}>{t('detail.saveChanges')}</Button>
           {event.deleted_at ? (
             <>
-              <Badge variant="error">deleted</Badge>
-              <Button onClick={handleRestore}>Restore</Button>
+              <Badge variant="error">{t('detail.deleted')}</Badge>
+              <Button onClick={handleRestore}>{t('detail.restore')}</Button>
             </>
           ) : (
             <>
-              {event.status === 'draft' && <Button onClick={handlePublish}>Publish</Button>}
-              {event.status === 'published' && event.registrations_count === 0 && <Button variant="ghost" onClick={handleUnpublish}>Unpublish</Button>}
-              {event.status === 'published' && <Button variant="destructive" onClick={handleCancel}>Cancel</Button>}
-              <Button variant="ghost" onClick={() => setConfirmDelete(true)}>Delete event</Button>
+              {event.status === 'draft' && <Button onClick={handlePublish}>{t('detail.publish')}</Button>}
+              {event.status === 'published' && event.registrations_count === 0 && <Button variant="ghost" onClick={handleUnpublish}>{t('detail.unpublish')}</Button>}
+              {event.status === 'published' && <Button variant="destructive" onClick={handleCancel}>{t('common:cancel')}</Button>}
+              <Button variant="ghost" onClick={() => setConfirmDelete(true)}>{t('detail.deleteEvent')}</Button>
             </>
           )}
-          <Badge variant={event.status === 'published' ? 'success' : event.status === 'cancelled' ? 'error' : 'neutral'}>{event.status}</Badge>
+          <Badge variant={event.status === 'published' ? 'success' : event.status === 'cancelled' ? 'error' : 'neutral'}>{t(`detail.status.${event.status}`, { defaultValue: event.status })}</Badge>
         </>}
       />
       <EventWhen start={event.start_time} end={event.end_time} />
@@ -156,22 +159,22 @@ function EventDetailPage() {
         open={!!cancelPreview && !cancelling}
         onClose={() => setCancelPreview(null)}
         onConfirm={confirmCancel}
-        title="Cancel this event?"
+        title={t('detail.cancelThisTitle')}
         message={cancelPreview ? cancelText(cancelPreview) : ''}
-        confirmLabel="Cancel event"
-        cancelLabel="Keep it"
+        confirmLabel={t('detail.cancelEvent')}
+        cancelLabel={t('detail.keepIt')}
       />
-      {cancelling && <Alert variant="info">Cancelling the event and refunding paid tickets…</Alert>}
+      {cancelling && <Alert variant="info">{t('detail.cancelling')}</Alert>}
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         onConfirm={handleDelete}
-        title="Delete this event?"
-        message="It leaves the event lists and customers no longer see it. You can restore it from Events with Show deleted events."
-        confirmLabel="Delete event"
-        cancelLabel="Keep it"
+        title={t('detail.deleteThisTitle')}
+        message={t('detail.deleteMessage')}
+        confirmLabel={t('detail.deleteEvent')}
+        cancelLabel={t('detail.keepIt')}
       />
-      <TabBar aria-label="Event sections" tabs={tabs.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+      <TabBar aria-label={t('detail.sections')} tabs={tabs.map((tab) => ({ ...tab, changed: dirtySections.some((s) => s.tab === tab.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
       {/* Tabs with drafts stay mounted, so their edits survive switching tabs. */}
       <div hidden={activeTab !== 'overview'}><DraftTab tab="overview"><OverviewTab event={event}
@@ -186,14 +189,15 @@ function EventDetailPage() {
   );
 }
 
-const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+const fmtDay = (iso: string) => formatDate(iso, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const fmtTime = (iso: string) => formatTime(iso, undefined, { hour: '2-digit', minute: '2-digit' });
 
 // The date and time, the largest line under the title (THE-23 item 3, option D).
 function EventWhen({ start, end }: { start: string; end: string }) {
+  const { t } = useTranslation('events');
   const mins = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
   const sameDay = new Date(start).toDateString() === new Date(end).toDateString();
-  const length = mins >= 60 ? `${Math.floor(mins / 60)} ${Math.floor(mins / 60) === 1 ? 'hour' : 'hours'}${mins % 60 ? ` ${mins % 60} min` : ''}` : `${mins} min`;
+  const length = mins >= 60 ? (mins % 60 ? t('detail.lengthHoursMinutes', { count: Math.floor(mins / 60), minutes: mins % 60 }) : t('detail.lengthHours', { count: Math.floor(mins / 60) })) : t('detail.lengthMinutes', { minutes: mins });
   return (
     <div className="evd-when">
       <strong>{fmtDay(start)}</strong>
@@ -206,27 +210,26 @@ function EventWhen({ start, end }: { start: string; end: string }) {
 // Tell the registered people about a date, time or place change (decision 14): the message is
 // prefilled and editable; they can cancel for a full refund until the window closes.
 function ChangeNotice({ event, notice, onClose }: { event: Event; notice: { registrations: number; refund_until: string; refund_days: number }; onClose: () => void }) {
-  const until = new Date(notice.refund_until).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
-  const [subject, setSubject] = useState(`Change to ${event.title}`);
+  const { t } = useTranslation('events');
+  const until = formatDate(notice.refund_until, { day: 'numeric', month: 'long', year: 'numeric' });
+  const [subject, setSubject] = useState(t('detail.notice.subject', { title: event.title }));
   const [content, setContent] = useState(
-    `Hello,\n\n${event.title} has changed. It now takes place on ${fmtDay(event.start_time)}, ${fmtTime(event.start_time)} – ${fmtTime(event.end_time)}`
-    + `${event.location_name ? `, at ${event.location_name}` : ''}.\n\nIf you can no longer come, you can cancel from your account for a full refund until ${until}.\n\nSee you there!`,
+    t('detail.notice.message', { title: event.title, day: fmtDay(event.start_time), start: fmtTime(event.start_time), end: fmtTime(event.end_time), place: event.location_name ? t('detail.notice.at', { location: event.location_name }) : '', until }),
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const send = async () => {
     setSending(true); setError('');
     try { await eventsApi.sendCommunication(event.id, { subject, content }); onClose(); }
-    catch (err: any) { setError(err?.response?.data?.error || 'The message could not be sent.'); }
+    catch (err: any) { setError(err?.response?.data?.error || t('detail.noticeSendFailed')); }
     finally { setSending(false); }
   };
-  const people = `${notice.registrations} ${notice.registrations === 1 ? 'person is' : 'people are'}`;
   return (
-    <Modal open onClose={onClose} title="Tell the registered people?" size="md"
-      footer={<><Button variant="ghost" onClick={onClose}>Don't send</Button><Button onClick={send} loading={sending}>Send to {notice.registrations}</Button></>}>
-      <p style={{ marginTop: 0, fontSize: 'var(--font-size-sm)' }}>The date, time or place changed and {people} registered. Until <b>{until}</b> ({notice.refund_days} days, or the start if sooner) each of them can cancel for a full refund, even where cancelling is not normally allowed.</p>
-      <label className="evd-field">Subject<input className="ev-input" value={subject} onChange={(e) => setSubject(e.target.value)} /></label>
-      <label className="evd-field" style={{ marginTop: 'var(--space-sm)' }}>Message<textarea className="ev-input evd-textarea" rows={8} value={content} onChange={(e) => setContent(e.target.value)} /></label>
+    <Modal open onClose={onClose} title={t('detail.noticeTitle')} size="md"
+      footer={<><Button variant="ghost" onClick={onClose}>{t('detail.dontSend')}</Button><Button onClick={send} loading={sending}>{t('detail.notice.send', { count: notice.registrations })}</Button></>}>
+      <p style={{ marginTop: 0, fontSize: 'var(--font-size-sm)' }}><Trans i18nKey="detail.notice.body" ns="events" count={notice.registrations} values={{ until, days: notice.refund_days }} components={[<b key="b" />]} /></p>
+      <label className="evd-field">{t('detail.subject')}<input className="ev-input" value={subject} onChange={(e) => setSubject(e.target.value)} /></label>
+      <label className="evd-field" style={{ marginTop: 'var(--space-sm)' }}>{t('detail.message')}<textarea className="ev-input evd-textarea" rows={8} value={content} onChange={(e) => setContent(e.target.value)} /></label>
       {error && <Alert variant="error">{error}</Alert>}
     </Modal>
   );
@@ -245,6 +248,7 @@ const toForm = (e: Event): EventForm => ({
 });
 
 function OverviewTab({ event, onSaved }: { event: Event; onSaved: (e: any) => void }) {
+  const { t } = useTranslation('events');
   const businessId = localStorage.getItem('business_id') || '';
   const [locations, setLocations] = useState<any[]>([]);
   const [taxes, setTaxes] = useState<any[]>([]);
@@ -259,8 +263,8 @@ function OverviewTab({ event, onSaved }: { event: Event; onSaved: (e: any) => vo
     getTaxCategories(businessId).then(setTaxes).catch(() => {});
   }, [businessId]);
 
-  const draft = useDraft<EventForm>('event-details', 'Overview', toForm(event), async (f) => {
-    if (!f.title.trim()) throw new Error('Give the event a title');
+  const draft = useDraft<EventForm>('event-details', t('detail.tab.overview'), toForm(event), async (f) => {
+    if (!f.title.trim()) throw new Error(t('detail.giveTitle'));
     const updated = await eventsApi.updateEvent(event.id, {
       title: f.title.trim(), event_type_id: f.event_type_id || undefined, description: f.description,
       start_time: new Date(f.start).toISOString(), end_time: new Date(f.end).toISOString(),
@@ -276,14 +280,14 @@ function OverviewTab({ event, onSaved }: { event: Event; onSaved: (e: any) => vo
   const mark = (k: keyof EventForm) => fieldMark(draft.changed((v) => v[k]));
   const unknownPlace = f.location_id && !locations.some((l) => l.id === f.location_id);
 
-  const pct = (v: any) => `${Number(v || 0)}%`;
+  const pct = (v: any) => formatPercent(Number(v || 0));
   const figures: [string, string | number][] = [
-    [`${event.registrations_count} / ${event.capacity}`, `Registered · ${pct(report?.capacityUtilization)} full`],
-    [report?.registrations?.confirmed ?? 0, 'Confirmed'],
-    [formatCurrency(report?.revenue || 0), 'Revenue'],
-    [pct(report?.attendanceRate), 'Attendance rate'],
-    [report?.waitlistSize ?? 0, 'Waitlist'],
-    [pct(report?.cancellationRate), 'Cancellation rate'],
+    [`${event.registrations_count} / ${event.capacity}`, t('detail.figures.registered', { percent: pct(report?.capacityUtilization) })],
+    [report?.registrations?.confirmed ?? 0, t('detail.confirmed')],
+    [formatCurrency(report?.revenue || 0), t('detail.revenue')],
+    [pct(report?.attendanceRate), t('detail.attendanceRate')],
+    [report?.waitlistSize ?? 0, t('detail.tab.waitlist')],
+    [pct(report?.cancellationRate), t('detail.cancellationRate')],
   ];
 
   return (
@@ -295,31 +299,31 @@ function OverviewTab({ event, onSaved }: { event: Event; onSaved: (e: any) => vo
       </div>
       <div className="evd-cards">
         <section className="evd-card" style={draftBox(draft.dirty)}>
-          <h3 className="evd-card__title">Settings<UnsavedTag dirty={draft.dirty} /></h3>
+          <h3 className="evd-card__title">{t('detail.settings')}<UnsavedTag dirty={draft.dirty} /></h3>
           <div className="evd-fields">
-            <label className="evd-field">Title<input className="ev-input" value={f.title} onChange={(e) => set({ title: e.target.value })} style={mark('title')} /></label>
-            <label className="evd-field">Type<select className="ev-select" value={f.event_type_id} onChange={(e) => set({ event_type_id: e.target.value })} style={mark('event_type_id')}>
+            <label className="evd-field">{t('detail.title')}<input className="ev-input" value={f.title} onChange={(e) => set({ title: e.target.value })} style={mark('title')} /></label>
+            <label className="evd-field">{t('detail.type')}<select className="ev-select" value={f.event_type_id} onChange={(e) => set({ event_type_id: e.target.value })} style={mark('event_type_id')}>
               {!types.some((t) => t.id === f.event_type_id) && <option value={f.event_type_id}>{event.event_type_name || '—'}</option>}
               {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select></label>
-            <label className="evd-field">Start<input className="ev-input" type="datetime-local" value={f.start} onChange={(e) => set({ start: e.target.value })} style={mark('start')} /></label>
-            <label className="evd-field">End<input className="ev-input" type="datetime-local" value={f.end} onChange={(e) => set({ end: e.target.value })} style={mark('end')} /></label>
-            <label className="evd-field">Hosted at<select className="ev-select" aria-label="Hosted at" value={f.location_id} onChange={(e) => set({ location_id: e.target.value })} style={mark('location_id')}>
-              <option value="">{unknownPlace ? 'A location of another business' : '— None —'}</option>
+            <label className="evd-field">{t('detail.start')}<input className="ev-input" type="datetime-local" value={f.start} onChange={(e) => set({ start: e.target.value })} style={mark('start')} /></label>
+            <label className="evd-field">{t('detail.end')}<input className="ev-input" type="datetime-local" value={f.end} onChange={(e) => set({ end: e.target.value })} style={mark('end')} /></label>
+            <label className="evd-field">{t('detail.hostedAt')}<select className="ev-select" aria-label={t('detail.hostedAt')} value={f.location_id} onChange={(e) => set({ location_id: e.target.value })} style={mark('location_id')}>
+              <option value="">{unknownPlace ? t('detail.anotherBusiness') : t('detail.none')}</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select></label>
-            <label className="evd-field">Capacity<input className="ev-input" type="number" min={Math.max(1, event.registrations_count)} value={f.capacity} onChange={(e) => set({ capacity: e.target.value })} style={mark('capacity')} /></label>
-            <label className="evd-field">Ticket tax<select className="ev-select" aria-label="Ticket tax" value={f.tax_category_id} onChange={(e) => set({ tax_category_id: e.target.value })} style={mark('tax_category_id')}>
-              <option value="">Business default tax</option>
-              {taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.rate / 100).toLocaleString()}%)</option>)}
+            <label className="evd-field">{t('detail.capacity')}<input className="ev-input" type="number" min={Math.max(1, event.registrations_count)} value={f.capacity} onChange={(e) => set({ capacity: e.target.value })} style={mark('capacity')} /></label>
+            <label className="evd-field">{t('detail.ticketTax')}<select className="ev-select" aria-label={t('detail.ticketTax')} value={f.tax_category_id} onChange={(e) => set({ tax_category_id: e.target.value })} style={mark('tax_category_id')}>
+              <option value="">{t('detail.defaultTax')}</option>
+              {taxes.map((tx) => <option key={tx.id} value={tx.id}>{tx.name} ({formatNumber(tx.rate / 100)}%)</option>)}
             </select></label>
-            <label className="evd-field">Tags<input className="ev-input" placeholder="Comma-separated" value={f.tags} onChange={(e) => set({ tags: e.target.value })} style={mark('tags')} /></label>
+            <label className="evd-field">{t('detail.tags')}<input className="ev-input" placeholder={t('detail.commaSeparated')} value={f.tags} onChange={(e) => set({ tags: e.target.value })} style={mark('tags')} /></label>
           </div>
-          {!f.location_id && event.location_name && <p className="evd-hint">Was entered as text: “{event.location_name}”. Choose where it is hosted.</p>}
+          {!f.location_id && event.location_name && <p className="evd-hint">{t('detail.enteredAsText', { location: event.location_name })}</p>}
         </section>
         <section className="evd-card" style={draftBox(draft.dirty)}>
-          <h3 className="evd-card__title">Description</h3>
-          <textarea className="ev-input evd-textarea" aria-label="Description" rows={4} value={f.description} placeholder="What the event is about"
+          <h3 className="evd-card__title">{t('detail.description')}</h3>
+          <textarea className="ev-input evd-textarea" aria-label={t('detail.description')} rows={4} value={f.description} placeholder={t('detail.aboutEvent')}
             onChange={(e) => set({ description: e.target.value })} style={mark('description')} />
         </section>
       </div>
@@ -328,9 +332,10 @@ function OverviewTab({ event, onSaved }: { event: Event; onSaved: (e: any) => vo
 }
 
 function TicketsTab({ eventId }: { eventId: string }) {
+  const { t } = useTranslation('events');
   type Who = 'all' | 'members_only' | 'first_time';
   type Tier = { id?: string; name: string; price: number; quantity_available: number | null; eligibility_type: Who; sold_count?: number };
-  const list = useDraftList<Tier>('event-tickets', 'Tickets', {
+  const list = useDraftList<Tier>('event-tickets', t('detail.tab.tickets'), {
     create: (t) => eventsApi.createTier(eventId, { name: t.name.trim(), price: t.price, quantity_available: t.quantity_available, eligibility_type: t.eligibility_type }).then((c: any) => ({ ...c, sold_count: 0 })),
     update: (t) => eventsApi.updateTier(eventId, t.id!, { name: t.name.trim(), price: t.price }),
     remove: (t) => eventsApi.deleteTier(eventId, t.id!),
@@ -347,48 +352,48 @@ function TicketsTab({ eventId }: { eventId: string }) {
   const [addError, setAddError] = useState('');
   const handleAdd = () => {
     setAddError('');
-    if (!newName.trim()) { setAddError('Give the ticket a name'); return; }
+    if (!newName.trim()) { setAddError(t('detail.giveTicketName')); return; }
     list.add({ name: newName.trim(), price: Math.round((parseFloat(newPrice) || 0) * 100), quantity_available: newQty ? Number(newQty) : null, eligibility_type: newWho });
     setNewName(''); setNewPrice(''); setNewQty(''); setNewWho('all');
   };
 
   return (
     <div style={draftBox(list.dirty)}>
-      <h3 className="ev-section-title">Ticket Tiers<UnsavedTag dirty={list.dirty} /></h3>
-      {list.rows.length === 0 ? <ListEmpty>No tiers configured</ListEmpty> : (
+      <h3 className="ev-section-title">{t('detail.ticketTiers')}<UnsavedTag dirty={list.dirty} /></h3>
+      {list.rows.length === 0 ? <ListEmpty>{t('detail.noTiers')}</ListEmpty> : (
         <ListRows>
           {list.rows.map((r) => r.deleted ? (
-            <ListRow key={r.key} actions={<Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button>}>
+            <ListRow key={r.key} actions={<Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('detail.undo')}</Button>}>
               <ListRowTitle><s>{r.item.name}</s></ListRowTitle>
-              <RowTag>Deleted when you save</RowTag>
+              <RowTag>{t('detail.deletedWhenSave')}</RowTag>
             </ListRow>
           ) : (
             <ListRow key={r.key} actions={<>
-              <ListRowMeta>{r.item.sold_count || 0} / {r.item.quantity_available || '∞'} sold</ListRowMeta>
-              <Button size="sm" variant="destructive" onClick={() => list.remove(r.key)}>Delete</Button>
+              <ListRowMeta>{t('detail.soldOf', { sold: r.item.sold_count || 0, total: r.item.quantity_available || '∞' })}</ListRowMeta>
+              <Button size="sm" variant="destructive" onClick={() => list.remove(r.key)}>{t('common:delete')}</Button>
             </>}>
-              <input className="ev-input" aria-label="Tier name" value={r.item.name} style={fieldMark(!!r.isNew || list.changed(r, (t) => t.name))}
+              <input className="ev-input" aria-label={t('detail.tierName')} value={r.item.name} style={fieldMark(!!r.isNew || list.changed(r, (t) => t.name))}
                 onChange={(e) => list.edit(r.key, { name: e.target.value })} />
-              <input className="ev-input evd-price" aria-label="Price" type="number" step="0.01" min="0" value={r.item.price / 100}
+              <input className="ev-input evd-price" aria-label={t('detail.price')} type="number" step="0.01" min="0" value={r.item.price / 100}
                 style={fieldMark(!!r.isNew || list.changed(r, (t) => t.price))}
                 onChange={(e) => list.edit(r.key, { price: Math.round((parseFloat(e.target.value) || 0) * 100) })} />
-              {r.item.eligibility_type === 'members_only' && <Badge variant="info">Members only</Badge>}
-              {r.item.eligibility_type === 'first_time' && <Badge variant="info">First-time customers only</Badge>}
-              {r.isNew && <RowTag>New</RowTag>}
+              {r.item.eligibility_type === 'members_only' && <Badge variant="info">{t('detail.membersOnly')}</Badge>}
+              {r.item.eligibility_type === 'first_time' && <Badge variant="info">{t('detail.firstTimeOnly')}</Badge>}
+              {r.isNew && <RowTag>{t('detail.new')}</RowTag>}
             </ListRow>
           ))}
         </ListRows>
       )}
       <div className="ev-add-row" style={{ marginTop: 'var(--space-md)', flexWrap: 'wrap' }}>
-        <input className="ev-input" aria-label="New ticket name" placeholder="Ticket name (e.g. Standard)" value={newName} onChange={(e) => setNewName(e.target.value)} />
-        <input className="ev-input evd-price" aria-label="New ticket price" placeholder="Price (0 = free)" type="number" step="0.01" min="0" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} />
-        <input className="ev-input evd-price" aria-label="How many" placeholder="How many (blank = no limit)" type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} />
-        <select className="ev-select" aria-label="Who can buy it" value={newWho} onChange={(e) => setNewWho(e.target.value as Who)}>
-          <option value="all">Everyone</option>
-          <option value="members_only">Members only</option>
-          <option value="first_time">First-time customers only</option>
+        <input className="ev-input" aria-label={t('detail.newTicketName')} placeholder={t('detail.ticketNameExample')} value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input className="ev-input evd-price" aria-label={t('detail.newTicketPrice')} placeholder={t('detail.priceFree')} type="number" step="0.01" min="0" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} />
+        <input className="ev-input evd-price" aria-label={t('detail.howMany')} placeholder={t('detail.howManyBlank')} type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} />
+        <select className="ev-select" aria-label={t('detail.whoCanBuy')} value={newWho} onChange={(e) => setNewWho(e.target.value as Who)}>
+          <option value="all">{t('detail.everyone')}</option>
+          <option value="members_only">{t('detail.membersOnly')}</option>
+          <option value="first_time">{t('detail.firstTimeOnly')}</option>
         </select>
-        <Button size="sm" onClick={handleAdd}>Add ticket</Button>
+        <Button size="sm" onClick={handleAdd}>{t('detail.addTicket')}</Button>
       </div>
       {addError && <p className="evd-label" style={{ color: 'var(--color-error)' }}>{addError}</p>}
     </div>
@@ -396,6 +401,7 @@ function TicketsTab({ eventId }: { eventId: string }) {
 }
 
 function RegistrationsTab({ eventId }: { eventId: string }) {
+  const { t } = useTranslation('events');
   const navigate = useNavigate();
   const [regs, setRegs] = useState<any[]>([]);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
@@ -408,11 +414,11 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = 'attendees.csv'; a.click();
       window.URL.revokeObjectURL(url);
-    } catch { alert('Export failed'); }
+    } catch { void showMessage({ message: t('detail.exportFailed'), tone: 'error' }); }
   };
 
   const handleCancel = async (regId: string) => {
-    if (!confirm('Cancel this registration?')) return;
+    if (!(await askConfirm({ message: t('detail.cancelRegConfirm'), confirmLabel: t('common:action.cancelBooking'), destructive: true }))) return;
     const updated = await eventsApi.cancelRegistration(regId);
     setRegs(regs.map((r) => r.id === regId ? { ...r, status: updated.status || 'cancelled' } : r));
   };
@@ -421,7 +427,7 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
     try {
       const { order_id } = await eventsApi.openRegistrationCheckout(regId);
       navigate(`/checkout?order=${order_id}`);
-    } catch (e: any) { alert(e?.response?.data?.error || 'The payment could not be opened'); }
+    } catch (e: any) { void showMessage({ message: e?.response?.data?.error || t('detail.paymentFailed'), tone: 'error' }); }
   };
 
   const handleCheckIn = async (regId: string) => {
@@ -440,32 +446,32 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
   return (
     <div>
       <div className="evd-section-head">
-        <h3 className="ev-section-title">Registrations ({regs.length})</h3>
-        <Button size="sm" variant="ghost" onClick={handleExportAttendees}>Export Attendees</Button>
+        <h3 className="ev-section-title">{t('detail.registrationsCount', { number: regs.length })}</h3>
+        <Button size="sm" variant="ghost" onClick={handleExportAttendees}>{t('detail.exportAttendees')}</Button>
       </div>
-      {regs.length === 0 ? <ListEmpty>No registrations yet</ListEmpty> : (
+      {regs.length === 0 ? <ListEmpty>{t('detail.noRegistrations')}</ListEmpty> : (
         <ListRows>
           {regs.map((r: any) => (
             <div key={r.id}>
               <ListRow actions={<>
-                {r.checked_in_at && <Badge variant="success">Checked In</Badge>}
-                <Badge variant={r.status === 'confirmed' ? 'success' : r.status === 'cancelled' ? 'error' : 'neutral'}>{r.status}</Badge>
+                {r.checked_in_at && <Badge variant="success">{t('detail.checkedIn')}</Badge>}
+                <Badge variant={r.status === 'confirmed' ? 'success' : r.status === 'cancelled' ? 'error' : 'neutral'}>{t(`detail.regStatus.${r.status}`, { defaultValue: r.status })}</Badge>
                 {r.status === 'confirmed' && !r.checked_in_at && (
-                  <Button size="sm" onClick={() => handleCheckIn(r.id)}>Check In</Button>
+                  <Button size="sm" onClick={() => handleCheckIn(r.id)}>{t('detail.checkIn')}</Button>
                 )}
                 {r.status === 'confirmed' && (
                   <>
-                    <Button size="sm" variant="ghost" onClick={() => setTransferTarget(r.id)}>Transfer</Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>Cancel</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setTransferTarget(r.id)}>{t('detail.transfer')}</Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>{t('common:cancel')}</Button>
                   </>
                 )}
                 {/* A place held until it is paid (THE-20): reception takes the payment through
                     checkout, which confirms the place, or cancels it. */}
                 {r.status === 'pending' && (
                   <>
-                    <Badge variant="warning">{r.pay_at === 'online' ? 'Paying online' : 'Pay at reception'}</Badge>
-                    {r.pay_at !== 'online' && <Button size="sm" onClick={() => handleTakePayment(r.id)}>Take payment</Button>}
-                    <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>Cancel</Button>
+                    <Badge variant="warning">{r.pay_at === 'online' ? t('detail.payingOnline') : t('detail.payAtReception')}</Badge>
+                    {r.pay_at !== 'online' && <Button size="sm" onClick={() => handleTakePayment(r.id)}>{t('detail.takePayment')}</Button>}
+                    <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>{t('common:cancel')}</Button>
                   </>
                 )}
               </>}>
@@ -475,9 +481,9 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
               </ListRow>
               {transferTarget === r.id && (
                 <div className="evd-inline-form">
-                  <input className="ev-input" aria-label="Recipient email" placeholder="Recipient email" value={transferEmail} onChange={(e) => setTransferEmail(e.target.value)} />
-                  <Button size="sm" onClick={() => handleTransfer(r.id)}>Confirm Transfer</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setTransferTarget(null)}>Cancel</Button>
+                  <input className="ev-input" aria-label={t('detail.recipientEmail')} placeholder={t('detail.recipientEmail')} value={transferEmail} onChange={(e) => setTransferEmail(e.target.value)} />
+                  <Button size="sm" onClick={() => handleTransfer(r.id)}>{t('detail.confirmTransfer')}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setTransferTarget(null)}>{t('common:cancel')}</Button>
                 </div>
               )}
             </div>
@@ -489,6 +495,7 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
 }
 
 function WaitlistTab({ eventId }: { eventId: string }) {
+  const { t } = useTranslation('events');
   const [waitlist, setWaitlist] = useState<any[]>([]);
   useEffect(() => { eventsApi.getWaitlist(eventId).then(setWaitlist); }, [eventId]);
 
@@ -499,13 +506,13 @@ function WaitlistTab({ eventId }: { eventId: string }) {
 
   return (
     <div>
-      <h3 className="ev-section-title">Waitlist ({waitlist.length})</h3>
-      {waitlist.length === 0 ? <ListEmpty>No one on waitlist</ListEmpty> : (
+      <h3 className="ev-section-title">{t('detail.waitlistCount', { number: waitlist.length })}</h3>
+      {waitlist.length === 0 ? <ListEmpty>{t('detail.noWaitlist')}</ListEmpty> : (
         <ListRows>
           {waitlist.map((w: any) => (
             <ListRow key={w.id} actions={<>
-              <Badge variant={w.status === 'waiting' ? 'info' : 'warning'}>{w.status}</Badge>
-              {w.status === 'waiting' && <Button size="sm" onClick={() => handleConfirm(w.id)}>Confirm</Button>}
+              <Badge variant={w.status === 'waiting' ? 'info' : 'warning'}>{t(`detail.waitStatus.${w.status}`, { defaultValue: w.status })}</Badge>
+              {w.status === 'waiting' && <Button size="sm" onClick={() => handleConfirm(w.id)}>{t('detail.confirm')}</Button>}
             </>}>
               <span>#{w.position} — {w.first_name} {w.last_name}</span>
             </ListRow>
@@ -517,8 +524,9 @@ function WaitlistTab({ eventId }: { eventId: string }) {
 }
 
 function FacilitatorsTab({ eventId }: { eventId: string }) {
+  const { t } = useTranslation('events');
   type Fac = { id?: string; staff_id: string; role: string; staff_name?: string };
-  const list = useDraftList<Fac>('event-facilitators', 'Facilitators', {
+  const list = useDraftList<Fac>('event-facilitators', t('detail.tab.facilitators'), {
     create: (f) => eventsApi.addFacilitator(eventId, { staff_id: f.staff_id, role: f.role }),
     remove: (f) => eventsApi.removeFacilitator(eventId, f.id!),
   });
@@ -542,29 +550,29 @@ function FacilitatorsTab({ eventId }: { eventId: string }) {
 
   return (
     <div>
-      <h3 className="ev-section-title">Facilitators<UnsavedTag dirty={list.dirty} /></h3>
+      <h3 className="ev-section-title">{t('detail.tab.facilitators')}<UnsavedTag dirty={list.dirty} /></h3>
       <div className="ev-add-row">
-        <select className="ev-select" aria-label="Staff member" value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-          <option value="">Choose a staff member…</option>
+        <select className="ev-select" aria-label={t('detail.staffMember')} value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+          <option value="">{t('detail.chooseStaff')}</option>
           {staff.filter((p) => !taken.has(p.id)).map((p) => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
         </select>
-        <select className="ev-select" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="facilitator">Facilitator</option>
-          <option value="instructor">Instructor</option>
-          <option value="assistant">Assistant</option>
+        <select className="ev-select" aria-label={t('detail.role')} value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="facilitator">{t('detail.roleOption.facilitator')}</option>
+          <option value="instructor">{t('detail.roleOption.instructor')}</option>
+          <option value="assistant">{t('detail.roleOption.assistant')}</option>
         </select>
-        <Button size="sm" onClick={handleAdd} disabled={!staffId}>Add</Button>
+        <Button size="sm" onClick={handleAdd} disabled={!staffId}>{t('detail.add')}</Button>
       </div>
-      {list.rows.length === 0 ? <ListEmpty>No facilitators assigned</ListEmpty> : (
+      {list.rows.length === 0 ? <ListEmpty>{t('detail.noFacilitators')}</ListEmpty> : (
         <ListRows>
           {list.rows.map((r) => (
             <ListRow key={r.key} actions={r.deleted
-              ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button>
-              : <Button size="sm" variant="destructive" onClick={() => list.remove(r.key)}>Remove</Button>}>
+              ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('detail.undo')}</Button>
+              : <Button size="sm" variant="destructive" onClick={() => list.remove(r.key)}>{t('detail.remove')}</Button>}>
               <ListRowTitle>{r.deleted ? <s>{r.item.staff_name || r.item.staff_id}</s> : (r.item.staff_name || r.item.staff_id)}</ListRowTitle>
-              <Badge variant="neutral">{r.item.role}</Badge>
-              {r.isNew && <RowTag>New</RowTag>}
-              {r.deleted && <RowTag>Removed when you save</RowTag>}
+              <Badge variant="neutral">{t(`detail.role.${r.item.role}`, { defaultValue: r.item.role })}</Badge>
+              {r.isNew && <RowTag>{t('detail.new')}</RowTag>}
+              {r.deleted && <RowTag>{t('detail.removedWhenSave')}</RowTag>}
             </ListRow>
           ))}
         </ListRows>
@@ -574,17 +582,18 @@ function FacilitatorsTab({ eventId }: { eventId: string }) {
 }
 
 function CommsTab({ eventId }: { eventId: string }) {
+  const { t } = useTranslation('events');
   const [history, setHistory] = useState<any[]>([]);
   useEffect(() => { eventsApi.getCommunications(eventId).then(setHistory); }, [eventId]);
   return (
     <div>
-      <h3 className="ev-section-title">Communications</h3>
-      {history.length === 0 ? <ListEmpty>No communications sent</ListEmpty> : (
+      <h3 className="ev-section-title">{t('detail.tab.communications')}</h3>
+      {history.length === 0 ? <ListEmpty>{t('detail.noComms')}</ListEmpty> : (
         <ListRows>
           {history.map((c: any) => (
-            <ListRow key={c.id} actions={<ListRowMeta>{new Date(c.sent_at).toLocaleString()}</ListRowMeta>}>
+            <ListRow key={c.id} actions={<ListRowMeta>{formatDateTime(c.sent_at)}</ListRowMeta>}>
               <ListRowTitle>{c.subject}</ListRowTitle>
-              <ListRowMeta>{c.communication_type} · {c.recipient_count} recipients</ListRowMeta>
+              <ListRowMeta>{c.communication_type} · {t('detail.recipients', { count: Number(c.recipient_count) })}</ListRowMeta>
             </ListRow>
           ))}
         </ListRows>

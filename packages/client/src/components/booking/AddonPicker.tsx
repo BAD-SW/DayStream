@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as addonsApi from '../../api/addons';
 import type { ServiceAddon } from '../../api/addons';
 import { formatCurrency } from '../../utils/currency';
@@ -23,6 +24,7 @@ export function AddonPicker({ businessId, serviceId, value, onChange, kept, prun
   /** A paid add-on clicked: ask how to refund it before taking it off. */
   onRemovePaid?: (a: ChosenAddon) => void;
 }) {
+  const { t } = useTranslation('booking');
   const [offered, setOffered] = useState<ServiceAddon[] | null>(null);
   const [dropped, setDropped] = useState<string[]>([]);
   const latest = useRef({ value, onChange, kept, pruneOnLoad });
@@ -42,7 +44,7 @@ export function AddonPicker({ businessId, serviceId, value, onChange, kept, prun
       if (!prune) return;
       const keep = v.filter((id) => list.some((o) => o.addon_id === id) || k.some((x) => x.addon_id === id && x.paid));
       if (keep.length !== v.length) {
-        setDropped(v.filter((id) => !keep.includes(id)).map((id) => k.find((x) => x.addon_id === id)?.name || before.find((x) => x.addon_id === id)?.name || 'An add-on'));
+        setDropped(v.filter((id) => !keep.includes(id)).map((id) => k.find((x) => x.addon_id === id)?.name || before.find((x) => x.addon_id === id)?.name || t('addons.fallbackName')));
         change(keep);
       }
     }).catch(() => { if (live) setOffered([]); });
@@ -52,7 +54,7 @@ export function AddonPicker({ businessId, serviceId, value, onChange, kept, prun
   if (!serviceId || offered === null) return null;
   // What is shown: the service's add-ons, and any the appointment has that it no longer offers.
   const extra = kept.filter((k) => value.includes(k.addon_id) && !offered.some((o) => o.addon_id === k.addon_id));
-  if (offered.length === 0 && extra.length === 0) return dropped.length ? <p className="mk-hint">{dropped.join(', ')} not offered on this service, so taken off.</p> : null;
+  if (offered.length === 0 && extra.length === 0) return dropped.length ? <p className="mk-hint">{t('addons.notOffered', { names: dropped.join(', ') })}</p> : null;
 
   const toggle = (id: string) => {
     const paid = kept.find((x) => x.addon_id === id && x.paid);
@@ -61,8 +63,8 @@ export function AddonPicker({ businessId, serviceId, value, onChange, kept, prun
   };
   return (
     <div className="mk-f">
-      <div className="mk-l">Add-ons</div>
-      <div className="chips" role="group" aria-label="Add-ons">
+      <div className="mk-l">{t('addons.label')}</div>
+      <div className="chips" role="group" aria-label={t('addons.label')}>
         {offered.map((o) => {
           const on = value.includes(o.addon_id);
           const k = kept.find((x) => x.addon_id === o.addon_id);
@@ -70,18 +72,18 @@ export function AddonPicker({ businessId, serviceId, value, onChange, kept, prun
           const paid = !!k?.paid && on;
           return (
             <button key={o.addon_id} type="button" className="ch" aria-pressed={on} onClick={() => toggle(o.addon_id)}
-              disabled={disabled || (paid && !onRemovePaid)} title={paid ? 'Paid: click to remove it and choose a refund' : o.description || undefined}>
-              + {o.name} <small>{formatCurrency(price)}{paid ? ' · paid' : ''}</small>
+              disabled={disabled || (paid && !onRemovePaid)} title={paid ? t('addons.paidTitle') : o.description || undefined}>
+              + {o.name} <small>{paid ? t('addons.pricePaid', { price: formatCurrency(price) }) : formatCurrency(price)}</small>
             </button>
           );
         })}
         {extra.map((k) => (
-          <button key={k.addon_id} type="button" className="ch" aria-pressed onClick={() => toggle(k.addon_id)} disabled={disabled || (k.paid && !onRemovePaid)} title={k.paid ? 'Paid: click to remove it and choose a refund' : undefined}>
-            + {k.name} <small>{formatCurrency(k.price)}{k.paid ? ' · paid' : ''}</small>
+          <button key={k.addon_id} type="button" className="ch" aria-pressed onClick={() => toggle(k.addon_id)} disabled={disabled || (k.paid && !onRemovePaid)} title={k.paid ? t('addons.paidTitle') : undefined}>
+            + {k.name} <small>{k.paid ? t('addons.pricePaid', { price: formatCurrency(k.price) }) : formatCurrency(k.price)}</small>
           </button>
         ))}
       </div>
-      {dropped.length > 0 && <p className="mk-hint">{dropped.join(', ')} not offered on this service, so taken off.</p>}
+      {dropped.length > 0 && <p className="mk-hint">{t('addons.notOffered', { names: dropped.join(', ') })}</p>}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { getConfiguredAdapter } from './payments';
 import { generateReference } from './customer-payment.service';
 import { logAudit } from './audit.service';
 import { queueNotification } from './booking-notifications.service';
+import { msg } from '../i18n';
 
 /**
  * Section C — Refund processing (spec 10-payment-platform, task 4.6 / Requirement C4).
@@ -54,7 +55,7 @@ export interface RefundResult {
  */
 export async function refundTransaction(input: RefundInput): Promise<RefundResult> {
   if (!input.reason || !input.reason.trim()) {
-    throw new RefundError('A reason is required to process a refund', 'REASON_REQUIRED');
+    throw new RefundError(msg('errors:refund.aReasonIsRequiredToProcess'), 'REASON_REQUIRED');
   }
 
   // Load the original charge (scoped to the business) and compute what's left.
@@ -67,7 +68,7 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
     [input.transactionId, input.businessId],
   );
   const original = origRows[0];
-  if (!original) throw new RefundError('Original charge not found for this business', 'CHARGE_NOT_FOUND');
+  if (!original) throw new RefundError(msg('errors:refund.originalChargeNotFoundForThis'), 'CHARGE_NOT_FOUND');
 
   // Business rules on what a direct transaction refund may touch (mirrors the UI).
   // Some charges are deliberately NOT refundable this way:
@@ -79,16 +80,16 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
   //   - order-linked charges → refund through the ORDER (line-item aware, product/
   //     no-show only), not as a flat transaction refund.
   if (original.enrollment_id) {
-    throw new RefundError('A membership renewal cannot be refunded — cancel the membership instead', 'NOT_REFUNDABLE');
+    throw new RefundError(msg('errors:refund.aMembershipRenewalCannotBeRefunded'), 'NOT_REFUNDABLE');
   }
   if (original.payment_method === 'gift_card') {
-    throw new RefundError('Gift-card charges are not refundable', 'NOT_REFUNDABLE');
+    throw new RefundError(msg('errors:refund.giftCardChargesAreNotRefundable'), 'NOT_REFUNDABLE');
   }
   if (original.payment_method === 'account_credit') {
-    throw new RefundError('An applied account credit cannot be refunded here', 'NOT_REFUNDABLE');
+    throw new RefundError(msg('errors:refund.anAppliedAccountCreditCannotBe'), 'NOT_REFUNDABLE');
   }
   if (original.order_id) {
-    throw new RefundError('Refund this sale from its order/receipt', 'REFUND_VIA_ORDER');
+    throw new RefundError(msg('errors:refund.refundThisSaleFromItsOrder'), 'REFUND_VIA_ORDER');
   }
 
   // Only completed charges are refundable (a pending/failed charge has no funds to return).
@@ -96,7 +97,7 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
     `SELECT status FROM pay_transactions WHERE id = $1`, [input.transactionId],
   );
   if (statusRows[0]?.status !== 'completed') {
-    throw new RefundError('Only a completed charge can be refunded', 'CHARGE_NOT_COMPLETED');
+    throw new RefundError(msg('errors:refund.onlyACompletedChargeCanBe'), 'CHARGE_NOT_COMPLETED');
   }
 
   const { rows: refundedRows } = await adminPool.query(
@@ -107,16 +108,16 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
   );
   const alreadyRefunded = refundedRows[0].total_refunded as number;
   const remaining = original.amount - alreadyRefunded;
-  if (remaining <= 0) throw new RefundError('This charge has already been fully refunded', 'ALREADY_REFUNDED');
+  if (remaining <= 0) throw new RefundError(msg('errors:refund.thisChargeHasAlreadyBeenFully'), 'ALREADY_REFUNDED');
 
   // Default to a full refund of what remains.
   const amountCents = input.amountCents == null ? remaining : input.amountCents;
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
-    throw new RefundError('Refund amount must be a positive integer (cents)', 'INVALID_AMOUNT');
+    throw new RefundError(msg('errors:refund.refundAmountMustBeAPositive'), 'INVALID_AMOUNT');
   }
   if (amountCents > remaining) {
     throw new RefundError(
-      `Refund amount (${amountCents}) exceeds the remaining refundable balance (${remaining})`,
+      msg('errors:refund.refundAmountExceedsTheRemainingRefundable', { amountCents, remaining }),
       'EXCEEDS_REFUNDABLE',
     );
   }
@@ -135,7 +136,7 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
       tenantId: input.tenantId, customerId: original.customer_id,
     };
     const account = await resolveConnectedAccount(owner);
-    if (!account) throw new RefundError('Business has no active payment processor connection', 'NO_CONNECTION');
+    if (!account) throw new RefundError(msg('errors:refund.businessHasNoActivePaymentProcessor'), 'NO_CONNECTION');
 
     const secrets = await getDecryptedSecrets({ ownerLevel: 'business', businessId: input.businessId });
     const adapter = getConfiguredAdapter(account.provider, secrets);

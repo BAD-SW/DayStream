@@ -1,3 +1,4 @@
+import { askText } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
@@ -7,15 +8,16 @@ import * as membershipsApi from '../api/memberships';
 import * as customersApi from '../api/customers';
 import type { Membership, MembershipPlan } from '../api/memberships';
 import { formatCurrency } from '../utils/currency';
+import { formatDate } from '../utils/format';
+import { useTranslation } from 'react-i18next';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', paused: 'warning', renewing: 'warning', frozen: 'info', cancelled: 'error', expired: 'error', pending: 'neutral',
 };
 
-/** Human label for a status (renewing reads as "Past due" for staff clarity). */
-const STATUS_LABELS: Record<string, string> = { renewing: 'Past due' };
-
+/** The status label comes from `memberships.status.<status>` (renewing reads as "Past due" for staff clarity). */
 export function Memberships() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +44,7 @@ export function Memberships() {
       else if (action === 'pause') await membershipsApi.pauseMembership(m.id, businessId, 14);
       else if (action === 'resume') await membershipsApi.resumeMembership(m.id, businessId);
       else if (action === 'downgrade') {
-        const planId = prompt('Enter plan ID to downgrade to:');
+        const planId = await askText({ message: t('memberships.promptPlanId') });
         if (planId) await membershipsApi.downgradeMembership(m.id, businessId, planId);
       }
       fetchMemberships();
@@ -50,9 +52,9 @@ export function Memberships() {
   };
 
   const handleCreditAction = async (action: string, m: Membership) => {
-    const amount = prompt(`Enter credit amount to ${action}:`);
+    const amount = await askText({ message: t(`memberships.creditPrompt.${action}`, { defaultValue: `Enter credit amount to ${action}:` }) });
     if (!amount || isNaN(Number(amount))) return;
-    const reason = prompt('Reason (optional):') || undefined;
+    const reason = (await askText({ message: t('memberships.promptReason') })) || undefined;
     try {
       if (action === 'adjust') await membershipsApi.adjustCredits(m.id, { amount: Number(amount), reason });
       else if (action === 'deduct') await membershipsApi.deductCredits(m.id, { amount: Number(amount), reason });
@@ -62,24 +64,24 @@ export function Memberships() {
   };
 
   const columns = [
-    { key: 'customer', header: 'Customer', filter: 'values' as const, filterValue: (row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '', render: (_: any, row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '—' },
-    { key: 'plan_name', header: 'Plan' },
+    { key: 'customer', header: t('memberships.customer'), filter: 'values' as const, filterValue: (row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '', render: (_: any, row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '—' },
+    { key: 'plan_name', header: t('memberships.plan') },
     // The list carries the plan's billing frequency (there is no plan_type: reading it crashed the screen).
-    { key: 'billing_frequency', header: 'Billing', render: (v: string) => (v ? v.replace(/_/g, ' ') : '—') },
-    { key: 'status', header: 'Status', filterLabel: (v: string) => STATUS_LABELS[v] || v, render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{STATUS_LABELS[v] || v}</Badge> },
-    { key: 'credit_balance', header: 'Credits', render: (v: any) => (v === undefined || v === null ? '—' : v) },
-    { key: 'next_billing_date', header: 'Next Billing', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
+    { key: 'billing_frequency', header: t('memberships.billing'), render: (v: string) => (v ? t(`shared.frequency.${v}`, { defaultValue: v.replace(/_/g, ' ') }) : '—') },
+    { key: 'status', header: t('shared.status'), filterLabel: (v: string) => t(`memberships.status.${v}`, { defaultValue: v }), render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{t(`memberships.status.${v}`, { defaultValue: v })}</Badge> },
+    { key: 'credit_balance', header: t('memberships.credits'), render: (v: any) => (v === undefined || v === null ? '—' : v) },
+    { key: 'next_billing_date', header: t('memberships.nextBilling'), render: (v: string) => v ? formatDate(v) : '—' },
     {
       key: 'actions', header: '',
       render: (_: any, row: Membership) => (
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleAction('pause', row)} />}
-          {row.status === 'paused' && <ActionBtn label="Resume" onClick={() => handleAction('resume', row)} />}
-          {row.status === 'active' && <ActionBtn label="Downgrade" onClick={() => handleAction('downgrade', row)} />}
-          {['active', 'paused'].includes(row.status) && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
-          <ActionBtn label="Adjust Credits" onClick={() => handleCreditAction('adjust', row)} />
-          <ActionBtn label="Deduct Credits" onClick={() => handleCreditAction('deduct', row)} />
-          <ActionBtn label="Restore Credits" onClick={() => handleCreditAction('restore', row)} />
+          {row.status === 'active' && <ActionBtn label={t('shared.pause')} onClick={() => handleAction('pause', row)} />}
+          {row.status === 'paused' && <ActionBtn label={t('memberships.resume')} onClick={() => handleAction('resume', row)} />}
+          {row.status === 'active' && <ActionBtn label={t('memberships.downgrade')} onClick={() => handleAction('downgrade', row)} />}
+          {['active', 'paused'].includes(row.status) && <ActionBtn label={t('common:cancel')} onClick={() => handleAction('cancel', row)} />}
+          <ActionBtn label={t('memberships.adjustCredits')} onClick={() => handleCreditAction('adjust', row)} />
+          <ActionBtn label={t('memberships.deductCredits')} onClick={() => handleCreditAction('deduct', row)} />
+          <ActionBtn label={t('memberships.restoreCredits')} onClick={() => handleCreditAction('restore', row)} />
         </div>
       ),
     },
@@ -88,10 +90,10 @@ export function Memberships() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Memberships</h1>
+        <h1 style={styles.title}>{t('memberships.title')}</h1>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <Button onClick={() => setShowEnroll(!showEnroll)}>{showEnroll ? 'Cancel' : 'Enroll Customer'}</Button>
-          <button style={styles.navBtn} onClick={() => navigate('/memberships/plans')}>Manage Plans</button>
+          <Button onClick={() => setShowEnroll(!showEnroll)}>{showEnroll ? t('common:cancel') : t('memberships.enroll')}</Button>
+          <button style={styles.navBtn} onClick={() => navigate('/memberships/plans')}>{t('memberships.managePlans')}</button>
         </div>
       </div>
 
@@ -99,12 +101,13 @@ export function Memberships() {
         <EnrollForm businessId={businessId} onEnrolled={() => { setShowEnroll(false); fetchMemberships(); }} />
       )}
 
-      <Table columns={columns} data={memberships} loading={loading} onRowClick={(row) => navigate(`/memberships/${row.id}`)} emptyMessage="No memberships found" mobileCardMode />
+      <Table columns={columns} data={memberships} loading={loading} onRowClick={(row) => navigate(`/memberships/${row.id}`)} emptyMessage={t('memberships.listEmpty')} mobileCardMode />
     </div>
   );
 }
 
 function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled: () => void }) {
+  const { t } = useTranslation('offerings');
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerResults, setCustomerResults] = useState<any[]>([]);
@@ -136,14 +139,14 @@ function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled
 
   const handleEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCustomer || !selectedPlan) { setError('Select a customer and a plan'); return; }
+    if (!selectedCustomer || !selectedPlan) { setError(t('memberships.selectCustomerPlan')); return; }
     setEnrolling(true);
     setError('');
     try {
       await membershipsApi.createMembership({ business_id: businessId, customer_id: selectedCustomer.id, plan_id: selectedPlan });
       onEnrolled();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to enroll customer');
+      setError(err.response?.data?.error || t('memberships.enrollFailed'));
     } finally {
       setEnrolling(false);
     }
@@ -151,19 +154,19 @@ function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled
 
   return (
     <div style={styles.enrollForm}>
-      <h3 style={{ margin: '0 0 12px 0', color: 'var(--color-text)', fontSize: 'var(--font-size-base)' }}>Enroll Customer in Plan</h3>
+      <h3 style={{ margin: '0 0 12px 0', color: 'var(--color-text)', fontSize: 'var(--font-size-base)' }}>{t('memberships.enrollTitle')}</h3>
       {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px' }}>{error}</p>}
       <form onSubmit={handleEnroll} style={{ display: 'flex', flexDirection: 'column' as const, gap: '12px' }}>
         {/* Customer search */}
         <div style={{ position: 'relative' as const }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Customer *</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>{t('memberships.customerRequired')}</label>
           {selectedCustomer ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: 'var(--font-size-base)' }}>
               <span>{selectedCustomer.first_name} {selectedCustomer.last_name} ({selectedCustomer.email})</span>
               <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)' }} onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}>×</button>
             </div>
           ) : (
-            <input style={styles.select} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Search customer..." autoComplete="off"
+            <input style={styles.select} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder={t('memberships.searchCustomer')} autoComplete="off"
               onFocus={() => { if (customerResults.length > 0) setShowDropdown(true); }}
               onBlur={() => setTimeout(() => setShowDropdown(false), 200)} />
           )}
@@ -182,17 +185,17 @@ function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled
 
         {/* Plan select */}
         <div>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Plan *</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>{t('memberships.planRequired')}</label>
           <select style={styles.select} value={selectedPlan} onChange={(e) => setSelectedPlan(e.target.value)} required>
-            <option value="">Select a plan...</option>
+            <option value="">{t('memberships.selectPlan')}</option>
             {plans.filter((p) => p.status === 'active').map((p) => (
-              <option key={p.id} value={p.id}>{p.name} — {formatCurrency(p.price)}/{p.billing_cycle}</option>
+              <option key={p.id} value={p.id}>{t('memberships.planOption', { name: p.name, price: formatCurrency(p.price), cycle: t(`shared.frequency.${p.billing_cycle}`, { defaultValue: p.billing_cycle }) })}</option>
             ))}
           </select>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <Button type="submit" loading={enrolling} disabled={!selectedCustomer || !selectedPlan}>Enroll</Button>
+          <Button type="submit" loading={enrolling} disabled={!selectedCustomer || !selectedPlan}>{t('memberships.enrollButton')}</Button>
         </div>
       </form>
     </div>

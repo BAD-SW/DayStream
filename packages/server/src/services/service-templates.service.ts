@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 /**
  * List available templates by business type.
@@ -39,7 +40,7 @@ export async function applyTemplate(businessId: string, businessType: string, us
   const templates = await getTemplates(businessType);
 
   if (templates.length === 0) {
-    throw new Error(`No templates found for business type: ${businessType}`);
+    throw new Error(msg('errors:serviceTemplates.noTemplatesFoundForBusinessType', { businessType }));
   }
 
   const categoriesCreated: string[] = [];

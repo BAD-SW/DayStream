@@ -1,4 +1,5 @@
 import { adminPool } from '../../db/pool';
+import { msg } from '../../i18n';
 
 export interface SavedQuery {
   id: string;
@@ -35,13 +36,13 @@ const MAX_QUERY_TEXT_LENGTH = 10000;
 function validateName(name: string): void {
   if (!name || name.trim().length === 0) {
     throw new SavedQueryServiceError(
-      'A valid name is required. Name cannot be empty or whitespace-only.',
+      msg('errors:savedQuery.aValidNameIsRequiredName'),
       'INVALID_NAME',
     );
   }
   if (name.length > MAX_NAME_LENGTH) {
     throw new SavedQueryServiceError(
-      `Name must not exceed ${MAX_NAME_LENGTH} characters.`,
+      msg('errors:savedQuery.nameMustNotExceedCharacters', { MAX_NAME_LENGTH }),
       'INVALID_NAME',
     );
   }
@@ -50,7 +51,7 @@ function validateName(name: string): void {
 function validateDescription(description?: string): void {
   if (description !== undefined && description.length > MAX_DESCRIPTION_LENGTH) {
     throw new SavedQueryServiceError(
-      `Description must not exceed ${MAX_DESCRIPTION_LENGTH} characters.`,
+      msg('errors:savedQuery.descriptionMustNotExceedCharacters', { MAX_DESCRIPTION_LENGTH }),
       'INVALID_INPUT',
     );
   }
@@ -59,13 +60,13 @@ function validateDescription(description?: string): void {
 function validateQueryText(queryText: string): void {
   if (!queryText || queryText.length === 0) {
     throw new SavedQueryServiceError(
-      'Query text is required.',
+      msg('errors:savedQuery.queryTextIsRequired'),
       'INVALID_INPUT',
     );
   }
   if (queryText.length > MAX_QUERY_TEXT_LENGTH) {
     throw new SavedQueryServiceError(
-      `Query text must not exceed ${MAX_QUERY_TEXT_LENGTH} characters.`,
+      msg('errors:savedQuery.queryTextMustNotExceedCharacters', { MAX_QUERY_TEXT_LENGTH }),
       'INVALID_INPUT',
     );
   }
@@ -97,7 +98,7 @@ export class SavedQueryService {
     );
     if (countRows[0].count >= MAX_SAVED_QUERIES) {
       throw new SavedQueryServiceError(
-        `Maximum saved query limit (${MAX_SAVED_QUERIES}) reached.`,
+        msg('errors:savedQuery.maximumSavedQueryLimitReached', { MAX_SAVED_QUERIES }),
         'SAVE_LIMIT',
       );
     }
@@ -109,7 +110,7 @@ export class SavedQueryService {
     );
     if (existing.length > 0) {
       throw new SavedQueryServiceError(
-        'A saved query with this name already exists.',
+        msg('errors:savedQuery.aSavedQueryWithThisName'),
         'DUPLICATE_NAME',
       );
     }
@@ -140,7 +141,7 @@ export class SavedQueryService {
     const existing = await this.getById(id, userId);
     if (!existing) {
       throw new SavedQueryServiceError(
-        'Saved query not found.',
+        msg('errors:savedQuery.savedQueryNotFound'),
         'NOT_FOUND',
       );
     }
@@ -153,7 +154,7 @@ export class SavedQueryService {
       );
       if (duplicates.length > 0) {
         throw new SavedQueryServiceError(
-          'A saved query with this name already exists.',
+          msg('errors:savedQuery.aSavedQueryWithThisName'),
           'DUPLICATE_NAME',
         );
       }
@@ -201,7 +202,7 @@ export class SavedQueryService {
 
     if (rowCount === 0) {
       throw new SavedQueryServiceError(
-        'Saved query not found.',
+        msg('errors:savedQuery.savedQueryNotFound'),
         'NOT_FOUND',
       );
     }

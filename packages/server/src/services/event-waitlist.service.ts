@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * Add a customer to the waitlist for an event.
@@ -72,7 +73,7 @@ export async function confirmWaitlistSpot(waitlistId: string) {
      RETURNING *`,
     [waitlistId],
   );
-  if (!rows[0]) throw new Error('Waitlist entry not found, not offered, or expired');
+  if (!rows[0]) throw new Error(msg('errors:eventWaitlist.waitlistEntryNotFoundNotOffered'));
   return rows[0];
 }
 
@@ -87,7 +88,7 @@ export async function expireWaitlistEntry(waitlistId: string) {
      RETURNING *`,
     [waitlistId],
   );
-  if (!rows[0]) throw new Error('Waitlist entry not found or not in offered status');
+  if (!rows[0]) throw new Error(msg('errors:eventWaitlist.waitlistEntryNotFoundOrNot'));
   return rows[0];
 }
 

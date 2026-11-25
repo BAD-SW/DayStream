@@ -1,6 +1,7 @@
 import { PaymentAdapter, PaymentProviderName, ConnectedAccount } from './adapter';
 import { MockAdapter } from './mock-adapter';
 import { StripeAdapter } from './stripe-adapter';
+import { msg } from '../../i18n';
 
 export * from './adapter';
 export { MockAdapter } from './mock-adapter';
@@ -27,7 +28,7 @@ const adapters: Record<PaymentProviderName, PaymentAdapter> = {
 
 export function getAdapter(provider: PaymentProviderName): PaymentAdapter {
   const adapter = adapters[provider];
-  if (!adapter) throw new Error(`No payment adapter registered for provider: ${provider}`);
+  if (!adapter) throw new Error(msg('errors:index.noPaymentAdapterRegisteredForProvider', { provider }));
   return adapter;
 }
 

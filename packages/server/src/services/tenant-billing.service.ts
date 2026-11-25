@@ -5,6 +5,7 @@ import { getConfiguredAdapter } from './payments';
 import { resolveConnectedAccount, getProviderToken, getCustomerRef } from './payment-methods.service';
 import { getDecryptedSecrets } from './processor-config.service';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /** Build an array of {field, from, to} for fields that changed between two objects. */
 function diffFields(
@@ -364,7 +365,7 @@ export async function billBusinessForCycle(
 
   const computed = await computeChargeForCycle(businessId, cycle, currency);
   if (!computed) {
-    throw Object.assign(new Error('Business has no billing plan configured'), { code: 'NO_PLAN' });
+    throw Object.assign(new Error(msg('errors:tenantBilling.businessHasNoBillingPlanConfigured')), { code: 'NO_PLAN' });
   }
 
   // Create or load the charge row (idempotent per business+cycle), then draw down

@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface CreateVariantInput {
   serviceId: string;
@@ -34,7 +35,7 @@ interface UpdateVariantInput {
 export async function createVariant(input: CreateVariantInput) {
   // Validate subscription fields
   if (input.pricingModel === 'subscription' && !input.billingInterval) {
-    throw new Error('Subscription variants require a billing interval');
+    throw new Error(msg('errors:serviceVariants.subscriptionVariantsRequireABillingInterval'));
   }
 
   const { rows } = await adminPool.query(
@@ -88,7 +89,7 @@ export async function updateVariant(variantId: string, serviceId: string, update
   if (pricingModel === 'subscription') {
     const billingInterval = updates.billingInterval !== undefined ? updates.billingInterval : current.billing_interval;
     if (!billingInterval) {
-      throw new Error('Subscription variants require a billing interval');
+      throw new Error(msg('errors:serviceVariants.subscriptionVariantsRequireABillingInterval'));
     }
   }
 

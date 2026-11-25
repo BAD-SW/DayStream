@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { publicFormLimiter } from '../middleware/rate-limit';
 import { success, error } from '../utils/response';
 import * as completion from '../services/form-completion.service';
+import { msg } from '../i18n';
 
 /**
  * The public page a customer opens from an emailed link or on a device in the business
@@ -30,7 +31,7 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{20,100}$/;
 // GET /v1/public/forms/:token
 publicFormsRouter.get('/:token', publicFormLimiter, async (req: Request, res: Response) => {
   try {
-    if (!TOKEN_RE.test(req.params.token)) { error(res, 'This link is no longer valid.', 'INVALID_LINK', 410); return; }
+    if (!TOKEN_RE.test(req.params.token)) { error(res, msg('errors:publicForms.thisLinkIsNoLongerValid'), 'INVALID_LINK', 410); return; }
     res.setHeader('Cache-Control', 'no-store');
     success(res, await completion.getPublicForm(req.params.token));
   } catch (e) { fail(res, e, 'Failed to load the form'); }
@@ -39,7 +40,7 @@ publicFormsRouter.get('/:token', publicFormLimiter, async (req: Request, res: Re
 // POST /v1/public/forms/:token
 publicFormsRouter.post('/:token', publicFormLimiter, async (req: Request, res: Response) => {
   try {
-    if (!TOKEN_RE.test(req.params.token)) { error(res, 'This link is no longer valid.', 'INVALID_LINK', 410); return; }
+    if (!TOKEN_RE.test(req.params.token)) { error(res, msg('errors:publicForms.thisLinkIsNoLongerValid'), 'INVALID_LINK', 410); return; }
     const result = await completion.submitPublic(req.params.token, {
       language: typeof req.body?.language === 'string' ? req.body.language : null,
       answers: req.body?.answers,

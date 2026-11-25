@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { DashboardGroup } from './DashboardGroup';
@@ -55,6 +56,7 @@ interface GroupedSortableTileGridProps {
  * as a per-group concatenation on write. Drag-and-drop is scoped within each group.
  */
 export function GroupedSortableTileGrid({ modules }: GroupedSortableTileGridProps) {
+  const { t } = useTranslation('nav');
   const [orderByGroup, setOrderByGroup] = useState<Record<string, ModuleDefinition[]>>(() =>
     computeOrderByGroup(modules),
   );
@@ -104,7 +106,7 @@ export function GroupedSortableTileGrid({ modules }: GroupedSortableTileGridProp
         ))}
       </div>
       <button onClick={handleReset} className={styles.resetBtn}>
-        Reset tile order
+        {t('dashboard.reset_tile_order')}
       </button>
     </div>
   );

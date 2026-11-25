@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * Get available templates, optionally filtered by business type.
@@ -35,14 +36,14 @@ export async function getTemplateById(id: string) {
  */
 export async function applyTemplate(tenantId: string, templateId: string) {
   const template = await getTemplateById(templateId);
-  if (!template) throw new Error('Template not found');
+  if (!template) throw new Error(msg('errors:cmsTemplates.templateNotFound'));
 
   // Get the tenant's site
   const { rows: siteRows } = await adminPool.query(
     `SELECT id FROM web_sites WHERE tenant_id = $1`,
     [tenantId],
   );
-  if (siteRows.length === 0) throw new Error('Site not found for tenant');
+  if (siteRows.length === 0) throw new Error(msg('errors:cmsTemplates.siteNotFoundForTenant'));
 
   const siteId = siteRows[0].id;
   const pages: any[] = template.pages || [];

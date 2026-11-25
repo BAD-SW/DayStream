@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { apiClient } from '../../api/client';
 import { applyTheme } from '../../api/themes';
@@ -15,6 +16,7 @@ interface ApplyThemeDialogProps {
 interface Option { id: string; name: string }
 
 export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyThemeDialogProps) {
+  const { t } = useTranslation('settings');
   const scopeOptions: ThemeScope[] = persona === 'business' ? ['business'] : persona === 'tenant' ? ['tenant', 'business'] : ['system', 'tenant', 'business'];
   const [scope, setScope] = useState<ThemeScope>(scopeOptions[0]);
   const [ownTenantId, setOwnTenantId] = useState<string | null>(null);
@@ -63,7 +65,7 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
       await applyTheme(theme.id, { scope, scope_id: scopeId });
       onApplied();
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.error || 'Failed to apply theme.');
+      setErrorMsg(err.response?.data?.error || t('themes.applyFailed'));
     } finally {
       setSaving(false);
     }
@@ -72,7 +74,7 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <h3 style={styles.title}>Apply &ldquo;{theme.name}&rdquo;</h3>
+        <h3 style={styles.title}>{t('themes.applyTitle', { name: theme.name })}</h3>
 
         {scopeOptions.length > 1 && (
           <div style={styles.scopeRow}>
@@ -81,7 +83,7 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
                 style={{ ...styles.scopeBtn, ...(scope === s ? styles.scopeBtnActive : {}) }}
                 onClick={() => { setScope(s); setSelectedTenantId(''); setSelectedBusinessId(''); }}
               >
-                {s === 'system' ? 'System (platform default)' : s === 'tenant' ? 'Tenant' : 'Business'}
+                {t(`themes.applyScope.${s}`)}
               </button>
             ))}
           </div>
@@ -89,8 +91,8 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
 
         {scope === 'tenant' && persona === 'system' && (
           <select style={styles.select} value={selectedTenantId} onChange={(e) => setSelectedTenantId(e.target.value)}>
-            <option value="">Select a tenant…</option>
-            {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <option value="">{t('themes.selectTenant')}</option>
+            {tenants.map((tn) => <option key={tn.id} value={tn.id}>{tn.name}</option>)}
           </select>
         )}
 
@@ -98,13 +100,13 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
           <>
             {persona === 'system' && (
               <select style={styles.select} value={selectedTenantId} onChange={(e) => { setSelectedTenantId(e.target.value); setSelectedBusinessId(''); }}>
-                <option value="">Select a tenant…</option>
-                {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                <option value="">{t('themes.selectTenant')}</option>
+                {tenants.map((tn) => <option key={tn.id} value={tn.id}>{tn.name}</option>)}
               </select>
             )}
             <select style={styles.select} value={selectedBusinessId} onChange={(e) => setSelectedBusinessId(e.target.value)}
               disabled={persona === 'system' && !selectedTenantId}>
-              <option value="">Select a business…</option>
+              <option value="">{t('themes.selectBusiness')}</option>
               {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </>
@@ -113,8 +115,8 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
         {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
 
         <div style={styles.actions}>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleConfirm} loading={saving} disabled={!canConfirm}>Apply</Button>
+          <Button variant="ghost" onClick={onClose}>{t('common:cancel')}</Button>
+          <Button onClick={handleConfirm} loading={saving} disabled={!canConfirm}>{t('themes.apply')}</Button>
         </div>
       </div>
     </div>

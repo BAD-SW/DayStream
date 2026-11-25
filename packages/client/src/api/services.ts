@@ -4,11 +4,12 @@ import { apiClient } from './client';
 
 /** Payment Rules on a service (spec 51, gap 5). */
 export type PaymentRule = 'no_card' | 'card_required' | 'charge_at_booking';
+/** `label` is a translation key; the screen shows t(label). */
 export const PAYMENT_RULE_OPTIONS: { value: PaymentRule; label: string }[] = [
   // Payment = a card or a bank account (direct debit), so the wording does not say "card".
-  { value: 'no_card', label: 'Not required for reservation' },
-  { value: 'card_required', label: 'Taken but not charged for reservation' },
-  { value: 'charge_at_booking', label: 'Charged at reservation' },
+  { value: 'no_card', label: 'offerings:services.paymentRule.no_card' },
+  { value: 'card_required', label: 'offerings:services.paymentRule.card_required' },
+  { value: 'charge_at_booking', label: 'offerings:services.paymentRule.charge_at_booking' },
 ];
 
 export interface Service {

@@ -51,22 +51,22 @@ const NAV_ICONS: Record<string, NavIconName> = {
 
 type GroupDef = { label: string; ids: string[] };
 
-/** Sidebar groups per context level (THE-7 / THE-11). Unlisted modules fall into a final unlabelled group. */
+/** Sidebar groups per context level (THE-7 / THE-11); labels are nav translation keys. Unlisted modules fall into a final unlabelled group. */
 const NAV_GROUPS: Record<'business' | 'tenant' | 'system', GroupDef[]> = {
   business: [
-    { label: 'Daily work', ids: ['dashboard', 'inbox', 'customers', 'appointments', 'schedule', 'events'] },
-    { label: 'Business', ids: ['offerings', 'accounting', 'reports', 'marketing', 'community'] },
-    { label: 'Admin', ids: ['business', 'website', 'business-settings', 'clock', 'timesheets', 'my-hours'] },
+    { label: 'sidebar.group.daily_work', ids: ['dashboard', 'inbox', 'customers', 'appointments', 'schedule', 'events'] },
+    { label: 'sidebar.group.business', ids: ['offerings', 'accounting', 'reports', 'marketing', 'community'] },
+    { label: 'sidebar.group.admin', ids: ['business', 'website', 'business-settings', 'clock', 'timesheets', 'my-hours'] },
   ],
   tenant: [
-    { label: 'Overview', ids: ['dashboard'] },
-    { label: 'Portfolio', ids: ['tenant-businesses', 'tenant-prospects'] },
-    { label: 'Administration', ids: ['tenant-users', 'tenant-billing', 'tenant-reports', 'tenant-processes', 'tenant-settings'] },
+    { label: 'sidebar.group.overview', ids: ['dashboard'] },
+    { label: 'sidebar.group.portfolio', ids: ['tenant-businesses', 'tenant-prospects'] },
+    { label: 'sidebar.group.administration', ids: ['tenant-users', 'tenant-billing', 'tenant-reports', 'tenant-processes', 'tenant-settings'] },
   ],
   system: [
-    { label: 'Overview', ids: ['dashboard'] },
-    { label: 'Platform', ids: ['system-tenants', 'system-coverage', 'system-prospect-categories', 'system-reports'] },
-    { label: 'Administration', ids: ['system-users', 'system-config', 'system-processes', 'system-audit', 'system-query-editor'] },
+    { label: 'sidebar.group.overview', ids: ['dashboard'] },
+    { label: 'sidebar.group.platform', ids: ['system-tenants', 'system-coverage', 'system-prospect-categories', 'system-reports'] },
+    { label: 'sidebar.group.administration', ids: ['system-users', 'system-config', 'system-processes', 'system-audit', 'system-query-editor'] },
   ],
 };
 
@@ -96,7 +96,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, [hasInbox]);
 
   const items: ShellNavItem[] = [
-    { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: NAV_ICONS.dashboard },
+    { id: 'dashboard', label: 'sidebar.dashboard', path: '/dashboard', icon: NAV_ICONS.dashboard },
     ...baseModules.map((mod) => ({
       id: mod.id,
       label: mod.titleKey,
@@ -117,7 +117,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   if (ungrouped.length > 0) groups.push({ label: '', items: ungrouped });
 
   return (
-    <AppShell groups={groups} brandTag={activeContext.contextLevel === 'business' ? undefined : 'Admin'}>
+    <AppShell groups={groups} brandTag={activeContext.contextLevel === 'business' ? undefined : 'sidebar.brandTag'}>
       {children}
     </AppShell>
   );

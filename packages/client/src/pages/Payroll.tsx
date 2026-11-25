@@ -1,4 +1,7 @@
+import { askConfirm } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
+import { formatDate, formatNumber } from '../utils/format';
+import { useTranslation } from 'react-i18next';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
@@ -10,19 +13,20 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'neutral'> = { ope
 type PayrollTab = 'periods' | 'compensation' | 'deductions' | 'time-entries';
 
 export function Payroll() {
+  const { t } = useTranslation('staff');
   const [activeTab, setActiveTab] = useState<PayrollTab>('periods');
   const businessId = localStorage.getItem('business_id') || '';
 
   const tabItems: { key: PayrollTab; label: string }[] = [
-    { key: 'periods', label: 'Pay Periods' },
-    { key: 'compensation', label: 'Compensation Rules' },
-    { key: 'deductions', label: 'Deductions' },
-    { key: 'time-entries', label: 'Time Entries' },
+    { key: 'periods', label: t('payroll.tabPeriods') },
+    { key: 'compensation', label: t('payroll.tabCompensation') },
+    { key: 'deductions', label: t('payroll.tabDeductions') },
+    { key: 'time-entries', label: t('payroll.tabTimeEntries') },
   ];
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Payroll</h1>
+      <h1 style={styles.title}>{t('payroll.title')}</h1>
       <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', borderBottom: '1px solid var(--color-border, #e5e7eb)' }}>
         {tabItems.map((tab) => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
@@ -40,6 +44,7 @@ export function Payroll() {
 }
 
 function PeriodsSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('staff');
   const [periods, setPeriods] = useState<any[]>([]);
   const [entries, setEntries] = useState<any[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
@@ -67,37 +72,37 @@ function PeriodsSection({ businessId }: { businessId: string }) {
   };
 
   const periodColumns = [
-    { key: 'period_start', header: 'Start', render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'period_end', header: 'End', render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{v}</Badge> },
+    { key: 'period_start', header: t('payroll.start'), render: (v: string) => formatDate(v) },
+    { key: 'period_end', header: t('payroll.end'), render: (v: string) => formatDate(v) },
+    { key: 'status', header: t('payroll.status'), render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{t(`payroll.status_${v}`, { defaultValue: v })}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
-          {row.status === 'open' && <ActionBtn label="Run" onClick={() => handleRun(row.id)} />}
-          {row.status === 'processing' && <ActionBtn label="Finalize" onClick={() => handleFinalize(row.id)} />}
-          <ActionBtn label="View" onClick={() => handleSelect(row.id)} />
+          {row.status === 'open' && <ActionBtn label={t('payroll.run')} onClick={() => handleRun(row.id)} />}
+          {row.status === 'processing' && <ActionBtn label={t('payroll.finalize')} onClick={() => handleFinalize(row.id)} />}
+          <ActionBtn label={t('payroll.view')} onClick={() => handleSelect(row.id)} />
         </div>
       ),
     },
   ];
 
   const entryColumns = [
-    { key: 'name', header: 'Staff', render: (_: any, r: any) => `${r.first_name} ${r.last_name}` },
-    { key: 'hours_worked', header: 'Hours' },
-    { key: 'sessions_delivered', header: 'Sessions' },
-    { key: 'gross_pay', header: 'Gross', render: (v: number) => formatCurrency(v) },
-    { key: 'total_deductions', header: 'Deductions', render: (v: number) => formatCurrency(v) },
-    { key: 'net_pay', header: 'Net', render: (v: number) => formatCurrency(v) },
+    { key: 'name', header: t('payroll.staff'), render: (_: any, r: any) => `${r.first_name} ${r.last_name}` },
+    { key: 'hours_worked', header: t('payroll.hours') },
+    { key: 'sessions_delivered', header: t('payroll.sessions') },
+    { key: 'gross_pay', header: t('payroll.gross'), render: (v: number) => formatCurrency(v) },
+    { key: 'total_deductions', header: t('payroll.deductions'), render: (v: number) => formatCurrency(v) },
+    { key: 'net_pay', header: t('payroll.net'), render: (v: number) => formatCurrency(v) },
   ];
 
   return (
     <div>
-      <Table columns={periodColumns} data={periods} loading={loading} emptyMessage="No pay periods" />
+      <Table columns={periodColumns} data={periods} loading={loading} emptyMessage={t('payroll.noPeriods')} />
       {selectedPeriod && entries.length > 0 && (
         <>
-          <h2 style={styles.subtitle}>Payroll Entries</h2>
-          <Table columns={entryColumns} data={entries} emptyMessage="No entries" />
+          <h2 style={styles.subtitle}>{t('payroll.entries')}</h2>
+          <Table columns={entryColumns} data={entries} emptyMessage={t('payroll.noEntries')} />
         </>
       )}
     </div>
@@ -105,6 +110,7 @@ function PeriodsSection({ businessId }: { businessId: string }) {
 }
 
 function CompensationSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('staff');
   const [rules, setRules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -131,12 +137,12 @@ function CompensationSection({ businessId }: { businessId: string }) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this compensation rule?')) return;
+    if (!(await askConfirm({ message: t('payroll.confirmDeleteRule'), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     await payrollApi.deleteCompensationRule(id, businessId);
     setRules(rules.filter((r: any) => r.id !== id));
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <div>{t('common:loading')}</div>;
 
   return (
     <div>
@@ -144,22 +150,22 @@ function CompensationSection({ businessId }: { businessId: string }) {
         <div style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '16px', marginBottom: '16px', background: '#f9fafb' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Rate</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>{t('payroll.rate')}</label>
               <input type="number" step="0.01" min="0" style={styles.input} value={(Number(editForm.rate) / 100).toFixed(2)} onChange={(e) => setEditForm({ ...editForm, rate: String(Math.round(parseFloat(e.target.value || '0') * 100)) })} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Type</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>{t('payroll.type')}</label>
               <input type="text" style={styles.input} value={editForm.rule_type} onChange={(e) => setEditForm({ ...editForm, rule_type: e.target.value })} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button onClick={handleSave}>Save</Button>
-            <Button variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+            <Button onClick={handleSave}>{t('common:save')}</Button>
+            <Button variant="ghost" onClick={() => setEditingId(null)}>{t('common:cancel')}</Button>
           </div>
         </div>
       )}
       {rules.length === 0 ? (
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>No compensation rules configured</p>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>{t('payroll.noRules')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {rules.map((r: any) => (
@@ -170,8 +176,8 @@ function CompensationSection({ businessId }: { businessId: string }) {
                 {r.user_name && <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{r.user_name}</span>}
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
-                <ActionBtn label="Edit" onClick={() => handleEdit(r)} />
-                <ActionBtn label="Delete" onClick={() => handleDelete(r.id)} />
+                <ActionBtn label={t('common:edit')} onClick={() => handleEdit(r)} />
+                <ActionBtn label={t('common:delete')} onClick={() => handleDelete(r.id)} />
               </div>
             </div>
           ))}
@@ -182,6 +188,7 @@ function CompensationSection({ businessId }: { businessId: string }) {
 }
 
 function DeductionsSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('staff');
   const [deductions, setDeductions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -209,12 +216,12 @@ function DeductionsSection({ businessId }: { businessId: string }) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this deduction?')) return;
+    if (!(await askConfirm({ message: t('payroll.confirmDeleteDeduction'), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     await payrollApi.deleteDeduction(id);
     setDeductions(deductions.filter((d: any) => d.id !== id));
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <div>{t('common:loading')}</div>;
 
   return (
     <div>
@@ -222,26 +229,26 @@ function DeductionsSection({ businessId }: { businessId: string }) {
         <div style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '16px', marginBottom: '16px', background: '#f9fafb' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Name</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>{t('payroll.name')}</label>
               <input type="text" style={styles.input} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Amount</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>{t('payroll.amount')}</label>
               <input type="number" step="0.01" min="0" style={styles.input} value={(Number(editForm.amount) / 100).toFixed(2)} onChange={(e) => setEditForm({ ...editForm, amount: String(Math.round(parseFloat(e.target.value || '0') * 100)) })} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Type</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>{t('payroll.type')}</label>
               <input type="text" style={styles.input} value={editForm.deduction_type} onChange={(e) => setEditForm({ ...editForm, deduction_type: e.target.value })} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button onClick={handleSave}>Save</Button>
-            <Button variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+            <Button onClick={handleSave}>{t('common:save')}</Button>
+            <Button variant="ghost" onClick={() => setEditingId(null)}>{t('common:cancel')}</Button>
           </div>
         </div>
       )}
       {deductions.length === 0 ? (
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>No deductions configured</p>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>{t('payroll.noDeductions')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {deductions.map((d: any) => (
@@ -252,8 +259,8 @@ function DeductionsSection({ businessId }: { businessId: string }) {
                 {d.user_name && <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{d.user_name}</span>}
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
-                <ActionBtn label="Edit" onClick={() => handleEdit(d)} />
-                <ActionBtn label="Delete" onClick={() => handleDelete(d.id)} />
+                <ActionBtn label={t('common:edit')} onClick={() => handleEdit(d)} />
+                <ActionBtn label={t('common:delete')} onClick={() => handleDelete(d.id)} />
               </div>
             </div>
           ))}
@@ -264,6 +271,7 @@ function DeductionsSection({ businessId }: { businessId: string }) {
 }
 
 function TimeEntriesSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('staff');
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -278,19 +286,19 @@ function TimeEntriesSection({ businessId }: { businessId: string }) {
   };
 
   const columns = [
-    { key: 'user_name', header: 'Staff', render: (_: any, r: any) => r.user_name || r.user_id },
-    { key: 'entry_date', header: 'Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
-    { key: 'hours', header: 'Hours', render: (_: any, r: any) => r.hours || r.duration_minutes ? `${(r.duration_minutes / 60).toFixed(1)}h` : '—' },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'approved' ? 'success' : v === 'pending' ? 'warning' : 'neutral'}>{v}</Badge> },
+    { key: 'user_name', header: t('payroll.staff'), render: (_: any, r: any) => r.user_name || r.user_id },
+    { key: 'entry_date', header: t('payroll.date'), render: (v: string) => v ? formatDate(v) : '—' },
+    { key: 'hours', header: t('payroll.hours'), render: (_: any, r: any) => r.hours || r.duration_minutes ? t('payroll.hoursShort', { n: formatNumber(r.duration_minutes / 60, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : '—' },
+    { key: 'status', header: t('payroll.status'), render: (v: string) => <Badge variant={v === 'approved' ? 'success' : v === 'pending' ? 'warning' : 'neutral'}>{t(`payroll.entryStatus_${v}`, { defaultValue: v })}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, r: any) => (
-        r.status === 'pending' ? <ActionBtn label="Approve" onClick={() => handleApprove(r.id)} /> : null
+        r.status === 'pending' ? <ActionBtn label={t('payroll.approve')} onClick={() => handleApprove(r.id)} /> : null
       ),
     },
   ];
 
-  return <Table columns={columns} data={entries} loading={loading} emptyMessage="No time entries" />;
+  return <Table columns={columns} data={entries} loading={loading} emptyMessage={t('payroll.noTimeEntries')} />;
 }
 
 function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {

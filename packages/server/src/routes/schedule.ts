@@ -5,6 +5,7 @@ import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import * as scheduleService from '../services/staff-schedule.service';
 import * as locationHoursService from '../services/location-hours.service';
+import { msg } from '../i18n';
 
 export const scheduleRouter = Router();
 
@@ -15,43 +16,43 @@ scheduleRouter.use(tenantContext);
 scheduleRouter.get('/', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:schedule.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const dateFrom = req.query.date_from as string;
     const dateTo = req.query.date_to as string;
-    if (!dateFrom || !dateTo) { error(res, 'date_from and date_to required', 'VALIDATION_ERROR', 400); return; }
+    if (!dateFrom || !dateTo) { error(res, msg('errors:schedule.dateFromAndDateToRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const entries = await scheduleService.getScheduleEntries(businessId, dateFrom, dateTo, req.query.staff_id as string);
     success(res, entries);
-  } catch (err: any) { console.error('Failed to get schedule', err?.message || err); error(res, 'Failed to get schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get schedule', err?.message || err); error(res, msg('errors:schedule.failedToGetSchedule'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/schedule/staff — Get all active staff for the schedule view
 scheduleRouter.get('/staff', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:schedule.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const staff = await scheduleService.getScheduleStaff(businessId);
     success(res, staff);
-  } catch (err: any) { console.error('Failed to get staff', err?.message || err); error(res, 'Failed to get staff', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get staff', err?.message || err); error(res, msg('errors:schedule.failedToGetStaff'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/schedule/business-hours — Get location hours for the schedule backdrop
 scheduleRouter.get('/business-hours', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
     const locationId = req.query.location_id as string;
-    if (!locationId) { error(res, 'location_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!locationId) { error(res, msg('errors:schedule.locationIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const hours = await locationHoursService.getLocationHours(locationId);
     success(res, hours);
-  } catch (err: any) { console.error('Failed to get business hours', err?.message || err); error(res, 'Failed to get business hours', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get business hours', err?.message || err); error(res, msg('errors:schedule.failedToGetBusinessHours'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/schedule — Create a schedule entry
 scheduleRouter.post('/', requirePermission('staff:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string || req.body.business_id;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:schedule.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     if (!req.body.staff_id || !req.body.schedule_date || !req.body.start_time || !req.body.end_time) {
-      error(res, 'staff_id, schedule_date, start_time, and end_time required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:schedule.staffIdScheduleDateStartTime'), 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -69,8 +70,8 @@ scheduleRouter.post('/', requirePermission('staff:*'), async (req: Request, res:
   } catch (err: any) {
     if (err.code === 'SHIFT_OVERLAP') { error(res, err.message, 'CONFLICT', 409); }
     else if (err.code === 'OUTSIDE_HOURS' || err.code === 'INVALID_TIMES') { error(res, err.message, 'VALIDATION_ERROR', 400); }
-    else if (err.code === '23505') { error(res, 'A shift already exists for this staff member at this time', 'CONFLICT', 409); }
-    else { error(res, 'Failed to create schedule entry', 'INTERNAL_ERROR', 500); }
+    else if (err.code === '23505') { error(res, msg('errors:schedule.aShiftAlreadyExistsForThis'), 'CONFLICT', 409); }
+    else { error(res, msg('errors:schedule.failedToCreateScheduleEntry'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -78,7 +79,7 @@ scheduleRouter.post('/', requirePermission('staff:*'), async (req: Request, res:
 scheduleRouter.put('/:id', requirePermission('staff:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:schedule.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const entry = await scheduleService.updateScheduleEntry(req.params.id, businessId, {
       scheduleDate: req.body.schedule_date,
@@ -88,19 +89,19 @@ scheduleRouter.put('/:id', requirePermission('staff:*'), async (req: Request, re
       entryType: req.body.entry_type,
       notes: req.body.notes,
     });
-    if (!entry) { error(res, 'Entry not found', 'NOT_FOUND', 404); return; }
+    if (!entry) { error(res, msg('errors:schedule.entryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, entry);
-  } catch (err: any) { console.error('Failed to update schedule entry', err?.message || err); error(res, 'Failed to update schedule entry', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update schedule entry', err?.message || err); error(res, msg('errors:schedule.failedToUpdateScheduleEntry'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/schedule/:id — Delete a schedule entry
 scheduleRouter.delete('/:id', requirePermission('staff:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:schedule.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const deleted = await scheduleService.deleteScheduleEntry(req.params.id, businessId);
-    if (!deleted) { error(res, 'Entry not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:schedule.entryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to delete schedule entry', err?.message || err); error(res, 'Failed to delete schedule entry', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete schedule entry', err?.message || err); error(res, msg('errors:schedule.failedToDeleteScheduleEntry'), 'INTERNAL_ERROR', 500); }
 });

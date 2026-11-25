@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 interface CreateSeriesInput {
   title: string;
@@ -123,7 +124,7 @@ export async function getSeriesProgress(seriesId: string, customerId: string) {
     `SELECT total_sessions FROM evt_series WHERE id = $1`,
     [seriesId],
   );
-  if (seriesRows.length === 0) throw new Error('Series not found');
+  if (seriesRows.length === 0) throw new Error(msg('errors:eventSeries.seriesNotFound'));
 
   const { rows: attendedRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS attended

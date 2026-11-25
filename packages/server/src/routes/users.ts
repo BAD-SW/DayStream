@@ -6,6 +6,7 @@ import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import { validate } from '../middleware/validate';
 import { paginationSchema, paginateSQL, paginationMeta, PaginationParams } from '../utils/pagination';
+import { msg } from '../i18n';
 
 export const usersRouter = Router();
 
@@ -19,7 +20,7 @@ usersRouter.get('/', requirePermission('customers:*'), async (req: Request, res:
     const authReq = req as AuthenticatedRequest;
     const { error: validationError, value: params } = paginationSchema.validate(req.query);
     if (validationError) {
-      error(res, 'Invalid pagination params', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:users.invalidPaginationParams'), 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -42,7 +43,7 @@ usersRouter.get('/', requirePermission('customers:*'), async (req: Request, res:
     success(res, dataResult.rows, paginationMeta(total, pagination));
   } catch (err: any) {
     console.error('Failed to list users', err?.message || err);
-    error(res, 'Failed to list users', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:users.failedToListUsers'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -57,13 +58,13 @@ usersRouter.get('/:id', requirePermission('customers:*'), async (req: Request, r
     );
 
     if (rows.length === 0) {
-      error(res, 'User not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:users.userNotFound'), 'NOT_FOUND', 404);
       return;
     }
 
     success(res, rows[0]);
   } catch (err: any) {
     console.error('Failed to get user', err?.message || err);
-    error(res, 'Failed to get user', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:users.failedToGetUser'), 'INTERNAL_ERROR', 500);
   }
 });

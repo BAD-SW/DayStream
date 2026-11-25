@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import crypto from 'crypto';
+import { msg } from '../i18n';
 
 // Placeholder OAuth provider configurations
 const OAUTH_PROVIDERS: Record<string, { authUrl: string; tokenUrl: string; scopes: string[] }> = {
@@ -20,7 +21,7 @@ const OAUTH_PROVIDERS: Record<string, { authUrl: string; tokenUrl: string; scope
  */
 export async function initiateOAuth(tenantId: string, provider: string, redirectUri: string) {
   const providerConfig = OAUTH_PROVIDERS[provider];
-  if (!providerConfig) throw new Error(`Unsupported OAuth provider: ${provider}`);
+  if (!providerConfig) throw new Error(msg('errors:integrationOauth.unsupportedOauthProvider', { provider }));
 
   const state = crypto.randomBytes(32).toString('hex');
 
@@ -56,12 +57,12 @@ export async function handleCallback(state: string, code: string) {
      WHERE status = 'disconnected' AND config->>'state' = $1`,
     [state],
   );
-  if (rows.length === 0) throw new Error('Invalid or expired OAuth state');
+  if (rows.length === 0) throw new Error(msg('errors:integrationOauth.invalidOrExpiredOauthState'));
 
   const connection = rows[0];
   const provider = connection.provider;
   const providerConfig = OAUTH_PROVIDERS[provider];
-  if (!providerConfig) throw new Error(`Unsupported provider: ${provider}`);
+  if (!providerConfig) throw new Error(msg('errors:integrationOauth.unsupportedProvider', { provider }));
 
   // Placeholder: In production, exchange code for tokens via HTTP POST to tokenUrl
   const tokens = {
@@ -91,11 +92,11 @@ export async function refreshToken(connectionId: string) {
     `SELECT * FROM int_connections WHERE id = $1`,
     [connectionId],
   );
-  if (rows.length === 0) throw new Error('Connection not found');
+  if (rows.length === 0) throw new Error(msg('errors:integrationOauth.connectionNotFound'));
 
   const connection = rows[0];
   const providerConfig = OAUTH_PROVIDERS[connection.provider];
-  if (!providerConfig) throw new Error(`Unsupported provider: ${connection.provider}`);
+  if (!providerConfig) throw new Error(msg('errors:integrationOauth.unsupportedProvider', { provider: connection.provider }));
 
   // Placeholder: In production, POST to tokenUrl with refresh_token grant
   const newTokens = {

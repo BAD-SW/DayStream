@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { getCustomerForms, startFormRequest } from '../../api/forms';
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function FormsToCompleteModal({ open, onClose, customerId, businessId, bookingId, serviceId, onChanged }: Props) {
+  const { t } = useTranslation('forms');
   const [forms, setForms] = useState<CustomerFormStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function FormsToCompleteModal({ open, onClose, customerId, businessId, bo
       if (!r.url) throw new Error('no link');
       setFill({ url: r.url, name: f.name });
     } catch (err) {
-      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'The form could not be started.');
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('modal.startFailed'));
     } finally { setBusy(null); }
   };
 
@@ -65,22 +67,22 @@ export function FormsToCompleteModal({ open, onClose, customerId, businessId, bo
   if (fill) return <FormFillModal url={fill.url} title={fill.name} onClose={() => setFill(null)} onDone={done} />;
 
   return (
-    <Modal open onClose={onClose} title="Forms to complete" size="md" footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
+    <Modal open onClose={onClose} title={t('modal.title')} size="md" footer={<Button variant="secondary" onClick={onClose}>{t('common:modal.close')}</Button>}>
       {loading ? (
-        <p style={s.muted} role="status">Loading…</p>
+        <p style={s.muted} role="status">{t('modal.loading')}</p>
       ) : forms.length === 0 ? (
-        <p role="status" style={s.done}>All the forms are complete.</p>
+        <p role="status" style={s.done}>{t('modal.allComplete')}</p>
       ) : (
         <>
-          <p style={s.lead}>{forms.length === 1 ? 'This form is' : 'These forms are'} still to complete:</p>
+          <p style={s.lead}>{t('modal.lead', { count: forms.length })}</p>
           <ul style={s.list}>
             {forms.map((f) => (
               <li key={f.groupId} style={s.row}>
                 <span style={s.name}>
                   {f.name}
-                  {f.status === 'out_of_date' && <span style={s.tag}>out of date</span>}
+                  {f.status === 'out_of_date' && <span style={s.tag}>{t('modal.outOfDate')}</span>}
                 </span>
-                <Button size="sm" variant="secondary" loading={busy === f.groupId} onClick={() => fillIn(f)}>Fill in now</Button>
+                <Button size="sm" variant="secondary" loading={busy === f.groupId} onClick={() => fillIn(f)}>{t('modal.fillInNow')}</Button>
               </li>
             ))}
           </ul>

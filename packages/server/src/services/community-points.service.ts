@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Award points to a customer.
@@ -56,11 +57,11 @@ export async function redeemPoints(
   description?: string,
 ) {
   if (!Number.isInteger(points) || points <= 0) {
-    throw new Error('Insufficient points balance: choose a whole number of points above zero');
+    throw new Error(msg('errors:communityPoints.insufficientPointsBalanceChooseAWhole'));
   }
   const balance = await getBalance(tenantId, customerId);
   if (balance < points) {
-    throw new Error('Insufficient points balance');
+    throw new Error(msg('errors:communityPoints.insufficientPointsBalance'));
   }
 
   const { rows } = await adminPool.query(

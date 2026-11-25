@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface Step {
   id: string;
   label: string;
@@ -11,8 +13,9 @@ interface StepsProps {
 }
 
 export function Steps({ steps, activeStep, completedSteps = [], onStepClick }: StepsProps) {
+  const { t } = useTranslation('common');
   return (
-    <nav aria-label="Progress" style={styles.nav}>
+    <nav aria-label={t('steps.label')} style={styles.nav}>
       <ol style={styles.list}>
         {steps.map((step, index) => {
           const isActive = step.id === activeStep;

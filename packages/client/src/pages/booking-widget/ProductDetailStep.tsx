@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { WidgetProductDetail } from '../../api/widget';
 import { formatDuration, formatMoney } from './format';
 
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function ProductDetailStep({ product, selectedVariantId, selectedAddonIds, onContinue }: Props) {
+  const { t } = useTranslation('widget');
   const variants = product.variants || []; // always present for a service, per the widget API contract
   const addons = product.addons || [];
   const [variantId, setVariantId] = useState<string>(selectedVariantId || variants[0]?.id || '');
@@ -34,7 +36,7 @@ export function ProductDetailStep({ product, selectedVariantId, selectedAddonIds
                 onChange={() => setVariantId(v.id)}
               />
               <span className="dsw-variant-name">{v.name}</span>
-              <span className="dsw-variant-meta">{formatDuration(v.duration)} · {formatMoney(v.price)}</span>
+              <span className="dsw-variant-meta">{t('product.optionMeta', { duration: formatDuration(v.duration), price: formatMoney(v.price) })}</span>
             </label>
           ))}
         </div>
@@ -48,7 +50,7 @@ export function ProductDetailStep({ product, selectedVariantId, selectedAddonIds
       {/* Add-ons (spec 51, gap 15): extras with the service, each with its price; they add no time */}
       {addons.length > 0 && (
         <fieldset className="dsw-variant-list" style={{ border: 'none', padding: 0, margin: 0, minWidth: 0 }}>
-          <legend className="dsw-step-text">Add-ons</legend>
+          <legend className="dsw-step-text">{t('product.addons')}</legend>
           {addons.map((a) => (
             <label key={a.id} className={`dsw-variant-option ${addonIds.includes(a.id) ? 'dsw-variant-option--selected' : ''}`}>
               <input type="checkbox" name="addon" value={a.id} checked={addonIds.includes(a.id)} onChange={() => toggle(a.id)} />
@@ -64,7 +66,7 @@ export function ProductDetailStep({ product, selectedVariantId, selectedAddonIds
         disabled={!variantId}
         onClick={() => onContinue(variantId, addonIds)}
       >
-        Continue
+        {t('product.continue')}
       </button>
     </div>
   );

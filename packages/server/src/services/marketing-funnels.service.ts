@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { findOrCreatePerson } from './person-identity.service';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * List all lead funnels for a tenant.
@@ -96,7 +97,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
     [funnelId],
   );
   const funnel = funnels[0];
-  if (!funnel) throw new Error('Funnel not found');
+  if (!funnel) throw new Error(msg('errors:marketingFunnels.funnelNotFound'));
 
   const tenantId = funnel.tenant_id;
 
@@ -104,8 +105,8 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
   // created before forms had one falls back to the tenant's first business.
   const email = typeof formData.email === 'string' ? formData.email.trim() : '';
   const phoneGiven = typeof formData.phone === 'string' ? formData.phone.trim() : '';
-  if (!email && !phoneGiven) throw Object.assign(new Error('An email address or a phone number is required'), { code: 'INVALID_FORM' });
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw Object.assign(new Error('That email address does not look right'), { code: 'INVALID_FORM' });
+  if (!email && !phoneGiven) throw Object.assign(new Error(msg('errors:marketingFunnels.anEmailAddressOrAPhone')), { code: 'INVALID_FORM' });
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw Object.assign(new Error(msg('errors:marketingFunnels.thatEmailAddressDoesNotLook')), { code: 'INVALID_FORM' });
   const firstName = formData.firstName || formData.first_name || null;
   const lastName = formData.lastName || formData.last_name || null;
   const phone = formData.phone || null;
@@ -118,7 +119,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
     );
     businessId = biz[0]?.id || null;
   }
-  if (!businessId) throw new Error('This form is not attached to a business');
+  if (!businessId) throw new Error(msg('errors:marketingFunnels.thisFormIsNotAttachedTo'));
 
   const { person } = await findOrCreatePerson({
     businessId,

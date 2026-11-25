@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   createBooking, enrollMembership, findOrCreateCustomer, getBusinessInfo, getProductDetail, holdSlot,
   payForBooking, payForMembershipEnrollment, payForPackagePurchase, purchasePackage,
   WidgetApiError, WidgetAuthResult, WidgetBusinessInfo,
 } from '../api/widget';
+import { PublicLanguageBar } from '../components/PublicLanguageBar';
 import { applyBaseTheme, applyResolvedTokens } from '../context/ThemeManager';
 import { ProgressIndicator } from './booking-widget/ProgressIndicator';
 import { ProductDetailStep } from './booking-widget/ProductDetailStep';
@@ -17,7 +19,7 @@ import { PaymentStep } from './booking-widget/PaymentStep';
 import { ConfirmationStep } from './booking-widget/ConfirmationStep';
 import { PurchaseConfirmationStep } from './booking-widget/PurchaseConfirmationStep';
 import { AppointmentSummary } from './booking-widget/AppointmentSummary';
-import { FlowState, FlowStep, initialFlowState, PACKAGE_STEP_ORDER, PurchaseResult, SERVICE_STEP_ORDER, STEP_LABELS } from './booking-widget/types';
+import { FlowState, FlowStep, initialFlowState, PACKAGE_STEP_ORDER, PurchaseResult, SERVICE_STEP_ORDER, STEP_LABEL_KEYS } from './booking-widget/types';
 import { sendToParent } from './booking-widget/postMessage';
 import './BookingWidget.css';
 
@@ -26,6 +28,7 @@ function todayIso(): string {
 }
 
 export function BookingWidget() {
+  const { t } = useTranslation('widget');
   const [params] = useSearchParams();
   const businessId = params.get('business_id') || '';
   const productId = params.get('product_id') || '';
@@ -50,7 +53,7 @@ export function BookingWidget() {
 
   useEffect(() => {
     if (!businessId || !productId) {
-      setInitError('This booking link is missing required information.');
+      setInitError(t('init.missingInfo'));
       setInitLoading(false);
       return;
     }
@@ -69,13 +72,14 @@ export function BookingWidget() {
         setFlow((f) => ({ ...f, product, requirePaymentBeforeConfirmation: info.require_payment_before_confirmation }));
         sendToParent('daystream:ready');
       } catch (err) {
-        if (!cancelled) setInitError(err instanceof WidgetApiError ? err.message : 'Failed to load this booking page.');
+        if (!cancelled) setInitError(err instanceof WidgetApiError ? err.message : t('init.loadFailed'));
       } finally {
         if (!cancelled) setInitLoading(false);
       }
     })();
 
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId, productId]);
 
   useEffect(() => {
@@ -93,7 +97,7 @@ export function BookingWidget() {
   useEffect(() => {
     if (initLoading) return; // wait for the initial 'ready' send so step 1 doesn't race it
     const index = stepOrder.indexOf(step);
-    sendToParent('daystream:step_changed', { step: index + 1, stepName: STEP_LABELS[step] });
+    sendToParent('daystream:step_changed', { step: index + 1, stepName: t(STEP_LABEL_KEYS[step], { lng: 'en' }) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, initLoading]);
 
@@ -162,7 +166,7 @@ export function BookingWidget() {
         setFlow((f) => ({ ...f, customer }));
         setStep('customer');
       } catch (err) {
-        setHoldError(err instanceof WidgetApiError ? err.message : 'Something went wrong.');
+        setHoldError(err instanceof WidgetApiError ? err.message : t('errors.generic'));
       } finally {
         setHoldLoading(false);
       }
@@ -183,7 +187,7 @@ export function BookingWidget() {
         setExpiredNotice(true);
         setStep('slots');
       } else {
-        setHoldError(err instanceof WidgetApiError ? err.message : 'Something went wrong holding your slot.');
+        setHoldError(err instanceof WidgetApiError ? err.message : t('errors.holdSlot'));
       }
     } finally {
       setHoldLoading(false);
@@ -209,7 +213,7 @@ export function BookingWidget() {
         setFlow((f) => ({ ...f, customer, phone, purchase }));
         setStep(purchase.status === 'active' ? 'confirmation' : 'payment');
       } catch (err) {
-        setCustomerSubmitError(err instanceof WidgetApiError ? err.message : 'Something went wrong.');
+        setCustomerSubmitError(err instanceof WidgetApiError ? err.message : t('errors.generic'));
       } finally {
         setCustomerSubmitLoading(false);
       }
@@ -237,7 +241,7 @@ export function BookingWidget() {
         setExpiredNotice(true);
         setStep('slots');
       } else {
-        setCustomerSubmitError(err instanceof WidgetApiError ? err.message : 'Something went wrong.');
+        setCustomerSubmitError(err instanceof WidgetApiError ? err.message : t('errors.generic'));
       }
     } finally {
       setCustomerSubmitLoading(false);
@@ -262,25 +266,27 @@ export function BookingWidget() {
       }
       setStep('confirmation');
     } catch (err) {
-      setPayError(err instanceof WidgetApiError ? err.message : 'Payment failed. Please try again.');
+      setPayError(err instanceof WidgetApiError ? err.message : t('errors.paymentFailed'));
     } finally {
       setPayLoading(false);
     }
   }
 
   if (initLoading) {
-    return <div className="dsw-shell"><div className="dsw-loading">Loading…</div></div>;
+    return <div className="dsw-shell" style={{ position: 'relative' }}><PublicLanguageBar languages={businessInfo?.languages} /><div className="dsw-loading">{t('init.loading')}</div></div>;
   }
 
   if (initError || !flow.product) {
-    return <div className="dsw-shell"><div className="dsw-error-page">{initError || 'This booking page is unavailable.'}</div></div>;
+    return <div className="dsw-shell" style={{ position: 'relative' }}><PublicLanguageBar languages={businessInfo?.languages} /><div className="dsw-error-page">{initError || t('init.unavailable')}</div></div>;
   }
 
   const itemName = flow.booking?.service_name || flow.purchase?.name || flow.product.name;
 
   return (
-    <div className="dsw-shell">
-      <header className="dsw-header">
+    <div className="dsw-shell" style={{ position: 'relative' }}>
+      <PublicLanguageBar languages={businessInfo?.languages} />
+      {/* paddingRight keeps a long business name clear of the language menu in the corner */}
+      <header className="dsw-header" style={{ paddingRight: '9rem' }}>
         {businessInfo?.logo_url && <img src={businessInfo.logo_url} alt={businessInfo.name} className="dsw-logo" />}
         <span className="dsw-business-name">{businessInfo?.name}</span>
       </header>
@@ -332,7 +338,7 @@ export function BookingWidget() {
               onAuthenticated={handleAuthenticated}
               onBack={() => setStep(productType === 'service' ? 'slots' : 'product')}
             />
-            {holdLoading && <p className="dsw-step-text">{productType === 'service' ? 'Securing your time slot…' : 'One moment…'}</p>}
+            {holdLoading && <p className="dsw-step-text">{productType === 'service' ? t('auth.securingSlot') : t('auth.oneMoment')}</p>}
             {holdError && <p className="dsw-step-error">{holdError}</p>}
           </div>
         )}

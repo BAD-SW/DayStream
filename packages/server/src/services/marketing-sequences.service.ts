@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * List sequences for a tenant with optional filters.
@@ -128,7 +129,7 @@ export async function updateSequence(id: string, tenantId: string, updates: Reco
 export async function activateSequence(id: string, tenantId: string) {
   const check = await validateSequence(id, tenantId).catch(() => null);
   if (check && !check.valid) {
-    throw Object.assign(new Error(`This sequence cannot be switched on yet: ${check.errors.join('; ')}`), { code: 'SEQUENCE_INVALID' });
+    throw Object.assign(new Error(msg('errors:marketingSequences.thisSequenceCannotBeSwitchedOn', { value: check.errors.join('; ') })), { code: 'SEQUENCE_INVALID' });
   }
   const { rows } = await adminPool.query(
     `UPDATE mkt_sequences SET status = 'active', activated_at = NOW(), updated_at = NOW()
@@ -197,7 +198,7 @@ export async function archiveSequence(id: string, tenantId: string) {
  */
 export async function validateSequence(id: string, tenantId: string) {
   const sequence = await getSequenceById(id, tenantId);
-  if (!sequence) throw new Error('Sequence not found');
+  if (!sequence) throw new Error(msg('errors:marketingSequences.sequenceNotFound'));
 
   const { steps, connections } = sequence;
   const errors: string[] = [];
@@ -251,7 +252,7 @@ export async function validateSequence(id: string, tenantId: string) {
  */
 export async function cloneSequence(id: string, tenantId: string) {
   const sequence = await getSequenceById(id, tenantId);
-  if (!sequence) throw new Error('Sequence not found');
+  if (!sequence) throw new Error(msg('errors:marketingSequences.sequenceNotFound'));
 
   // Create the new sequence
   const { rows: newSeqRows } = await adminPool.query(

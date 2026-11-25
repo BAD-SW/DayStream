@@ -6,6 +6,7 @@ import { validateQrCode, isLinkCode } from './checkin-qr.service';
 import { getCustomerFormStatus } from './form-status.service';
 import { createRequest } from './form-completion.service';
 import { languageFor, resolveTexts } from './checkin-texts.service';
+import { getBusinessLanguages } from './business-languages.service';
 import type { CheckInText } from '@daystream/shared';
 
 /**
@@ -120,6 +121,8 @@ export interface SelfView {
   /** The language of the screen and its wording: the business's own, over the built-in wording of that language. */
   language: string;
   texts: CheckInText;
+  /** The business's languages, for the language menu (Phase 44, requirement 8). */
+  languages: string[];
 }
 
 export async function selfView(ctx: SelfContext): Promise<SelfView | null> {
@@ -138,6 +141,7 @@ export async function selfView(ctx: SelfContext): Promise<SelfView | null> {
   return {
     language,
     texts: await resolveTexts(ctx.businessId, language),
+    languages: (await getBusinessLanguages(ctx.businessId))?.languages ?? [],
     first_name: r.first_name,
     service_name: r.service_name,
     business_name: r.business_name,

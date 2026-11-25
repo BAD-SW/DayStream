@@ -6,6 +6,7 @@ import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as promotionService from '../services/promotion.service';
+import { msg, messageHas } from '../i18n';
 
 export const promotionsRouter = Router();
 
@@ -40,7 +41,7 @@ const createPromotionSchema = Joi.object({
 promotionsRouter.get('/', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:promotions.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await promotionService.getPromotions({
       businessId,
       status: req.query.status as string,
@@ -49,7 +50,7 @@ promotionsRouter.get('/', requirePermission('services:read'), async (req: Reques
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
     success(res, result.promotions, { total: result.total, page: result.page, limit: result.limit });
-  } catch (err: any) { console.error('Failed to list promotions', err?.message || err); error(res, 'Failed to list promotions', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list promotions', err?.message || err); error(res, msg('errors:promotions.failedToListPromotions'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/promotions
@@ -78,9 +79,9 @@ promotionsRouter.post('/', requirePermission('services:*'), validate(createPromo
     });
     success(res, promo, undefined, 201);
   } catch (err: any) {
-    if (err.message?.includes('duplicate key') || err.message?.includes('unique')) {
-      error(res, 'A promotion with this code already exists', 'DUPLICATE_CODE', 409);
-    } else { error(res, 'Failed to create promotion', 'INTERNAL_ERROR', 500); }
+    if (err.message?.includes('duplicate key') || messageHas(err.message, 'unique')) {
+      error(res, msg('errors:promotions.aPromotionWithThisCodeAlready'), 'DUPLICATE_CODE', 409);
+    } else { error(res, msg('errors:promotions.failedToCreatePromotion'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -88,53 +89,53 @@ promotionsRouter.post('/', requirePermission('services:*'), validate(createPromo
 promotionsRouter.get('/:id', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:promotions.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const promo = await promotionService.getPromotionById(req.params.id, businessId);
-    if (!promo) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
+    if (!promo) { error(res, msg('errors:promotions.promotionNotFound'), 'NOT_FOUND', 404); return; }
     success(res, promo);
-  } catch (err: any) { console.error('Failed to get promotion', err?.message || err); error(res, 'Failed to get promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get promotion', err?.message || err); error(res, msg('errors:promotions.failedToGetPromotion'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id
 promotionsRouter.put('/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:promotions.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const promo = await promotionService.updatePromotion(req.params.id, businessId, req.body);
-    if (!promo) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
+    if (!promo) { error(res, msg('errors:promotions.promotionNotFound'), 'NOT_FOUND', 404); return; }
     success(res, promo);
-  } catch (err: any) { console.error('Failed to update promotion', err?.message || err); error(res, 'Failed to update promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update promotion', err?.message || err); error(res, msg('errors:promotions.failedToUpdatePromotion'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id/archive
 promotionsRouter.put('/:id/archive', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:promotions.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const archived = await promotionService.archivePromotion(req.params.id, businessId);
-    if (!archived) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
+    if (!archived) { error(res, msg('errors:promotions.promotionNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
-  } catch (err: any) { console.error('Failed to archive promotion', err?.message || err); error(res, 'Failed to archive promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to archive promotion', err?.message || err); error(res, msg('errors:promotions.failedToArchivePromotion'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id/activate
 promotionsRouter.put('/:id/activate', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:promotions.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const activated = await promotionService.activatePromotion(req.params.id, businessId);
-    if (!activated) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
+    if (!activated) { error(res, msg('errors:promotions.promotionNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { activated: true });
-  } catch (err: any) { console.error('Failed to activate promotion', err?.message || err); error(res, 'Failed to activate promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to activate promotion', err?.message || err); error(res, msg('errors:promotions.failedToActivatePromotion'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id/pause
 promotionsRouter.put('/:id/pause', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:promotions.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const paused = await promotionService.pausePromotion(req.params.id, businessId);
-    if (!paused) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
+    if (!paused) { error(res, msg('errors:promotions.promotionNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
-  } catch (err: any) { console.error('Failed to pause promotion', err?.message || err); error(res, 'Failed to pause promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to pause promotion', err?.message || err); error(res, msg('errors:promotions.failedToPausePromotion'), 'INTERNAL_ERROR', 500); }
 });

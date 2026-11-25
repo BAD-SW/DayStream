@@ -1,9 +1,12 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
+import { formatDate } from '../utils/format';
 
 interface TenantUser {
   id: string;
@@ -37,6 +40,7 @@ const STATUS_VARIANTS: Record<string, 'success' | 'error' | 'neutral'> = {
 };
 
 export function TenantUsers() {
+  const { t } = useTranslation('tenant');
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -63,7 +67,7 @@ export function TenantUsers() {
       const res = await apiClient.get('/v1/admin/tenant-users');
       setUsers(res.data.data);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load users');
+      setError(err.response?.data?.error || t('users.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -91,7 +95,7 @@ export function TenantUsers() {
       setCreateForm(EMPTY_FORM);
       fetchUsers();
     } catch (err: any) {
-      setCreateError(err.response?.data?.error || 'Failed to create user');
+      setCreateError(err.response?.data?.error || t('users.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -127,51 +131,51 @@ export function TenantUsers() {
       setEditUser(null);
       fetchUsers();
     } catch (err: any) {
-      setEditError(err.response?.data?.error || 'Failed to update user');
+      setEditError(err.response?.data?.error || t('users.updateFailed'));
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDeactivate(user: TenantUser) {
-    if (!confirm(`Deactivate ${user.first_name} ${user.last_name}?`)) return;
+    if (!(await askConfirm({ message: t('users.deactivateConfirm', { name: `${user.first_name} ${user.last_name}` }), confirmLabel: t('common:action.deactivate'), destructive: true }))) return;
     try {
       await apiClient.delete(`/v1/admin/tenant-users/${user.id}`);
       fetchUsers();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to deactivate user');
+      void showMessage({ message: err.response?.data?.error || t('users.deactivateFailed'), tone: 'error' });
     }
   }
 
   const columns = [
     {
       key: 'name',
-      header: 'Name',
+      header: t('users.name'),
       render: (_: any, u: TenantUser) => `${u.first_name} ${u.last_name}`,
     },
-    { key: 'email', header: 'Email' },
+    { key: 'email', header: t('users.email') },
     {
       key: 'status',
-      header: 'Status',
+      header: t('users.status'),
       render: (_: any, u: TenantUser) => (
         <Badge variant={STATUS_VARIANTS[u.status] || 'neutral'}>
-          {u.status.charAt(0).toUpperCase() + u.status.slice(1)}
+          {t(`users.status_${u.status}`, { defaultValue: u.status })}
         </Badge>
       ),
     },
     {
       key: 'created_at',
-      header: 'Created',
-      render: (val: any) => val ? new Date(val).toLocaleDateString() : '—',
+      header: t('users.created'),
+      render: (val: any) => val ? formatDate(val) : '—',
     },
     {
       key: 'actions',
       header: '',
       render: (_: any, u: TenantUser) => (
         <div style={{ display: 'flex', gap: '8px' }}>
-          <Button size="sm" variant="secondary" onClick={() => openEdit(u)}>Edit</Button>
+          <Button size="sm" variant="secondary" onClick={() => openEdit(u)}>{t('common:edit')}</Button>
           {u.status === 'active' && (
-            <Button size="sm" variant="destructive" onClick={() => handleDeactivate(u)}>Deactivate</Button>
+            <Button size="sm" variant="destructive" onClick={() => handleDeactivate(u)}>{t('users.deactivate')}</Button>
           )}
         </div>
       ),
@@ -181,12 +185,12 @@ export function TenantUsers() {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Users</h1>
-        <Button onClick={() => setShowCreate(true)}>Create User</Button>
+        <h1 style={styles.title}>{t('users.title')}</h1>
+        <Button onClick={() => setShowCreate(true)}>{t('users.create')}</Button>
       </div>
 
       <div style={styles.toolbar}>
-        <SearchInput value={search} onChange={setSearch} placeholder="Search users..." />
+        <SearchInput value={search} onChange={setSearch} placeholder={t('users.search')} />
       </div>
 
       {error && <div style={styles.error}>{error}</div>}
@@ -195,19 +199,19 @@ export function TenantUsers() {
         columns={columns}
         data={filteredUsers}
         loading={loading}
-        emptyMessage="No users found"
+        emptyMessage={t('users.empty')}
       />
 
       {/* Create Modal */}
       {showCreate && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
-            <h2 style={styles.modalTitle}>Create User</h2>
+            <h2 style={styles.modalTitle}>{t('users.create')}</h2>
             {createError && <div style={styles.error}>{createError}</div>}
             <form onSubmit={handleCreate}>
               <div style={styles.formRow}>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>First Name *</label>
+                  <label style={styles.label}>{t('users.firstNameRequired')}</label>
                   <input
                     style={styles.input}
                     type="text"
@@ -217,7 +221,7 @@ export function TenantUsers() {
                   />
                 </div>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Last Name *</label>
+                  <label style={styles.label}>{t('users.lastNameRequired')}</label>
                   <input
                     style={styles.input}
                     type="text"
@@ -229,7 +233,7 @@ export function TenantUsers() {
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>Email *</label>
+                <label style={styles.label}>{t('users.emailRequired')}</label>
                 <input
                   style={styles.input}
                   type="email"
@@ -240,7 +244,7 @@ export function TenantUsers() {
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>Password *</label>
+                <label style={styles.label}>{t('users.passwordRequired')}</label>
                 <input
                   style={styles.input}
                   type="password"
@@ -249,12 +253,12 @@ export function TenantUsers() {
                   required
                   minLength={10}
                 />
-                <small style={styles.helper}>Minimum 10 characters</small>
+                <small style={styles.helper}>{t('users.passwordHelp')}</small>
               </div>
 
               <div style={styles.modalActions}>
-                <Button variant="secondary" onClick={() => setShowCreate(false)} type="button">Cancel</Button>
-                <Button type="submit" loading={creating}>Create User</Button>
+                <Button variant="secondary" onClick={() => setShowCreate(false)} type="button">{t('common:cancel')}</Button>
+                <Button type="submit" loading={creating}>{t('users.create')}</Button>
               </div>
             </form>
           </div>
@@ -265,13 +269,13 @@ export function TenantUsers() {
       {editUser && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
-            <h2 style={styles.modalTitle}>Edit User</h2>
+            <h2 style={styles.modalTitle}>{t('users.edit')}</h2>
             <p style={styles.subtitle}>{editUser.email}</p>
             {editError && <div style={styles.error}>{editError}</div>}
             <form onSubmit={handleSaveEdit}>
               <div style={styles.formRow}>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>First Name</label>
+                  <label style={styles.label}>{t('users.firstName')}</label>
                   <input
                     style={styles.input}
                     type="text"
@@ -280,7 +284,7 @@ export function TenantUsers() {
                   />
                 </div>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Last Name</label>
+                  <label style={styles.label}>{t('users.lastName')}</label>
                   <input
                     style={styles.input}
                     type="text"
@@ -291,7 +295,7 @@ export function TenantUsers() {
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>Email</label>
+                <label style={styles.label}>{t('users.email')}</label>
                 <input
                   style={styles.input}
                   type="email"
@@ -301,19 +305,19 @@ export function TenantUsers() {
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>Status</label>
+                <label style={styles.label}>{t('users.status')}</label>
                 <select
                   style={styles.input}
                   value={editForm.status}
                   onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
                 >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="active">{t('users.status_active')}</option>
+                  <option value="inactive">{t('users.status_inactive')}</option>
                 </select>
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label}>New Password (leave blank to keep current)</label>
+                <label style={styles.label}>{t('users.newPassword')}</label>
                 <input
                   style={styles.input}
                   type="password"
@@ -324,8 +328,8 @@ export function TenantUsers() {
               </div>
 
               <div style={styles.modalActions}>
-                <Button variant="secondary" onClick={() => setEditUser(null)} type="button">Cancel</Button>
-                <Button type="submit" loading={saving}>Save Changes</Button>
+                <Button variant="secondary" onClick={() => setEditUser(null)} type="button">{t('common:cancel')}</Button>
+                <Button type="submit" loading={saving}>{t('users.saveChanges')}</Button>
               </div>
             </form>
           </div>

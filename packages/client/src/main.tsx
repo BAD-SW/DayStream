@@ -6,6 +6,8 @@ import { ContextProvider } from './context/ContextManager';
 import { BusinessSettingsProvider } from './context/BusinessSettingsContext';
 import { ThemeProvider } from './design-system/themes/ThemeProvider';
 import { App } from './App';
+import { LanguageSync } from './components/LanguageSync';
+import { DialogHost } from './design-system/components/feedback/DialogHost';
 import { applyCachedBaseTheme } from './context/ThemeManager';
 import './i18n';
 import './design-system/tokens/index.css';
@@ -23,9 +25,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <AuthProvider>
         <ContextProvider>
+          <LanguageSync />
           <BusinessSettingsProvider>
             <ThemeProvider>
               <App />
+              <DialogHost />
             </ThemeProvider>
           </BusinessSettingsProvider>
         </ContextProvider>

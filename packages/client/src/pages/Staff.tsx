@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { Badge } from '../design-system/components/data/Badge';
@@ -14,13 +15,8 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   terminated: 'error',
 };
 
-const EMPLOYMENT_LABELS: Record<string, string> = {
-  full_time: 'Full-time',
-  part_time: 'Part-time',
-  contractor: 'Contractor',
-};
-
 export function Staff() {
+  const { t } = useTranslation('staff');
   const navigate = useNavigate();
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,26 +51,26 @@ export function Staff() {
   }, [searchInput]);
 
   const columns = [
-    { key: 'staff_ref', header: 'Ref', width: '100px', sortable: true },
+    { key: 'staff_ref', header: t('list.ref'), width: '100px', sortable: true },
     {
-      key: 'first_name', header: 'Name', sortable: true,
+      key: 'first_name', header: t('list.name'), sortable: true,
       render: (_: any, row: StaffProfile) => `${row.first_name} ${row.last_name}`,
     },
-    { key: 'email', header: 'Email', sortable: true },
+    { key: 'email', header: t('list.email'), sortable: true },
     {
-      key: 'user_role', header: 'Role',
+      key: 'user_role', header: t('list.role'),
       render: (_: unknown, row: StaffProfile) =>
-        staffApi.STAFF_ROLE_OPTIONS.find((o) => o.value === staffApi.normalizeStaffRole(row.user_role))?.label ?? (row.user_role ? row.user_role : 'No login'),
+        staffApi.STAFF_ROLE_OPTIONS.find((o) => o.value === staffApi.normalizeStaffRole(row.user_role))?.label ?? (row.user_role ? row.user_role : t('list.noLogin')),
     },
     {
-      key: 'employment_type', header: 'Type', sortable: true,
-      render: (val: string) => EMPLOYMENT_LABELS[val] || val,
+      key: 'employment_type', header: t('list.type'), sortable: true,
+      render: (val: string) => t(`employment.${val}`, { defaultValue: val }),
     },
     {
-      key: 'status', header: 'Status', sortable: true,
+      key: 'status', header: t('list.status'), sortable: true,
       render: (val: string) => (
         <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>
-          {val.charAt(0).toUpperCase() + val.slice(1)}
+          {t(`status.${val}`, { defaultValue: val.charAt(0).toUpperCase() + val.slice(1) })}
         </Badge>
       ),
     },
@@ -83,9 +79,9 @@ export function Staff() {
   return (
     <div>
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search staff..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('list.search')} />
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => navigate('/staff/new')}>Add Staff</Button>
+        <Button variant="secondary" onClick={() => navigate('/staff/new')}>{t('list.add')}</Button>
       </div>
 
       <Table
@@ -93,7 +89,7 @@ export function Staff() {
         data={staff}
         loading={loading}
         onRowClick={(row) => navigate(`/staff/${row.id}`)}
-        emptyMessage="No staff members found"
+        emptyMessage={t('list.empty')}
         mobileCardMode
         clientSort
       />

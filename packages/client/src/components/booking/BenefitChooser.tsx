@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import * as bookingsApi from '../../api/bookings';
 import type { BenefitOption, BenefitRef } from '../../api/bookings';
 import { formatDateOnly } from '../../utils/date';
@@ -11,18 +13,24 @@ import { formatDateOnly } from '../../utils/date';
 // there. Ones that do not cover it are greyed, with why.
 // ============================================================
 
-const windowWord = (f: string | null) => (f === 'daily' ? 'today' : f === 'weekly' ? 'this week' : 'this month');
-const unitWord = (o: BenefitOption, n: number) => (o.unit === 'minutes' ? 'minutes' : o.unit === 'sessions' ? (n === 1 ? 'session' : 'sessions') : o.unit === 'items' ? (n === 1 ? 'item' : 'items') : (n === 1 ? 'use' : 'uses'));
+const windowWord = (f: string | null) => i18n.t(f === 'daily' ? 'booking:benefit.window.daily' : f === 'weekly' ? 'booking:benefit.window.weekly' : 'booking:benefit.window.monthly');
+const unitWord = (o: BenefitOption, n: number) => i18n.t(o.unit === 'minutes' ? 'booking:benefit.unit.minutes' : o.unit === 'sessions' ? 'booking:benefit.unit.sessions' : o.unit === 'items' ? 'booking:benefit.unit.items' : 'booking:benefit.unit.uses', { count: n });
 const nextDay = (d: string) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
 
 /** "1 of 2 left this month, renews 5 Dec" or "3 of 5 sessions left, expires 31 Dec". */
 export function describeBenefit(o: BenefitOption): string {
-  if (o.allowance === null) return 'Without limit';
+  if (o.allowance === null) return i18n.t('booking:benefit.unlimited');
   const left = Math.max(o.left ?? 0, 0);
+  const unit = unitWord(o, o.allowance);
   if (o.kind === 'membership') {
-    return `${left} of ${o.allowance} ${unitWord(o, o.allowance)} left ${windowWord(o.frequency)}${o.window_end ? `, renews ${formatDateOnly(nextDay(o.window_end))}` : ''}`;
+    const period = windowWord(o.frequency);
+    return o.window_end
+      ? i18n.t('booking:benefit.membershipLeftRenews', { left, allowance: o.allowance, unit, window: period, date: formatDateOnly(nextDay(o.window_end)) })
+      : i18n.t('booking:benefit.membershipLeft', { left, allowance: o.allowance, unit, window: period });
   }
-  return `${left} of ${o.allowance} ${unitWord(o, o.allowance)} left${o.expires_at ? `, expires ${formatDateOnly(o.expires_at.slice(0, 10))}` : ''}`;
+  return o.expires_at
+    ? i18n.t('booking:benefit.packageLeftExpires', { left, allowance: o.allowance, unit, date: formatDateOnly(o.expires_at.slice(0, 10)) })
+    : i18n.t('booking:benefit.packageLeft', { left, allowance: o.allowance, unit });
 }
 
 const keyOf = (r: BenefitRef) => `${r.kind}:${r.source_id}:${r.item_id}`;
@@ -37,6 +45,7 @@ export function BenefitChooser({ businessId, customerId, serviceId, variantId, s
   onChange: (ref: BenefitRef | null) => void;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation('booking');
   const [options, setOptions] = useState<BenefitOption[] | null>(null);
   const [failed, setFailed] = useState(false);
   // The default follows the choices (service, option, day, time, people) until staff pick one
@@ -48,7 +57,7 @@ export function BenefitChooser({ businessId, customerId, serviceId, variantId, s
   useEffect(() => {
     let off = false;
     setFailed(false);
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       bookingsApi.getBookingBenefits(businessId, { customerId, serviceId, variantId, startTime, date, participants, bookingId })
         .then((r) => {
           if (off) return;
@@ -69,26 +78,26 @@ export function BenefitChooser({ businessId, customerId, serviceId, variantId, s
         })
         .catch(() => { if (!off) { setOptions(null); setFailed(true); } });
     }, 250);
-    return () => { off = true; window.clearTimeout(t); };
+    return () => { off = true; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId, customerId, serviceId, variantId, startTime, date, participants, bookingId]);
 
-  if (failed) return <p className="mk-warn">The memberships and packages could not be loaded.</p>;
+  if (failed) return <p className="mk-warn">{t('benefit.loadFailed')}</p>;
   if (!options || options.length === 0) return null;
   const name = `benefit-${serviceId}`;
   return (
-    <div className="pay-uses" role="radiogroup" aria-label="Pay with membership or package">
-      <span className="q-lab">Pay with membership or package</span>
+    <div className="pay-uses" role="radiogroup" aria-label={t('benefit.groupLabel')}>
+      <span className="q-lab">{t('benefit.groupLabel')}</span>
       {options.map((o) => (
         <label key={keyOf(o)} className="pay-use" style={o.covers ? undefined : { opacity: 0.55 }}>
           <input type="radio" name={name} disabled={disabled || !o.covers} checked={!!value && bookingsApi.sameRef(o, value)}
             onChange={() => choose({ kind: o.kind, source_id: o.source_id, item_id: o.item_id })} />
-          <span><b>{o.name}</b> <small>{o.kind === 'membership' ? 'Membership' : 'Package'} · {o.covers ? describeBenefit(o) : o.reason}</small></span>
+          <span><b>{o.name}</b> <small>{t('benefit.kindDetail', { kind: o.kind === 'membership' ? t('benefit.membership') : t('benefit.package'), detail: o.covers ? describeBenefit(o) : o.reason })}</small></span>
         </label>
       ))}
       <label className="pay-use">
         <input type="radio" name={name} disabled={disabled} checked={value === null} onChange={() => choose(null)} />
-        <span>Pay normally</span>
+        <span>{t('benefit.payNormally')}</span>
       </label>
     </div>
   );

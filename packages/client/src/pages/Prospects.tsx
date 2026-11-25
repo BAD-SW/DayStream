@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { apiClient } from '../api/client';
 import { ProspectsList } from '../components/ProspectsList';
 
@@ -9,6 +10,7 @@ import { ProspectsList } from '../components/ProspectsList';
  * component, pointed at the tenant's own JWT-scoped endpoints.
  */
 export function Prospects() {
+  const { t } = useTranslation('prospects');
   const [territory, setTerritory] = useState<{ location: string } | null>(null);
   const [count, setCount] = useState<number | null>(null);
 
@@ -22,11 +24,13 @@ export function Prospects() {
     <div style={styles.page}>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Prospects</h1>
-          {count != null && <span style={styles.count}>{count} prospect{count !== 1 ? 's' : ''}</span>}
+          <h1 style={styles.title}>{t('page.title')}</h1>
+          {count != null && <span style={styles.count}>{t('page.count', { count })}</span>}
         </div>
         {territory && (
-          <span style={styles.territory}>Location: <strong style={{ color: 'var(--color-text)' }}>{territory.location}</strong></span>
+          <span style={styles.territory}>
+            <Trans t={t} i18nKey="page.location" values={{ location: territory.location }} components={{ strong: <strong style={{ color: 'var(--color-text)' }} /> }} />
+          </span>
         )}
       </div>
 

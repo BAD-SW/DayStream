@@ -22,6 +22,7 @@ import { runPackageImport } from '../services/migration/package-import';
 import { runAppointmentImport } from '../services/migration/appointment-import';
 import { runTransactionImport } from '../services/migration/transaction-import';
 import { runNotesImport } from '../services/migration/notes-import';
+import { msg } from '../i18n';
 
 /**
  * Data migration import routes (spec 50, Waves 1-3). One shape across entity kinds:
@@ -138,7 +139,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
 
 function parseKind(raw: string, res: Response): ImportKind | null {
   if ((SUPPORTED_KINDS as string[]).includes(raw)) return raw as ImportKind;
-  error(res, `Unsupported or not-yet-available import kind: ${raw}`, 'VALIDATION_ERROR', 400);
+  error(res, msg('errors:import.unsupportedOrNotYetAvailableImport', { raw }), 'VALIDATION_ERROR', 400);
   return null;
 }
 
@@ -294,21 +295,21 @@ function readMappingFromBody(req: Request): { mapping: Record<number, string> | 
 importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.single('file'), async (req: Request, res: Response) => {
   try {
     const kind = parseKind(req.params.kind, res); if (!kind) return;
-    if (!req.file) { error(res, 'A file is required', 'VALIDATION_ERROR', 400); return; }
+    if (!req.file) { error(res, msg('errors:import.aFileIsRequired'), 'VALIDATION_ERROR', 400); return; }
     const { grid } = parseFileToGrid(req.file.buffer, req.file.originalname);
-    if (grid.length === 0) { error(res, 'The file is empty', 'VALIDATION_ERROR', 400); return; }
+    if (grid.length === 0) { error(res, msg('errors:import.theFileIsEmpty'), 'VALIDATION_ERROR', 400); return; }
     // The source system chosen before upload (Requirement 19): its known layout overrides guessing.
     const source = (req.body?.source || 'auto').toString();
-    if (!isValidSource(source, kind)) { error(res, `Unknown source system "${source}" for this import`, 'VALIDATION_ERROR', 400); return; }
+    if (!isValidSource(source, kind)) { error(res, msg('errors:import.unknownSourceSystemForThisImport', { source }), 'VALIDATION_ERROR', 400); return; }
     // Row 1 is a header when it reads as labels over the data below. The owner can say "it's data"
     // (has_header=false) when that guess is wrong; the file is then re-analyzed with row 1 as data.
     const detected = detectHeaderRow(grid, fieldsForKind(kind));
     const header = req.body?.has_header === 'false' ? { ...detected, hasHeader: false } : detected;
     // Values this business already holds, so columns can be recognised by matching them.
     const businessId = (req.query.business_id || req.body?.business_id || '').toString();
-    if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:import.businessIdIsRequired'), 'VALIDATION_ERROR', 400); return; }
     // A multipart body is parsed after tenantContext, so its business_id was never checked there.
-    if (!(await canReachBusiness(req, businessId))) { error(res, 'You do not have access to this business', 'BUSINESS_FORBIDDEN', 403); return; }
+    if (!(await canReachBusiness(req, businessId))) { error(res, msg('errors:import.youDoNotHaveAccessTo'), 'BUSINESS_FORBIDDEN', 403); return; }
     const references = await loadReferenceValues(kind, businessId);
     // The owner picks only the system; which of its file layouts this is gets recognised here.
     const { proposals, layout: sourceLayout } = applySourcePreset(
@@ -350,7 +351,7 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
     });
   } catch (e: any) {
     console.error('Import analyze failed', e?.message || e);
-    error(res, 'Failed to analyze the file', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:import.failedToAnalyzeTheFile'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -373,7 +374,7 @@ async function dispatch(
     case 'account_balances': return runAccountBalanceImport(args);
     case 'transactions': return runTransactionImport(args);
     case 'notes': return runNotesImport(args);
-    default: throw new Error(`No handler for kind ${kind}`);
+    default: throw new Error(msg('errors:import.noHandlerForKind', { kind }));
   }
 }
 
@@ -382,10 +383,10 @@ async function runEndpoint(req: Request, res: Response, commit: boolean): Promis
   const authReq = req as AuthenticatedRequest;
   const kind = parseKind(req.params.kind, res); if (!kind) return;
   const businessId = (req.body?.business_id || '').toString();
-  if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+  if (!businessId) { error(res, msg('errors:import.businessIdIsRequired'), 'VALIDATION_ERROR', 400); return; }
   // A multipart body is parsed after tenantContext, so its business_id was never checked there.
-  if (!(await canReachBusiness(req, businessId))) { error(res, 'You do not have access to this business', 'BUSINESS_FORBIDDEN', 403); return; }
-  if (!req.file) { error(res, 'A file is required', 'VALIDATION_ERROR', 400); return; }
+  if (!(await canReachBusiness(req, businessId))) { error(res, msg('errors:import.youDoNotHaveAccessTo'), 'BUSINESS_FORBIDDEN', 403); return; }
+  if (!req.file) { error(res, msg('errors:import.aFileIsRequired'), 'VALIDATION_ERROR', 400); return; }
 
   const { mapping, hasHeader } = readMappingFromBody(req);
   const { rows, repair } = buildRows(req.file.buffer, req.file.originalname, fieldsForKind(kind), mapping, hasHeader);
@@ -412,12 +413,12 @@ async function runEndpoint(req: Request, res: Response, commit: boolean): Promis
 
 importRouter.post('/:kind/trial', requirePermission('settings:*'), upload.single('file'), async (req, res) => {
   try { await runEndpoint(req, res, false); }
-  catch (e: any) { console.error('Import trial failed', e?.message || e); error(res, 'Failed to run the trial', 'INTERNAL_ERROR', 500); }
+  catch (e: any) { console.error('Import trial failed', e?.message || e); error(res, msg('errors:import.failedToRunTheTrial'), 'INTERNAL_ERROR', 500); }
 });
 
 importRouter.post('/:kind/commit', requirePermission('settings:*'), upload.single('file'), async (req, res) => {
   try { await runEndpoint(req, res, true); }
-  catch (e: any) { console.error('Import commit failed', e?.message || e); error(res, 'Failed to run the import', 'INTERNAL_ERROR', 500); }
+  catch (e: any) { console.error('Import commit failed', e?.message || e); error(res, msg('errors:import.failedToRunTheImport'), 'INTERNAL_ERROR', 500); }
 });
 
 /**
@@ -433,12 +434,12 @@ async function runRowsEndpoint(req: Request, res: Response, commit: boolean): Pr
   const authReq = req as AuthenticatedRequest;
   const kind = parseKind(req.params.kind, res); if (!kind) return;
   const businessId = (req.body?.business_id || '').toString();
-  if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+  if (!businessId) { error(res, msg('errors:import.businessIdIsRequired'), 'VALIDATION_ERROR', 400); return; }
 
   const rawRows = req.body?.rows;
   const rawMapping = req.body?.mapping;
-  if (!Array.isArray(rawRows)) { error(res, 'rows[] is required', 'VALIDATION_ERROR', 400); return; }
-  if (!rawMapping || typeof rawMapping !== 'object') { error(res, 'mapping is required', 'VALIDATION_ERROR', 400); return; }
+  if (!Array.isArray(rawRows)) { error(res, msg('errors:import.rowsIsRequired'), 'VALIDATION_ERROR', 400); return; }
+  if (!rawMapping || typeof rawMapping !== 'object') { error(res, msg('errors:import.mappingIsRequired'), 'VALIDATION_ERROR', 400); return; }
 
   // Map each aligned cell-array to a field-keyed object using the confirmed mapping.
   const mapping: Record<number, string> = {};
@@ -468,7 +469,7 @@ importRouter.post('/:kind/record-run', requirePermission('settings:*'), async (r
     const authReq = req as AuthenticatedRequest;
     const kind = parseKind(req.params.kind, res); if (!kind) return;
     const businessId = (req.body?.business_id || '').toString();
-    if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:import.businessIdIsRequired'), 'VALIDATION_ERROR', 400); return; }
     const n = (v: unknown) => Math.max(0, Math.floor(Number(v) || 0));
     const result = { runId: null, total: n(req.body?.total), imported: n(req.body?.imported), matched: n(req.body?.matched), failed: n(req.body?.failed), failures: [], warnings: [] };
     const recorded = await recordRun({
@@ -476,17 +477,17 @@ importRouter.post('/:kind/record-run', requirePermission('settings:*'), async (r
       fileName: (req.body?.file_name || null), isTrial: false, performedBy: authReq.user.sub, result,
     });
     success(res, recorded);
-  } catch (e: any) { console.error('Import record-run failed', e?.message || e); error(res, 'Failed to record the import', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Import record-run failed', e?.message || e); error(res, msg('errors:import.failedToRecordTheImport'), 'INTERNAL_ERROR', 500); }
 });
 
 importRouter.post('/:kind/trial-rows', requirePermission('settings:*'), async (req, res) => {
   try { await runRowsEndpoint(req, res, false); }
-  catch (e: any) { console.error('Import trial-rows failed', e?.message || e); error(res, 'Failed to run the trial', 'INTERNAL_ERROR', 500); }
+  catch (e: any) { console.error('Import trial-rows failed', e?.message || e); error(res, msg('errors:import.failedToRunTheTrial'), 'INTERNAL_ERROR', 500); }
 });
 
 importRouter.post('/:kind/commit-rows', requirePermission('settings:*'), async (req, res) => {
   try { await runRowsEndpoint(req, res, true); }
-  catch (e: any) { console.error('Import commit-rows failed', e?.message || e); error(res, 'Failed to run the import', 'INTERNAL_ERROR', 500); }
+  catch (e: any) { console.error('Import commit-rows failed', e?.message || e); error(res, msg('errors:import.failedToRunTheImport'), 'INTERNAL_ERROR', 500); }
 });
 
 /**
@@ -505,13 +506,13 @@ importRouter.post('/:kind/realign-row', requirePermission('settings:*'), (req: R
     const index = Number(req.body?.index);
     // 'check' = the user hand-edited a cell: nothing moves, the row is just re-checked.
     if (req.body?.direction === 'check') {
-      if (profiles.length === 0) { error(res, 'cells and profiles are required', 'VALIDATION_ERROR', 400); return; }
+      if (profiles.length === 0) { error(res, msg('errors:import.cellsAndProfilesAreRequired'), 'VALIDATION_ERROR', 400); return; }
       success(res, rowFits(cells, profiles));
       return;
     }
     const direction = req.body?.direction === 'left' ? 'left' : 'right';
     if (profiles.length === 0 || !Number.isInteger(index) || index < 0) {
-      error(res, 'cells, profiles and a valid index are required', 'VALIDATION_ERROR', 400); return;
+      error(res, msg('errors:import.cellsProfilesAndAValidIndex'), 'VALIDATION_ERROR', 400); return;
     }
     // Right shift: re-fit from the shifted column, forcing its value to move right (leading gap).
     // Left shift: the value moves into the empty slot to its left, so re-fit from index-1.
@@ -521,7 +522,7 @@ importRouter.post('/:kind/realign-row', requirePermission('settings:*'), (req: R
     success(res, result);
   } catch (e: any) {
     console.error('Import realign-row failed', e?.message || e);
-    error(res, 'Failed to realign the row', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:import.failedToRealignTheRow'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -529,17 +530,17 @@ importRouter.post('/:kind/realign-row', requirePermission('settings:*'), (req: R
 importRouter.get('/runs', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = (req.query.business_id as string) || '';
-    if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:import.businessIdIsRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await listRuns(businessId));
-  } catch (e: any) { console.error('List import runs failed', e?.message || e); error(res, 'Failed to list runs', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('List import runs failed', e?.message || e); error(res, msg('errors:import.failedToListRuns'), 'INTERNAL_ERROR', 500); }
 });
 
 importRouter.get('/runs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = (req.query.business_id as string) || '';
-    if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:import.businessIdIsRequired'), 'VALIDATION_ERROR', 400); return; }
     const run = await getRun(req.params.id, businessId);
-    if (!run) { error(res, 'Run not found', 'NOT_FOUND', 404); return; }
+    if (!run) { error(res, msg('errors:import.runNotFound'), 'NOT_FOUND', 404); return; }
     success(res, run);
-  } catch (e: any) { console.error('Get import run failed', e?.message || e); error(res, 'Failed to read run', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Get import run failed', e?.message || e); error(res, msg('errors:import.failedToReadRun'), 'INTERNAL_ERROR', 500); }
 });

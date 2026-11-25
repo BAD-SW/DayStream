@@ -1,6 +1,7 @@
 import * as h3 from 'h3-js';
 import { logger } from '../middleware/logger';
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 // ============================================================
 // Outbound-call reliability for Google Places.
@@ -28,7 +29,7 @@ async function timedFetchJson(url: string, timeoutMs = GOOGLE_FETCH_TIMEOUT_MS):
   try {
     const response = await fetch(url, { signal: ctrl.signal });
     if (!response.ok) {
-      const e: any = new Error(`HTTP ${response.status}`);
+      const e: any = new Error(msg('errors:googlePlaces.http', { status: response.status }));
       e.httpStatus = response.status;
       throw e;
     }
@@ -83,7 +84,7 @@ async function nominatimFetch(url: URL, attempt = 0): Promise<any> {
     }
     throw new GeoLookupUnavailableError();
   }
-  if (!res.ok) throw new GeoLookupUnavailableError(`Boundary lookup failed (${res.status}).`);
+  if (!res.ok) throw new GeoLookupUnavailableError(msg('errors:googlePlaces.boundaryLookupFailed', { status: res.status }));
   return res.json();
 }
 
@@ -114,7 +115,7 @@ async function getApiKey(): Promise<string> {
   const keys = rows[0]?.config_data;
   if (keys?.google_places) return keys.google_places;
   if (process.env.GOOGLE_PLACES_API_KEY) return process.env.GOOGLE_PLACES_API_KEY;
-  throw new Error('GOOGLE_PLACES_API_KEY not configured. Set it under Configuration \u2192 API Keys.');
+  throw new Error(msg('errors:googlePlaces.googlePlacesApiKeyNotConfigured'));
 }
 
 interface PlaceResult {
@@ -531,7 +532,7 @@ export async function searchByText(location: string, type: string): Promise<Plac
     if (data.status === 'ZERO_RESULTS') break;
     if (data.status !== 'OK') {
       logger.error(`[GooglePlaces] API error: ${data.status} - ${data.error_message || ''}`);
-      throw new Error(`Google Places API error: ${data.status}`);
+      throw new Error(msg('errors:googlePlaces.googlePlacesApiError', { status: data.status }));
     }
 
     for (const place of (data.results || [])) {

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import type { Request, Response, NextFunction } from 'express';
 import type { PoolClient } from 'pg';
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * An appointment's history (spec 51, gap 18; design 18): its creation, each status change, each
@@ -375,7 +376,7 @@ export async function archiveBookingHistory(opts: { months?: number; batch?: num
       await storage.save(path, body);
       // Removed from the table only once the file is there and complete.
       const back = await storage.read(path);
-      if (!back || !back.equals(body)) throw new Error('the archive file did not read back the same');
+      if (!back || !back.equals(body)) throw new Error(msg('errors:bookingHistory.theArchiveFileDidNotRead'));
       const client = await adminPool.connect();
       try {
         await client.query('BEGIN');

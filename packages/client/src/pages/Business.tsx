@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { formatNumber } from '../utils/format';
 import { Staff } from './Staff';
 import { Resources } from './Resources';
 import { Locations } from './Locations';
@@ -33,6 +35,7 @@ export function Business() {
 }
 
 function BusinessPage() {
+  const { t } = useTranslation('setup');
   const [searchParams] = useSearchParams();
   const migrationBusinessId = useContextManager().activeContext.businessId || '';
   const tabParam = searchParams.get('tab') as Tab | null;
@@ -40,17 +43,17 @@ function BusinessPage() {
   const { dirtySections } = useDraftSections();
   // An open template with changes (Templates keep their own Save): leaving asks first too.
   const [templateDirty, setTemplateDirty] = useState(false);
-  const labels: Record<Tab, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes', templates: 'Templates', migration: 'Data Migration' };
+  const labels: Record<Tab, string> = { staff: t('business.tabStaff'), resources: t('business.tabResources'), locations: t('business.tabLocations'), categories: t('business.tabCategories'), taxes: t('business.tabTaxes'), templates: t('business.tabTemplates'), migration: t('business.tabMigration') };
 
   return (
     <div style={activeTab === 'templates' ? { ...styles.page, maxWidth: '1440px' } : styles.page}>
       <LeaveGuard when={dirtySections.length > 0 || templateDirty} />
       <StickyPageTop>
         <div style={styles.header}>
-          <h1 style={styles.title}>Business Setup</h1>
+          <h1 style={styles.title}>{t('business.title')}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}><SaveChanges /></div>
         </div>
-        <TabBar aria-label="Business Setup sections" active={activeTab} onChange={setActiveTab}
+        <TabBar aria-label={t('business.sections')} active={activeTab} onChange={setActiveTab}
           tabs={VALID_TABS.map((key) => ({ key, label: labels[key], changed: key === 'templates' ? templateDirty : dirtySections.some((s) => s.tab === key),
             // Templates and Data Migration keep their own buttons, set apart (decision 9, as Processes and Appearance in Settings).
             separatorBefore: key === 'templates' }))} />
@@ -75,12 +78,13 @@ const tableRows = (rows: DraftRow<any>[]): TableRow[] => rows.map((r) => ({ ...r
 
 /** Name cell of a row kept as a draft: its labels, crossed out when it goes on save. */
 function DraftName<T>({ row, edited, children }: { row: DraftRow<T>; edited?: boolean; children: React.ReactNode }) {
+  const { t } = useTranslation('setup');
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', opacity: row.deleted ? 0.6 : 1 }}>
       <span style={{ textDecoration: row.deleted ? 'line-through' : 'none', display: 'inline-flex', gap: '8px', alignItems: 'center' }}>{children}</span>
-      {row.isNew && <RowTag>New</RowTag>}
-      {edited && <RowTag>Changed</RowTag>}
-      {row.deleted && <RowTag>Deleted when you save</RowTag>}
+      {row.isNew && <RowTag>{t('locationDetail.rowNew')}</RowTag>}
+      {edited && <RowTag>{t('locationDetail.rowChanged')}</RowTag>}
+      {row.deleted && <RowTag>{t('locationDetail.rowDeleted')}</RowTag>}
     </div>
   );
 }
@@ -103,10 +107,11 @@ function CategoriesTab() {
 // --- Product Categories (saved with the page's Save changes) ---
 
 function ProductCategoriesSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('setup');
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState('');
-  const list = useDraftList<any>('product-categories', 'Product & service categories', {
+  const list = useDraftList<any>('product-categories', t('business.draftProductCategories'), {
     create: (c) => servicesApi.createCategory({ business_id: businessId, name: c.name }),
     remove: (c) => servicesApi.deleteCategory(c.id, businessId).then(() => undefined),
   });
@@ -124,14 +129,14 @@ function ProductCategoriesSection({ businessId }: { businessId: string }) {
   };
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true, filterValue: (t: any) => t.name,
+    { key: 'name', header: t('locations.name'), sortable: true, filterValue: (t: any) => t.name,
       render: (_: any, { __row: r }: TableRow) => <DraftName row={r}>{r.item.name}</DraftName> },
     {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, { __row: r }: TableRow) => (
         <div style={{ textAlign: 'right' }}>
-          {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>Undo</Button>
-            : <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>}
+          {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>{t('locationDetail.undo')}</Button>
+            : <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title={t('common:delete')}>🗑️</button>}
         </div>
       ),
     },
@@ -140,19 +145,19 @@ function ProductCategoriesSection({ businessId }: { businessId: string }) {
   return (
     <div style={draftBox(list.dirty)}>
       <div style={catStyles.toolbar}>
-        <h3 style={catStyles.sectionTitle}>Product & Service Categories<UnsavedTag dirty={list.dirty} /></h3>
+        <h3 style={catStyles.sectionTitle}>{t('business.productCategories')}<UnsavedTag dirty={list.dirty} /></h3>
         <div style={{ flex: 1 }} />
         {showAdd ? (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input style={catStyles.input} value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Category name" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
-            <Button size="sm" onClick={handleAdd}>Add</Button>
-            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddName(''); }}>Cancel</Button>
+            <input style={catStyles.input} value={addName} onChange={(e) => setAddName(e.target.value)} placeholder={t('business.categoryName')} autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
+            <Button size="sm" onClick={handleAdd}>{t('locationDetail.add')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddName(''); }}>{t('common:cancel')}</Button>
           </div>
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
+          <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>{t('business.addCategory')}</Button>
         )}
       </div>
-      <Table columns={columns} data={tableRows(list.rows)} rowId={(r) => r.__row.key} loading={loading} emptyMessage="No product/service categories defined" clientSort />
+      <Table columns={columns} data={tableRows(list.rows)} rowId={(r) => r.__row.key} loading={loading} emptyMessage={t('business.noProductCategories')} clientSort />
     </div>
   );
 }
@@ -160,10 +165,11 @@ function ProductCategoriesSection({ businessId }: { businessId: string }) {
 // --- Note Categories (saved with the page's Save changes) ---
 
 function NoteCategoriesSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('setup');
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: '', is_sensitive: false, customer_visible: false });
-  const list = useDraftList<any>('note-categories', 'Customer note categories', {
+  const list = useDraftList<any>('note-categories', t('business.draftNoteCategories'), {
     create: (c) => apiClient.post(`/v1/customers/note-categories?business_id=${businessId}`, { name: c.name, is_sensitive: c.is_sensitive, customer_visible: c.customer_visible }).then((res) => res.data.data),
     remove: (c) => apiClient.delete(`/v1/customers/note-categories/${c.id}?business_id=${businessId}`).then(() => undefined),
   });
@@ -185,12 +191,12 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
 
   const columns = [
     {
-      key: 'name', header: 'Name', sortable: true, filterValue: (t: any) => t.name,
+      key: 'name', header: t('locations.name'), sortable: true, filterValue: (t: any) => t.name,
       render: (_: any, { __row: r }: TableRow) => (
         <DraftName row={r}>
           <span>{r.item.name}</span>
-          {r.item.is_sensitive && <Badge variant="error">Sensitive</Badge>}
-          {r.item.customer_visible && <Badge variant="info">Customer Visible</Badge>}
+          {r.item.is_sensitive && <Badge variant="error">{t('business.sensitive')}</Badge>}
+          {r.item.customer_visible && <Badge variant="info">{t('business.customerVisible')}</Badge>}
         </DraftName>
       ),
     },
@@ -198,8 +204,8 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, { __row: r }: TableRow) => (
         <div style={{ textAlign: 'right' }}>
-          {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>Undo</Button>
-            : <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>}
+          {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>{t('locationDetail.undo')}</Button>
+            : <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title={t('common:delete')}>🗑️</button>}
         </div>
       ),
     },
@@ -208,25 +214,25 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
   return (
     <div style={draftBox(list.dirty)}>
       <div style={catStyles.toolbar}>
-        <h3 style={catStyles.sectionTitle}>Customer Note Categories<UnsavedTag dirty={list.dirty} /></h3>
+        <h3 style={catStyles.sectionTitle}>{t('business.noteCategories')}<UnsavedTag dirty={list.dirty} /></h3>
         <div style={{ flex: 1 }} />
         {showAdd ? (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <input style={catStyles.input} value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Category name" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
+            <input style={catStyles.input} value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder={t('business.categoryName')} autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
             <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={addForm.is_sensitive} onChange={(e) => setAddForm({ ...addForm, is_sensitive: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Sensitive
+              <input type="checkbox" checked={addForm.is_sensitive} onChange={(e) => setAddForm({ ...addForm, is_sensitive: e.target.checked })} style={{ width: '14px', height: '14px' }} /> {t('business.sensitive')}
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={addForm.customer_visible} onChange={(e) => setAddForm({ ...addForm, customer_visible: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Customer Visible
+              <input type="checkbox" checked={addForm.customer_visible} onChange={(e) => setAddForm({ ...addForm, customer_visible: e.target.checked })} style={{ width: '14px', height: '14px' }} /> {t('business.customerVisible')}
             </label>
-            <Button size="sm" onClick={handleAdd}>Add</Button>
-            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddForm({ name: '', is_sensitive: false, customer_visible: false }); }}>Cancel</Button>
+            <Button size="sm" onClick={handleAdd}>{t('locationDetail.add')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddForm({ name: '', is_sensitive: false, customer_visible: false }); }}>{t('common:cancel')}</Button>
           </div>
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
+          <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>{t('business.addCategory')}</Button>
         )}
       </div>
-      <Table columns={columns} data={tableRows(list.rows)} rowId={(r) => r.__row.key} loading={loading} emptyMessage="No note categories defined" clientSort />
+      <Table columns={columns} data={tableRows(list.rows)} rowId={(r) => r.__row.key} loading={loading} emptyMessage={t('business.noNoteCategories')} clientSort />
     </div>
   );
 }
@@ -236,12 +242,15 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
 const taxData = (t: any) => ({ name: t.name, rate: t.rate, is_default: !!t.is_default });
 
 function TaxesTab() {
+  const { t } = useTranslation('setup');
+  /** A tax rate in hundredths of a percent (2100 = 21%) as a percentage in the format of the language shown. */
+  const pct = (rate: number) => formatNumber(rate / 10000, { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const businessId = localStorage.getItem('business_id') || '';
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', rate: '', is_default: false });
-  const list = useDraftList<any>('tax-rates', 'Tax rates', {
+  const list = useDraftList<any>('tax-rates', t('business.draftTaxRates'), {
     create: (t) => servicesApi.createTaxCategory(businessId, taxData(t)),
     update: (t) => servicesApi.updateTaxCategory(t.id, businessId, taxData(t)),
     remove: (t) => servicesApi.deleteTaxCategory(t.id, businessId).then(() => undefined),
@@ -272,59 +281,59 @@ function TaxesTab() {
     setShowAdd(false);
   };
 
-  if (loading) return <div style={{ padding: 'var(--space-lg)', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading...</div>;
+  if (loading) return <div style={{ padding: 'var(--space-lg)', textAlign: 'center', color: 'var(--color-text-secondary)' }}>{t('common:loading')}</div>;
 
   return (
     <div style={draftBox(list.dirty)}>
       <div style={catStyles.toolbar}>
-        <h3 style={catStyles.sectionTitle}>Tax Rates<UnsavedTag dirty={list.dirty} /></h3>
+        <h3 style={catStyles.sectionTitle}>{t('business.taxRates')}<UnsavedTag dirty={list.dirty} /></h3>
         <div style={{ flex: 1 }} />
-        <Button size="sm" variant="secondary" onClick={openAdd}>Add Tax Rate</Button>
+        <Button size="sm" variant="secondary" onClick={openAdd}>{t('business.addTaxRate')}</Button>
       </div>
 
       {showAdd && (
         <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px auto', gap: 'var(--space-md)', alignItems: 'end' }}>
             <div>
-              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Name</label>
-              <input style={catStyles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. IVA Standard" />
+              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>{t('locations.name')}</label>
+              <input style={catStyles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('business.taxNamePlaceholder')} />
             </div>
             <div>
-              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Rate (%)</label>
+              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>{t('business.rateLabel')}</label>
               <input type="number" step="0.01" min="0" max="100" style={catStyles.input} value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} placeholder="21" />
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer', paddingBottom: '4px' }}>
-              <input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Default
+              <input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} style={{ width: '14px', height: '14px' }} /> {t('business.default')}
             </label>
           </div>
-          <p style={{ margin: 'var(--space-sm) 0 0', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Saved with the page's Save changes.</p>
+          <p style={{ margin: 'var(--space-sm) 0 0', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{t('locationDetail.savedWithPage')}</p>
           <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
-            <Button size="sm" onClick={handleDone}>{editingKey ? 'Done' : 'Add'}</Button>
-            <Button size="sm" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleDone}>{editingKey ? t('locationDetail.done') : t('locationDetail.add')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowAdd(false)}>{t('common:cancel')}</Button>
           </div>
         </div>
       )}
 
       {list.rows.length === 0 && !showAdd && (
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>No tax rates defined. Add tax rates that can be assigned to services and products.</p>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>{t('business.noTaxRatesHelp')}</p>
       )}
 
       {list.rows.length > 0 && (
         <Table
           columns={[
-            { key: 'name', header: 'Name', sortable: true, filterValue: (t: any) => t.name,
+            { key: 'name', header: t('locations.name'), sortable: true, filterValue: (t: any) => t.name,
               render: (_: any, { __row: r }: TableRow) => <DraftName row={r} edited={!r.isNew && !r.deleted && list.changed(r, taxData)}>{r.item.name}</DraftName> },
-            { key: 'rate', header: 'Rate', sortable: true, filter: 'number' as const, filterUnit: '%', filterScale: 100, filterValue: (t: any) => t.rate, filterLabel: (v: string) => `${(Number(v) / 100).toFixed(2)}%`,
-              render: (_: any, { __row: r }: TableRow) => <span style={fieldMark(!r.isNew && list.changed(r, (t) => t.rate))}>{(r.item.rate / 100).toFixed(2)}%</span> },
-            { key: 'is_default', header: 'Default', filterValue: (t: any) => (t.is_default ? 'Default' : ''),
-              render: (_: any, { __row: r }: TableRow) => r.item.is_default ? <Badge variant="info">Default</Badge> : null },
+            { key: 'rate', header: t('business.rate'), sortable: true, filter: 'number' as const, filterUnit: '%', filterScale: 100, filterValue: (t: any) => t.rate, filterLabel: (v: string) => pct(Number(v)),
+              render: (_: any, { __row: r }: TableRow) => <span style={fieldMark(!r.isNew && list.changed(r, (t) => t.rate))}>{pct(r.item.rate)}</span> },
+            { key: 'is_default', header: t('business.default'), filterValue: (x: any) => (x.is_default ? t('business.default') : ''),
+              render: (_: any, { __row: r }: TableRow) => r.item.is_default ? <Badge variant="info">{t('business.default')}</Badge> : null },
             {
               key: 'actions', header: '', filter: false as const,
               render: (_: any, { __row: r }: TableRow) => (
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>Undo</Button> : <>
-                    <button onClick={(e) => { e.stopPropagation(); openEdit(r.key, r.item); }} style={catStyles.deleteBtn} title="Edit">✏️</button>
-                    <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+                  {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>{t('locationDetail.undo')}</Button> : <>
+                    <button onClick={(e) => { e.stopPropagation(); openEdit(r.key, r.item); }} style={catStyles.deleteBtn} title={t('common:edit')}>✏️</button>
+                    <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title={t('common:delete')}>🗑️</button>
                   </>}
                 </div>
               ),
@@ -333,7 +342,7 @@ function TaxesTab() {
           data={tableRows(list.rows)}
           rowId={(r) => r.__row.key}
           loading={false}
-          emptyMessage="No tax rates defined"
+          emptyMessage={t('business.noTaxRates')}
           clientSort
         />
       )}

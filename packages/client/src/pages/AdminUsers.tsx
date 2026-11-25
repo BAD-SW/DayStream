@@ -1,3 +1,4 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
@@ -198,12 +199,12 @@ export function AdminUsers() {
 
   // Deactivate user
   async function handleDeactivate(user: AdminUser) {
-    if (!confirm(`Deactivate ${user.first_name} ${user.last_name}?`)) return;
+    if (!(await askConfirm({ message: `Deactivate ${user.first_name} ${user.last_name}?`, confirmLabel: 'Deactivate', destructive: true }))) return;
     try {
       await apiClient.delete(`/v1/admin/users/${user.id}`);
       fetchUsers();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to deactivate user');
+      void showMessage({ message: err.response?.data?.error || 'Failed to deactivate user', tone: 'error' });
     }
   }
 

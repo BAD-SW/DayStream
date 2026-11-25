@@ -4,6 +4,7 @@ import { queueNotification } from './booking-notifications.service';
 import { getInvoice } from './invoice.service';
 import { resolvePdfBranding, renderTemplateDocumentPdf } from './document-pdf';
 import { resolveDocumentFields, ResolvedDocumentFields } from './document-branding-resolver.service';
+import { msg } from '../i18n';
 
 /**
  * Manual (re)send of the customer-facing document that corresponds to a payment
@@ -70,9 +71,9 @@ export async function emailTransactionDocument(
     [transactionId, businessId],
   );
   const t = rows[0];
-  if (!t) throw new DocumentSendError('Transaction not found for this business', 'NOT_FOUND');
+  if (!t) throw new DocumentSendError(msg('errors:documentSend.transactionNotFoundForThisBusiness'), 'NOT_FOUND');
   if (!t.customer_email) {
-    throw new DocumentSendError('Customer has no email address on file', 'NO_RECIPIENT');
+    throw new DocumentSendError(msg('errors:documentSend.customerHasNoEmailAddressOn'), 'NO_RECIPIENT');
   }
 
   const document = documentForTransaction(t);
@@ -83,7 +84,7 @@ export async function emailTransactionDocument(
   if (t.credit_note_id) {
     const { getCreditNote } = await import('./credit-note.service');
     const cn = await getCreditNote(t.credit_note_id, businessId);
-    if (!cn) throw new DocumentSendError('Linked credit note not found', 'NOT_FOUND');
+    if (!cn) throw new DocumentSendError(msg('errors:documentSend.linkedCreditNoteNotFound'), 'NOT_FOUND');
     await queueNotification({
       businessId,
       type: 'invoice.issued',
@@ -107,7 +108,7 @@ export async function emailTransactionDocument(
   if (t.debit_note_id) {
     const { getDebitNote } = await import('./debit-note.service');
     const dn = await getDebitNote(t.debit_note_id, businessId);
-    if (!dn) throw new DocumentSendError('Linked debit note not found', 'NOT_FOUND');
+    if (!dn) throw new DocumentSendError(msg('errors:documentSend.linkedDebitNoteNotFound'), 'NOT_FOUND');
     await queueNotification({
       businessId,
       type: 'invoice.issued',
@@ -130,7 +131,7 @@ export async function emailTransactionDocument(
   // invoice's own queuer so the data bag matches the original issue path exactly.
   if (document === 'invoice.issued') {
     const invoice = await getInvoice(t.invoice_id, businessId);
-    if (!invoice) throw new DocumentSendError('Linked invoice not found', 'NOT_FOUND');
+    if (!invoice) throw new DocumentSendError(msg('errors:documentSend.linkedInvoiceNotFound'), 'NOT_FOUND');
     await queueNotification({
       businessId,
       type: 'invoice.issued',
@@ -224,7 +225,7 @@ export async function renderReceiptPdf(transactionId: string, businessId: string
   // business wants (amount, method, date, reference) comes from {{placeholders}}
   // in their template body — we feed them here. If the template includes the
   // {{details_table}} token, `detailsTable` is drawn where it sits.
-  const branding = await resolvePdfBranding(businessId, 'payment.receipt', {
+  const branding = await resolvePdfBranding(businessId, 'payment.receipt', { customer_id: t.customer_id ?? null,
     reference_number: t.reference_number,
     receipt_number: t.reference_number,
     amount_cents: t.amount,
@@ -331,7 +332,7 @@ export async function transactionForOrder(orderId: string, businessId: string): 
 /** Email the branded receipt for an order's payment (checkout). */
 export async function emailOrderReceipt(orderId: string, businessId: string): Promise<EmailTransactionResult> {
   const txnId = await transactionForOrder(orderId, businessId);
-  if (!txnId) throw new DocumentSendError('No payment found for this order', 'NOT_FOUND');
+  if (!txnId) throw new DocumentSendError(msg('errors:documentSend.noPaymentFoundForThisOrder'), 'NOT_FOUND');
   return emailTransactionDocument(txnId, businessId);
 }
 

@@ -1,0 +1,33 @@
+{
+  "englishOnly": [
+    "components/OvertureTaxonomyPicker.tsx",
+    "components/PlatformBillingActivity.tsx",
+    "components/PlatformBillingScheduleCard.tsx",
+    "components/TenantAuditTrail.tsx",
+    "components/TenantBillingTab.tsx",
+    "components/TenantChargeHistory.tsx",
+    "components/TenantProspectsPanel.tsx",
+    "components/TerritoryPicker.tsx",
+    "components/query-editor/EditorTabs.tsx",
+    "components/query-editor/ExportControls.tsx",
+    "components/query-editor/HistoryPanel.tsx",
+    "components/query-editor/ResultsPanel.tsx",
+    "components/query-editor/SavedQueriesPanel.tsx",
+    "components/query-editor/SchemaPanel.tsx",
+    "pages/AdminConfig.tsx",
+    "pages/AdminDashboard.tsx",
+    "pages/AdminUsers.tsx",
+    "pages/AuditLog.tsx",
+    "pages/CoverageMap.tsx",
+    "pages/FeatureFlags.tsx",
+    "pages/ProspectCategories.tsx",
+    "pages/QueryEditorPage.tsx",
+    "pages/SystemProcesses.tsx",
+    "pages/SystemReports.tsx",
+    "pages/Tenants.tsx",
+    "pages/reports/SystemReportRunner.tsx",
+    "pages/reports/systemReportCatalog.ts",
+    "pages/settings/PaymentProcessorsPanel.tsx"
+  ],
+  "notConvertedYet": []
+}

@@ -8,6 +8,8 @@
  * The catalog therefore doubles as a roadmap of reports still to be built.
  */
 
+import i18n from '../../i18n';
+
 export interface ReportCatalogEntry {
   /** Must match the server report definition id (see services/reports/registry.ts). */
   id: string;
@@ -30,111 +32,128 @@ export interface ReportCategory {
   reports: ReportCatalogEntry[];
 }
 
+// The name, description and category label are translated where they are read (a getter), never when
+// this module loads, so they follow the language shown. Tenant and system report files import these
+// types and read title, description and label as plain strings, which keeps working. Phrases:
+// reports.json, catalog.report.<id>.title / .description and catalog.category.<id>.
+const text = (key: string): string => i18n.t(key, { ns: 'reports' });
+
+/** One catalog entry; its title and description come from the translation files by report id. */
+function report(id: string, icon: string, extra: Partial<ReportCatalogEntry> = {}): ReportCatalogEntry {
+  return {
+    ...extra,
+    id,
+    icon,
+    get title() { return text(`catalog.report.${id}.title`); },
+    get description() { return text(`catalog.report.${id}.description`); },
+  };
+}
+
 export const REPORT_CATALOG: ReportCategory[] = [
   {
     id: 'accounting',
-    label: 'Accounting',
+    get label() { return text('catalog.category.accounting'); },
     accentColor: '#6B8F63',
     accentColorDark: '#8FBF86',
     reports: [
-      { id: 'revenue', title: 'Revenue', description: 'Posted revenue by transaction, item, and customer', icon: '💰' },
-      { id: 'payments-received', title: 'Payments Received', description: 'Payments and refunds from checkout and recorded entries', icon: '🧾' },
-      { id: 'reconciliation', title: 'Reconciliation', description: 'Daily sales vs. collected vs. GL cash, with variances', icon: '⚖️' },
-      { id: 'outstanding-receivables', title: 'Outstanding Receivables', description: 'Customer invoices awaiting payment', icon: '📄', comingSoon: true },
-      { id: 'tax-summary', title: 'Tax Summary', description: 'Sales tax collected by category and rate', icon: '🏛️' },
+      report('revenue', '💰'),
+      report('payments-received', '🧾'),
+      report('reconciliation', '⚖️'),
+      report('outstanding-receivables', '📄', { comingSoon: true }),
+      report('tax-summary', '🏛️'),
     ],
   },
   {
     id: 'sales',
-    label: 'Sales',
+    get label() { return text('catalog.category.sales'); },
     accentColor: '#C77B3E',
     accentColorDark: '#E0A468',
     reports: [
-      { id: 'sales-by-item', title: 'Sales by Item', description: 'Every item sold with quantity, gross, discount, and net', icon: '🛒' },
-      { id: 'sales-by-staff', title: 'Sales by Staff', description: 'Sales attributed to each staff member', icon: '🧑‍💼' },
-      { id: 'discounts-promotions', title: 'Discounts & Promotions', description: 'Discounted sales and the promotions driving them', icon: '🏷️' },
+      report('sales-by-item', '🛒'),
+      report('sales-by-staff', '🧑‍💼'),
+      report('discounts-promotions', '🏷️'),
     ],
   },
   {
     id: 'bookings',
-    label: 'Bookings',
+    get label() { return text('catalog.category.bookings'); },
     accentColor: '#4A7FB5',
     accentColorDark: '#6FA0D8',
     reports: [
-      { id: 'bookings-summary', title: 'Bookings Summary', description: 'Bookings by date with service, staff, status, and price', icon: '📅' },
-      { id: 'cancellations-no-shows', title: 'Cancellations & No-Shows', description: 'Missed and cancelled appointments with lost value', icon: '🚫' },
-      { id: 'utilization', title: 'Utilization', description: 'Staff and resource utilization vs. scheduled time', icon: '📊' },
+      report('bookings-summary', '📅'),
+      report('cancellations-no-shows', '🚫'),
+      report('utilization', '📊'),
     ],
   },
   {
     id: 'memberships',
-    label: 'Memberships',
+    get label() { return text('catalog.category.memberships'); },
     accentColor: '#8064B0',
     accentColorDark: '#A98AD1',
     reports: [
-      { id: 'active-memberships', title: 'Active Memberships', description: 'Current active and paused memberships by plan', icon: '🎫' },
-      { id: 'new-cancelled-memberships', title: 'New & Cancelled', description: 'Memberships started and cancelled in the period', icon: '🔄' },
-      { id: 'membership-recognized-revenue', title: 'Recognized Revenue', description: 'Recognized membership revenue by customer and plan', icon: '💠' },
+      report('active-memberships', '🎫'),
+      report('new-cancelled-memberships', '🔄'),
+      report('membership-recognized-revenue', '💠'),
     ],
   },
   {
     id: 'customers',
-    label: 'Customers',
+    get label() { return text('catalog.category.customers'); },
     accentColor: '#4FA3A5',
     accentColorDark: '#73C4C6',
     reports: [
-      { id: 'new-customers', title: 'New Customers', description: 'Customers acquired in the period', icon: '🧑' },
-      { id: 'customer-retention', title: 'Retention', description: 'Customer retention and churn by lifecycle stage', icon: '📈' },
-      { id: 'customer-lifetime-value', title: 'Lifetime Value', description: 'Recognized revenue to date per customer', icon: '💎' },
-      { id: 'gift-cards', title: 'Gift Cards', description: 'Issued gift cards with balance, redeemed, and status', icon: '🎁', permission: 'bookings:read' },
+      report('new-customers', '🧑'),
+      report('customer-retention', '📈'),
+      report('customer-lifetime-value', '💎'),
+      report('gift-cards', '🎁', { permission: 'bookings:read' }),
     ],
   },
   {
     id: 'staff',
-    label: 'Staff',
+    get label() { return text('catalog.category.staff'); },
     accentColor: '#B5654A',
     accentColorDark: '#D8896F',
     reports: [
-      { id: 'staff-performance', title: 'Staff Performance', description: 'Bookings and revenue per staff member', icon: '👥' },
-      { id: 'commissions', title: 'Commissions', description: 'Commission earned per order, by staff', icon: '💵' },
-      { id: 'payroll-summary', title: 'Payroll Summary', description: 'Gross pay by staff and period, with line-item detail of base and commission', icon: '🧮' },
-      { id: 'timesheet', title: 'Timesheet', description: 'Clocked hours by staff and day, with breaks', icon: '⏱️' },
+      report('staff-performance', '👥'),
+      report('commissions', '💵'),
+      report('payroll-summary', '🧮'),
+      report('timesheet', '⏱️'),
       // Spec 51, gap 14
-      { id: 'tips', title: 'Tips', description: 'Tips collected, refunded, paid and owed per staff member', icon: '🙏' },
+      report('tips', '🙏'),
     ],
   },
   {
     id: 'marketing',
-    label: 'Marketing',
+    get label() { return text('catalog.category.marketing'); },
     accentColor: '#C25E8B',
     accentColorDark: '#DE86AC',
     reports: [
-      { id: 'campaign-performance', title: 'Campaign Performance', description: 'Sends, opens, and conversions', icon: '📣', comingSoon: true },
-      { id: 'acquisition-by-source', title: 'Acquisition by Source', description: 'Where new customers come from', icon: '🧲', comingSoon: true },
-      { id: 'email-engagement', title: 'Email Engagement', description: 'Open and click rates over time', icon: '📧', comingSoon: true },
+      report('campaign-performance', '📣', { comingSoon: true }),
+      report('acquisition-by-source', '🧲', { comingSoon: true }),
+      report('email-engagement', '📧', { comingSoon: true }),
     ],
   },
   {
     id: 'forecast',
-    label: 'Forecast',
+    get label() { return text('catalog.category.forecast'); },
     accentColor: '#7A8B9A',
     accentColorDark: '#9FB0BE',
     reports: [
-      { id: 'revenue-forecast', title: 'Revenue Forecast', description: 'Projected revenue from trends', icon: '🔮', comingSoon: true },
-      { id: 'membership-renewals', title: 'Membership Renewals', description: 'Upcoming renewals and expected revenue', icon: '📆', comingSoon: true },
-      { id: 'cash-flow-projection', title: 'Cash Flow Projection', description: 'Projected inflows and outflows', icon: '🌊', comingSoon: true },
+      report('revenue-forecast', '🔮', { comingSoon: true }),
+      report('membership-renewals', '📆', { comingSoon: true }),
+      report('cash-flow-projection', '🌊', { comingSoon: true }),
     ],
   },
   {
     // Spec 51, gap 7 (owner, 19 Nov 2026: a category of its own).
     id: 'inventory',
-    label: 'Inventory',
+    get label() { return text('catalog.category.inventory'); },
     accentColor: '#8A6E4B',
     accentColorDark: '#B8976D',
     reports: [
-      { id: 'inventory-stock-value', title: 'Stock on Hand & Value', description: 'On hand, cost price, average cost, stock and retail value, and margin per product, as of a date', icon: '📦', asOf: true },
-      { id: 'inventory-low-stock', title: 'Low Stock', description: 'Products at or below their reorder level, with reorder quantity and what is on order, as of today', icon: '⚠', asOf: true },
-      { id: 'inventory-movements', title: 'Stock Movements', description: 'Every stock change: sales, returns, receipts, counts, adjustments and transfers', icon: '🔁' },
+      report('inventory-stock-value', '📦', { asOf: true }),
+      report('inventory-low-stock', '⚠', { asOf: true }),
+      report('inventory-movements', '🔁'),
     ],
   },
 ];

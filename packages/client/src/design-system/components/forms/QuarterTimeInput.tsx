@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * A time field that suggests quarter hours (David, 2026-10-28): opening it lists 00:00, 00:15 …
@@ -32,6 +33,7 @@ export function normaliseTime(text: string): string | null {
 }
 
 export function QuarterTimeInput({ value, onChange, 'aria-label': ariaLabel, style, required }: Props) {
+  const { t: tr } = useTranslation('common');
   const [text, setText] = useState(value);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -81,7 +83,7 @@ export function QuarterTimeInput({ value, onChange, 'aria-label': ariaLabel, sty
         aria-controls={listId}
         aria-invalid={invalid}
         aria-activedescendant={open ? `${listId}-${active}` : undefined}
-        placeholder="HH:MM"
+        placeholder={tr('quarterTime.placeholder')}
         required={required}
         value={text}
         onFocus={() => { setActive(nearest()); setOpen(true); }}
@@ -117,7 +119,7 @@ export function QuarterTimeInput({ value, onChange, 'aria-label': ariaLabel, sty
           ))}
         </ul>
       )}
-      {invalid && <span role="alert" style={styles.error}>Type a time like 09:30</span>}
+      {invalid && <span role="alert" style={styles.error}>{tr('quarterTime.invalid')}</span>}
     </div>
   );
 }

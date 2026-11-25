@@ -52,7 +52,7 @@ async function ownCustomerScope(req: Request, businessId: string): Promise<strin
 /** Whole-business read views (calendar, recurring series) reject customer-role callers. */
 function rejectCustomerRole(req: Request, res: Response): boolean {
   if (!isCustomerRole(req)) return false;
-  error(res, 'Insufficient permissions', 'FORBIDDEN', 403);
+  error(res, msg('errors:bookings.insufficientPermissions'), 'FORBIDDEN', 403);
   return true;
 }
 
@@ -69,7 +69,7 @@ bookingsRouter.get('/availability', requirePermission('bookings:read'), async (r
     const dateTo = req.query.date_to as string;
 
     if (!serviceId || !businessId || !dateFrom || !dateTo) {
-      error(res, 'service_id, business_id, date_from, and date_to are required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:bookings.serviceIdBusinessIdDateFrom'), 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -86,7 +86,7 @@ bookingsRouter.get('/availability', requirePermission('bookings:read'), async (r
     success(res, slots, { count: slots.length });
   } catch (err: any) {
     console.error('Failed to calculate availability', err?.message || err);
-    error(res, 'Failed to calculate availability', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToCalculateAvailability'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -99,7 +99,7 @@ bookingsRouter.get('/availability/combinations', requirePermission('bookings:rea
     const dateTo = req.query.date_to as string;
 
     if (!serviceId || !businessId || !dateFrom || !dateTo) {
-      error(res, 'service_id, business_id, date_from, and date_to are required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:bookings.serviceIdBusinessIdDateFrom'), 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -117,7 +117,7 @@ bookingsRouter.get('/availability/combinations', requirePermission('bookings:rea
     success(res, result);
   } catch (err: any) {
     console.error('Failed to calculate availability combinations', err?.message || err);
-    error(res, 'Failed to calculate availability combinations', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToCalculateAvailabilityCombinations'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -184,11 +184,11 @@ bookingsRouter.get('/availability/days', requirePermission('bookings:read'), asy
     const month = req.query.month as string;
 
     if (!serviceId || !variantId || !businessId || !month) {
-      error(res, 'service_id, variant_id, business_id, and month are required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:bookings.serviceIdVariantIdBusinessId'), 'VALIDATION_ERROR', 400);
       return;
     }
     if (!/^\d{4}-\d{2}$/.test(month)) {
-      error(res, 'month must be in YYYY-MM format', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:bookings.monthMustBeInYyyyMm'), 'VALIDATION_ERROR', 400);
       return;
     }
 
@@ -219,7 +219,7 @@ bookingsRouter.get('/availability/days', requirePermission('bookings:read'), asy
     success(res, { timezone, days: result, free_times: freeTimes });
   } catch (err: any) {
     console.error('Failed to load day availability', err?.message || err);
-    error(res, 'Failed to load day availability', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToLoadDayAvailability'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -231,10 +231,10 @@ import * as notificationsServiceForward from '../services/booking-notifications.
 bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     if (rejectCustomerRole(req, res)) return;
     const view = (req.query.view as string) || 'day';
-    if (!['day', 'week', 'month'].includes(view)) { error(res, 'view must be day, week, or month', 'VALIDATION_ERROR', 400); return; }
+    if (!['day', 'week', 'month'].includes(view)) { error(res, msg('errors:bookings.viewMustBeDayWeekOr'), 'VALIDATION_ERROR', 400); return; }
     const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
     const serviceIds = (req.query.service_id as string | undefined)?.split(',').filter(Boolean);
     const result = await calendarServiceForward.getCalendar({
@@ -246,7 +246,7 @@ bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: 
     success(res, result);
   } catch (err: any) {
     console.error('Failed to load calendar', err?.message || err);
-    error(res, 'Failed to load calendar', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToLoadCalendar'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -261,13 +261,13 @@ import * as locationHoursServiceForward from '../services/location-hours.service
 bookingsRouter.get('/filters', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     if (rejectCustomerRole(req, res)) return;
     const authReq = req as AuthenticatedRequest;
     const biz = await adminPool.query(
       'SELECT timezone, currency FROM sys_businesses WHERE id = $1 AND tenant_id = $2', [businessId, authReq.tenantId],
     );
-    if (!biz.rows[0]) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!biz.rows[0]) { error(res, msg('errors:bookings.businessNotFound'), 'NOT_FOUND', 404); return; }
     const [staff, services, primaryLocation, locations] = await Promise.all([
       staffServiceForward.getStaffList(authReq.tenantId, { status: 'active', businessId, page: 1, limit: 200 }),
       adminPool.query(`SELECT id, name, status, calendar_color FROM svc_services WHERE business_id = $1 AND status <> 'archived' ORDER BY name`, [businessId]),
@@ -290,7 +290,7 @@ bookingsRouter.get('/filters', requirePermission('bookings:read'), async (req: R
     });
   } catch (err: any) {
     console.error('Failed to load booking filters', err?.message || err);
-    error(res, 'Failed to load booking filters', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToLoadBookingFilters'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -301,13 +301,13 @@ bookingsRouter.get('/rules', requirePermission('bookings:read'), async (req: Req
   try {
     const businessId = req.query.business_id as string;
     const serviceId = req.query.service_id as string;
-    if (!businessId || !serviceId) { error(res, 'business_id and service_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId || !serviceId) { error(res, msg('errors:bookings.businessIdAndServiceIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const rules = await rulesServiceForward.getBookingRulesSummary(serviceId, businessId);
-    if (!rules) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
+    if (!rules) { error(res, msg('errors:bookings.serviceNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rules);
   } catch (err: any) {
     console.error('Failed to get rules', err?.message || err);
-    error(res, 'Failed to get rules', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToGetRules'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -317,15 +317,15 @@ import * as recurringServiceForward from '../services/recurring-bookings.service
 bookingsRouter.get('/recurring/:seriesId', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     if (rejectCustomerRole(req, res)) return;
     const series = await recurringServiceForward.getSeriesById(req.params.seriesId, businessId);
-    if (!series) { error(res, 'Series not found', 'NOT_FOUND', 404); return; }
+    if (!series) { error(res, msg('errors:bookings.seriesNotFound'), 'NOT_FOUND', 404); return; }
     success(res, series);
   } catch (err: any) {
     console.error('Failed to get series', err?.message || err);
-    error(res, 'Failed to get series', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToGetSeries'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -371,7 +371,7 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
     // The membership or package chosen must cover it before the booking is made (spec 51, gap 19).
     const benefits = await import('../services/benefits.service');
     if (req.body.benefit) {
-      if (!req.body.customer_id) { error(res, 'Choose a customer to pay with a membership or package.', 'VALIDATION_ERROR', 400); return; }
+      if (!req.body.customer_id) { error(res, msg('errors:bookings.chooseACustomerToPayWith'), 'VALIDATION_ERROR', 400); return; }
       const { rows: v } = await adminPool.query('SELECT duration FROM svc_variants WHERE id = $1', [req.body.variant_id]);
       const option = await benefits.optionFor({
         businessId: req.body.business_id, customerId: req.body.customer_id, itemType: 'service', itemId: req.body.service_id,
@@ -434,9 +434,9 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
     }
     success(res, { ...booking, addons: await addonsService.bookingAddons(booking.id), benefit: await benefits.bookingBenefit(booking.id), benefit_error: benefitError }, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('not found')) {
+    if (messageHas(err.message, 'not found')) {
       error(res, err.message, 'NOT_FOUND', 404);
-    } else if (err.message.includes('conflict') || err.message.includes('capacity') || err.message.includes('advance booking') || err.message.includes('No staff')) {
+    } else if ((isMessage(err.message, 'errors:booking.staffMemberHasAConflictingBooking', 'errors:booking.resourceHasAConflictingBookingAt', 'errors:booking.customerHasAConflictingBookingAt', 'errors:slotHold.staffHasAConflictingBookingAt') || err.message.includes('conflict')) || (isMessage(err.message, 'errors:staff.failedToGetCapacityConfig', 'errors:staff.failedToUpdateCapacityConfig', 'errors:staff.failedToCreateCapacityOverride', 'errors:booking.onlySpotSRemainingExceedsResource', 'errors:eventRegistration.eventIsAtCapacity', 'errors:resourceBookings.resourceAtCapacityForThisTime', 'errors:service.sharedGroupServicesRequireCapacityOf') || err.message.includes('capacity')) || (isMessage(err.message, 'errors:booking.bookingIsWithinTheMinimumAdvance', 'errors:booking.bookingsCanBeMadeAtMost') || err.message.includes('advance booking')) || (isMessage(err.message, 'errors:clock.noStaffProfileIsLinkedTo', 'errors:staff.noStaffProfileLinkedToThis', 'errors:staff.noStaffProfileLinked', 'errors:staff.noStaffProfileLinkedToThis2', 'errors:booking.noStaffAvailableForTheSelected') || err.message.includes('No staff'))) {
       error(res, err.message, 'CONFLICT', 409);
     } else if (err instanceof Error && !(err as any).severity && !/^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err.name) && ((err as any).code === undefined || (err as any).code === 'BOOKING_RULE')) {
       // Closed that day, outside opening hours, provider not available, daily limit reached,
@@ -445,7 +445,7 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       error(res, err.message, 'BOOKING_NOT_ALLOWED', 409);
     } else {
       console.error('Booking creation error:', err);
-      error(res, 'Failed to create booking', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:bookings.failedToCreateBooking'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -458,7 +458,7 @@ bookingsRouter.get('/history-storage', requireTenantLevel(), requirePermission('
   try {
     const { getArchiveSchedule } = await import('../services/booking-history.service');
     success(res, await getArchiveSchedule((req as AuthenticatedRequest).tenantId!));
-  } catch (err: any) { console.error('Failed to read the history storage schedule', err?.message || err); error(res, 'Failed to read the schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read the history storage schedule', err?.message || err); error(res, msg('errors:bookings.failedToReadTheSchedule'), 'INTERNAL_ERROR', 500); }
 });
 
 const historyStorageSchema = Joi.object({
@@ -473,7 +473,7 @@ bookingsRouter.put('/history-storage', requireTenantLevel(), requirePermission('
   try {
     const { saveArchiveSchedule } = await import('../services/booking-history.service');
     success(res, await saveArchiveSchedule((req as AuthenticatedRequest).tenantId!, req.body));
-  } catch (err: any) { console.error('Failed to save the history storage schedule', err?.message || err); error(res, 'Failed to save the schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save the history storage schedule', err?.message || err); error(res, msg('errors:bookings.failedToSaveTheSchedule'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/bookings/history-storage/run-now
@@ -491,12 +491,12 @@ bookingsRouter.post('/history-storage/run-now', requireTenantLevel(), requirePer
 bookingsRouter.get('/benefits', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const q = req.query as Record<string, string | undefined>;
-    if (!q.business_id || !q.customer_id || !q.service_id) { error(res, 'business_id, customer_id and service_id are required', 'VALIDATION_ERROR', 400); return; }
+    if (!q.business_id || !q.customer_id || !q.service_id) { error(res, msg('errors:bookings.businessIdCustomerIdAndService'), 'VALIDATION_ERROR', 400); return; }
     const benefits = await import('../services/benefits.service');
     let held: Awaited<ReturnType<typeof benefits.bookingBenefit>> = null;
     if (q.booking_id) {
       const { rows } = await adminPool.query('SELECT id FROM apt_bookings WHERE id = $1 AND business_id = $2', [q.booking_id, q.business_id]);
-      if (!rows[0]) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+      if (!rows[0]) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
       held = await benefits.bookingBenefit(q.booking_id);
     }
     const { rows: v } = q.variant_id
@@ -510,7 +510,7 @@ bookingsRouter.get('/benefits', requirePermission('bookings:read'), async (req: 
     success(res, { options, held });
   } catch (err: any) {
     console.error('Failed to load memberships and packages', err?.message || err);
-    error(res, 'Failed to load memberships and packages', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToLoadMembershipsAndPackages'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -519,7 +519,7 @@ bookingsRouter.get('/benefits', requirePermission('bookings:read'), async (req: 
 bookingsRouter.get('/column-values', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const ownCustomerId = await ownCustomerScope(req, businessId);
     if (ownCustomerId === null) { success(res, []); return; }
     success(res, await bookingService.getBookingColumnValues({
@@ -527,14 +527,14 @@ bookingsRouter.get('/column-values', requirePermission('bookings:read'), async (
     }, String(req.query.column || '')));
   } catch (err: any) {
     console.error('Failed to list column values', err?.message || err);
-    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToListColumnValues'), 'INTERNAL_ERROR', 500);
   }
 });
 
 bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
@@ -559,6 +559,15 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
       order: req.query.order === 'desc' ? 'desc' : 'asc',
     });
 
+    // A customer reads the service and option names in their language (Phase 44, requirement 9.5); staff keep the business's own.
+    if (ownCustomerId) {
+      const { localizeNames } = await import('../services/offering-translations.service');
+      const { requestLanguageCode } = await import('../i18n');
+      result.bookings = await localizeNames(result.bookings, [
+        { entity: 'service', idKey: 'service_id', nameKey: 'service_name' },
+        { entity: 'service_option', idKey: 'variant_id', nameKey: 'variant_name' },
+      ], requestLanguageCode());
+    }
     success(res, result.bookings, {
       page: result.page,
       limit: result.limit,
@@ -567,7 +576,7 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
     });
   } catch (err: any) {
     console.error('Failed to list bookings', err?.message || err);
-    error(res, 'Failed to list bookings', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToListBookings'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -576,11 +585,11 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
 bookingsRouter.get('/waiting', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await bookingService.getWaitingList(businessId));
   } catch (err: any) {
     console.error('Failed to load waiting list', err?.message || err);
-    error(res, 'Failed to load the waiting list', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToLoadTheWaitingList'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -591,11 +600,11 @@ bookingsRouter.put('/:id/customer-cancel', requirePermission('bookings:read'), a
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const ownCustomerId = await ownCustomerScope(req, businessId);
     const booking = await bookingService.getBookingById(req.params.id, businessId);
-    if (!booking || !ownCustomerId || booking.customer_id !== ownCustomerId) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
-    if (!['pending', 'confirmed'].includes(booking.status)) { error(res, 'This appointment can no longer be cancelled', 'INVALID_TRANSITION', 409); return; }
+    if (!booking || !ownCustomerId || booking.customer_id !== ownCustomerId) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
+    if (!['pending', 'confirmed'].includes(booking.status)) { error(res, msg('errors:bookings.thisAppointmentCanNoLongerBe'), 'INVALID_TRANSITION', 409); return; }
 
     const { getCancelSettings, customerCancelWindow } = await import('../services/customer-cancellation.service');
     const settings = await getCancelSettings(businessId, 'appointments');
@@ -645,19 +654,19 @@ bookingsRouter.put('/:id/customer-cancel', requirePermission('bookings:read'), a
 bookingsRouter.get('/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const booking = await bookingService.getBookingById(req.params.id, businessId);
-    if (!booking) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!booking) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     const ownCustomerId = await ownCustomerScope(req, businessId);
-    if (ownCustomerId !== undefined && (ownCustomerId === null || booking.customer_id !== ownCustomerId)) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (ownCustomerId !== undefined && (ownCustomerId === null || booking.customer_id !== ownCustomerId)) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
 
     // What staff may change (CAL-19, CAL-22): the edit screen opens as View appointment when read_only
     const change_rules = await changeRules.getChangeRules(booking, businessId);
     success(res, { ...booking, change_rules });
   } catch (err: any) {
     console.error('Failed to get booking', err?.message || err);
-    error(res, 'Failed to get booking', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToGetBooking'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -685,13 +694,13 @@ bookingsRouter.put('/:id/addons/:bookingAddonId/remove', requirePermission('book
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows: ba } = await adminPool.query(
       `SELECT ba.id, ba.name, b.status AS booking_status FROM apt_booking_addons ba JOIN apt_bookings b ON b.id = ba.booking_id
         WHERE ba.id = $1 AND ba.booking_id = $2 AND ba.business_id = $3 AND ba.status = 'active'`,
       [req.params.bookingAddonId, req.params.id, businessId]);
-    if (!ba[0]) { error(res, 'Add-on not found on this appointment', 'NOT_FOUND', 404); return; }
-    if (['completed', 'cancelled', 'no_show'].includes(ba[0].booking_status)) { error(res, 'This appointment can no longer be changed', 'INVALID_TRANSITION', 400); return; }
+    if (!ba[0]) { error(res, msg('errors:bookings.addOnNotFoundOnThis'), 'NOT_FOUND', 404); return; }
+    if (['completed', 'cancelled', 'no_show'].includes(ba[0].booking_status)) { error(res, msg('errors:bookings.thisAppointmentCanNoLongerBe2'), 'INVALID_TRANSITION', 400); return; }
     // its line on a paid order, and what is left to refund of it
     const { rows: line } = await adminPool.query(
       `SELECT oi.id, oi.order_id, oi.quantity - oi.refunded_quantity AS left,
@@ -709,7 +718,7 @@ bookingsRouter.put('/:id/addons/:bookingAddonId/remove', requirePermission('book
         reason: req.body.reason ? `Add-on removed: ${req.body.reason}` : `Add-on removed: ${ba[0].name}`,
         processedBy: authReq.user.sub, refundTo, allowServiceLines: true,
       });
-      if (refund.status === 'failed') { error(res, 'The refund failed', 'REFUND_FAILED', 502); return; }
+      if (refund.status === 'failed') { error(res, msg('errors:bookings.theRefundFailed'), 'REFUND_FAILED', 502); return; }
     }
     const history = await import('../services/booking-history.service');
     const before = await history.snapshotBooking(req.params.id);
@@ -730,7 +739,7 @@ bookingsRouter.put('/:id/addons/:bookingAddonId/remove', requirePermission('book
   } catch (err: any) {
     if (err?.name === 'OrderRefundError' || ['CUSTOMER_REQUIRED', 'NOTHING_TO_REFUND', 'ORDER_NOT_REFUNDABLE', 'NO_CONNECTION', 'ITEM_NOT_REFUNDABLE'].includes(err?.code)) { error(res, err.message, err.code || 'REFUND_REFUSED', 409); return; }
     console.error('Failed to remove a paid add-on', err?.message || err);
-    error(res, 'The add-on could not be removed', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.theAddOnCouldNotBe'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -756,7 +765,7 @@ bookingsRouter.post('/payment-quote', requirePermission('bookings:*'), async (re
   try {
     const authReq = req as AuthenticatedRequest;
     const b = req.body || {};
-    if (!b.business_id || !b.service_id || !b.variant_id) { error(res, 'business_id, service_id and variant_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!b.business_id || !b.service_id || !b.variant_id) { error(res, msg('errors:bookings.businessIdServiceIdAndVariant'), 'VALIDATION_ERROR', 400); return; }
     const { quote } = await import('../services/booking-payment.service');
     const { businessPublishableKey } = await import('../services/walkin-payment.service');
     const q = await quote({
@@ -773,7 +782,7 @@ bookingsRouter.post('/payment-quote', requirePermission('bookings:*'), async (re
   } catch (err: any) {
     if (err?.code === 'NOT_FOUND') { error(res, err.message, 'NOT_FOUND', 404); return; }
     console.error('Failed to quote payment', err?.message || err);
-    error(res, 'Failed to work out the payment', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToWorkOutThePayment'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -782,9 +791,9 @@ bookingsRouter.post('/:id/pay', requirePermission('bookings:*'), async (req: Req
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const booking = await bookingService.getBookingById(req.params.id, businessId);
-    if (!booking) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!booking) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     const b = req.body || {};
     const { payBooking } = await import('../services/booking-payment.service');
     success(res, await payBooking({
@@ -809,16 +818,16 @@ bookingsRouter.post('/:id/pay', requirePermission('bookings:*'), async (req: Req
 bookingsRouter.get('/:id/history', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (isCustomerRole(req)) { error(res, 'Not available', 'FORBIDDEN', 403); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (isCustomerRole(req)) { error(res, msg('errors:bookings.notAvailable'), 'FORBIDDEN', 403); return; }
     const { rows } = await adminPool.query('SELECT 1 FROM apt_bookings WHERE id = $1 AND business_id = $2', [req.params.id, businessId]);
-    if (!rows[0]) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!rows[0]) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     const { getBookingHistory, sourceLabel } = await import('../services/booking-history.service');
     const entries = await getBookingHistory(req.params.id);
     success(res, entries.map((e) => ({ ...e, source_label: sourceLabel(e.source) })));
   } catch (err: any) {
     console.error('Failed to load the appointment history', err?.message || err);
-    error(res, 'Failed to load the history', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToLoadTheHistory'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -826,12 +835,12 @@ bookingsRouter.get('/:id/history', requirePermission('bookings:read'), async (re
 bookingsRouter.get('/:id/cancel-preview', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
       `SELECT b.*, s.cancellation_policy_id FROM apt_bookings b JOIN svc_services s ON s.id = b.service_id WHERE b.id = $1 AND b.business_id = $2`,
       [req.params.id, businessId],
     );
-    if (!rows[0]) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!rows[0]) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     const fee = await lifecycleService.cancellationFeeFor(rows[0], businessId);
     const paid = await bookingRefundLines(req.params.id, businessId);
     const { getCancelSettings } = await import('../services/customer-cancellation.service');
@@ -843,7 +852,7 @@ bookingsRouter.get('/:id/cancel-preview', requirePermission('bookings:*'), async
     });
   } catch (err: any) {
     console.error('Failed to preview cancellation', err?.message || err);
-    error(res, 'Failed to preview cancellation', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToPreviewCancellation'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -857,18 +866,18 @@ bookingsRouter.put('/:id/confirm', requirePermission('bookings:*'), async (req: 
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await lifecycleService.confirmBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
+      const status = isMessage(result.error, 'errors:bookings.bookingNotFound', 'errors:charts.bookingNotFound', 'errors:checkIn.bookingNotFound', 'errors:resources.bookingNotFound', 'errors:addons.bookingNotFound', 'errors:checkinQr.bookingNotFound', 'errors:checkout.bookingNotFound', 'errors:widgetBooking.bookingNotFound') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
     success(res, result.booking);
   } catch (err: any) {
     console.error('Failed to confirm booking', err?.message || err);
-    error(res, 'Failed to confirm booking', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToConfirmBooking'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -877,15 +886,15 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     // Paid and a refund chosen: refund the visit's lines first; if the refund fails the appointment stays as it was
     let refund: any = null;
     const refundTo = req.body.refund_to as 'none' | 'original' | 'account_credit' | undefined;
     if (refundTo && refundTo !== 'none') {
       const current = await bookingService.getBookingById(req.params.id, businessId);
-      if (!current) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
-      if (!['pending', 'confirmed'].includes(current.status)) { error(res, 'This appointment can no longer be cancelled', 'INVALID_TRANSITION', 400); return; }
+      if (!current) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
+      if (!['pending', 'confirmed'].includes(current.status)) { error(res, msg('errors:bookings.thisAppointmentCanNoLongerBe'), 'INVALID_TRANSITION', 400); return; }
       const paid = await bookingRefundLines(req.params.id, businessId);
       if (paid.orderId && paid.lines.reduce((x, l) => x + l.amount, 0) > 0) {
         const { refundOrderLines } = await import('../services/order-refund.service');
@@ -901,7 +910,7 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
 
     const result = await lifecycleService.cancelBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId, req.body.reason);
     if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
+      const status = isMessage(result.error, 'errors:bookings.bookingNotFound', 'errors:charts.bookingNotFound', 'errors:checkIn.bookingNotFound', 'errors:resources.bookingNotFound', 'errors:addons.bookingNotFound', 'errors:checkinQr.bookingNotFound', 'errors:checkout.bookingNotFound', 'errors:widgetBooking.bookingNotFound') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
@@ -911,7 +920,7 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
     // refund refused (e.g. account credit for a walk-in, nothing left to refund): say why; the appointment stays as it was
     if (err?.name === 'OrderRefundError' || ['CUSTOMER_REQUIRED', 'NOTHING_TO_REFUND', 'ORDER_NOT_REFUNDABLE', 'NO_CONNECTION', 'ITEM_NOT_REFUNDABLE'].includes(err?.code)) { error(res, err.message, err.code || 'REFUND_REFUSED', 409); return; }
     console.error('Failed to cancel booking', err?.message || err);
-    error(res, 'Failed to cancel booking', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToCancelBooking'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -923,10 +932,10 @@ bookingsRouter.put('/:id/check-in', requireAnyPermission('bookings:*', 'checkin:
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const existing = await bookingService.getBookingById(req.params.id, businessId);
-    if (!existing) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!existing) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
 
     if (existing.customer_id) {
       const override = req.body?.override === true
@@ -949,7 +958,7 @@ bookingsRouter.put('/:id/check-in', requireAnyPermission('bookings:*', 'checkin:
     success(res, result.booking);
   } catch (err: any) {
     console.error('Check-in error:', err);
-    error(res, 'Failed to check in', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToCheckIn'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -958,17 +967,17 @@ bookingsRouter.put('/:id/start', requireAnyPermission('bookings:*', 'checkin:*')
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await lifecycleService.startBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
+      const status = isMessage(result.error, 'errors:bookings.bookingNotFound', 'errors:charts.bookingNotFound', 'errors:checkIn.bookingNotFound', 'errors:resources.bookingNotFound', 'errors:addons.bookingNotFound', 'errors:checkinQr.bookingNotFound', 'errors:checkout.bookingNotFound', 'errors:widgetBooking.bookingNotFound') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
     success(res, result.booking);
   } catch (err: any) {
     console.error('Failed to start session', err?.message || err);
-    error(res, 'Failed to start the session', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToStartTheSession'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -977,10 +986,10 @@ bookingsRouter.put('/:id/ready', requireAnyPermission('bookings:*', 'checkin:*')
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await lifecycleService.markReady(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
+      const status = isMessage(result.error, 'errors:bookings.bookingNotFound', 'errors:charts.bookingNotFound', 'errors:checkIn.bookingNotFound', 'errors:resources.bookingNotFound', 'errors:addons.bookingNotFound', 'errors:checkinQr.bookingNotFound', 'errors:checkout.bookingNotFound', 'errors:widgetBooking.bookingNotFound') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
@@ -988,7 +997,7 @@ bookingsRouter.put('/:id/ready', requireAnyPermission('bookings:*', 'checkin:*')
     success(res, { ...result.booking, emailed });
   } catch (err: any) {
     console.error('Failed to call customer in', err?.message || err);
-    error(res, 'Failed to send the message', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToSendTheMessage'), 'INTERNAL_ERROR', 500);
   }
 });
 // PUT /api/v1/bookings/:id/complete
@@ -996,18 +1005,18 @@ bookingsRouter.put('/:id/complete', requirePermission('bookings:*'), async (req:
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await lifecycleService.completeBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
+      const status = isMessage(result.error, 'errors:bookings.bookingNotFound', 'errors:charts.bookingNotFound', 'errors:checkIn.bookingNotFound', 'errors:resources.bookingNotFound', 'errors:addons.bookingNotFound', 'errors:checkinQr.bookingNotFound', 'errors:checkout.bookingNotFound', 'errors:widgetBooking.bookingNotFound') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
     success(res, result.booking);
   } catch (err: any) {
     console.error('Failed to complete booking', err?.message || err);
-    error(res, 'Failed to complete booking', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToCompleteBooking'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1016,18 +1025,18 @@ bookingsRouter.put('/:id/reset', requireAnyPermission('bookings:*', 'checkin:*')
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await lifecycleService.resetBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
+      const status = isMessage(result.error, 'errors:bookings.bookingNotFound', 'errors:charts.bookingNotFound', 'errors:checkIn.bookingNotFound', 'errors:resources.bookingNotFound', 'errors:addons.bookingNotFound', 'errors:checkinQr.bookingNotFound', 'errors:checkout.bookingNotFound', 'errors:widgetBooking.bookingNotFound') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
     success(res, result.booking);
   } catch (err: any) {
     console.error('Failed to reset booking', err?.message || err);
-    error(res, 'Failed to reset booking', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToResetBooking'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1035,13 +1044,13 @@ bookingsRouter.put('/:id/reset', requireAnyPermission('bookings:*', 'checkin:*')
 bookingsRouter.get('/:id/no-show-preview', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const preview = await lifecycleService.getNoShowPreview(req.params.id, businessId);
-    if (!preview) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!preview) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     success(res, preview);
   } catch (err: any) {
     console.error('Failed to preview no-show', err?.message || err);
-    error(res, 'Failed to preview no-show', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToPreviewNoShow'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1050,20 +1059,20 @@ bookingsRouter.put('/:id/no-show', requirePermission('bookings:*'), async (req: 
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const charge = req.body?.charge;
-    if (charge !== undefined && typeof charge !== 'boolean') { error(res, 'charge must be true or false', 'VALIDATION_ERROR', 400); return; }
+    if (charge !== undefined && typeof charge !== 'boolean') { error(res, msg('errors:bookings.chargeMustBeTrueOrFalse'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await lifecycleService.noShowBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId, { charge });
     if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
+      const status = isMessage(result.error, 'errors:bookings.bookingNotFound', 'errors:charts.bookingNotFound', 'errors:checkIn.bookingNotFound', 'errors:resources.bookingNotFound', 'errors:addons.bookingNotFound', 'errors:checkinQr.bookingNotFound', 'errors:checkout.bookingNotFound', 'errors:widgetBooking.bookingNotFound') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
     success(res, { ...result.booking, no_show_fee: result.no_show_fee ?? 0, fee: result.fee });
   } catch (err: any) {
     console.error('Failed to mark no-show', err?.message || err);
-    error(res, 'Failed to mark no-show', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToMarkNoShow'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1072,7 +1081,7 @@ bookingsRouter.put('/:id/reschedule', requirePermission('bookings:*'), validate(
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await lifecycleService.rescheduleBooking(
       req.params.id, businessId, req.body.start_time, req.body.staff_id,
@@ -1080,14 +1089,14 @@ bookingsRouter.put('/:id/reschedule', requirePermission('bookings:*'), validate(
     );
 
     if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
+      const status = messageHas(result.error, 'not found') ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', status);
       return;
     }
     success(res, result.booking);
   } catch (err: any) {
     console.error('Failed to reschedule booking', err?.message || err);
-    error(res, 'Failed to reschedule booking', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToRescheduleBooking'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1115,10 +1124,10 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const existing = await bookingService.getBookingById(req.params.id, businessId);
-    if (!existing) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!existing) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     // What it was before, for its history: each field changed is recorded before and after (spec 51, gap 18).
     const history = await import('../services/booking-history.service');
     const before = await history.snapshotBooking(req.params.id);
@@ -1155,7 +1164,7 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
           ? !!req.body.benefit
           : !!(await (await import('../services/benefits.service')).bookingBenefit(req.params.id));
         if (!card && cardTouched && !coveredNow && await reservationCard.cardIsRequired(finalService, businessId, finalCustomer)) {
-          throw new reservationCard.ReservationCardError('This service needs a card for the reservation. Choose a saved card or add one.', 'CARD_REQUIRED');
+          throw new reservationCard.ReservationCardError(msg('errors:bookings.thisServiceNeedsACardFor'), 'CARD_REQUIRED');
         }
       } catch (e) {
         if (e instanceof reservationCard.ReservationCardError) { error(res, e.message, e.code, 400); return; }
@@ -1270,7 +1279,7 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
       return rows[0] || null;
     });
 
-    if (!saved) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!saved) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     if (slotChange && saved.customer_id && new Date(saved.start_time).getTime() !== new Date(existing.start_time).getTime()) {
       await createActivity({
         customerId: saved.customer_id, businessId, activityType: 'booking',
@@ -1303,7 +1312,7 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
   } catch (err: any) {
     if (isBookingRefusal(err)) { error(res, err.message, /conflict/i.test(err.message) ? 'CONFLICT' : 'BOOKING_NOT_ALLOWED', 409); return; }
     console.error('Failed to update booking', err?.message || err);
-    error(res, 'Failed to update booking', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToUpdateBooking'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1311,12 +1320,12 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
 bookingsRouter.get('/:id/ical', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const booking = await bookingService.getBookingById(req.params.id, businessId);
-    if (!booking) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!booking) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
     const ownCustomerId = await ownCustomerScope(req, businessId);
-    if (ownCustomerId !== undefined && (ownCustomerId === null || booking.customer_id !== ownCustomerId)) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (ownCustomerId !== undefined && (ownCustomerId === null || booking.customer_id !== ownCustomerId)) { error(res, msg('errors:bookings.bookingNotFound'), 'NOT_FOUND', 404); return; }
 
     const ical =notificationsServiceForward.generateICal({
       booking_reference: booking.booking_reference,
@@ -1331,7 +1340,7 @@ bookingsRouter.get('/:id/ical', requirePermission('bookings:read'), async (req: 
     res.send(ical);
   } catch (err: any) {
     console.error('Failed to generate iCal', err?.message || err);
-    error(res, 'Failed to generate iCal', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToGenerateIcal'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1368,10 +1377,10 @@ bookingsRouter.post('/hold', requirePermission('bookings:*'), validate(createHol
     });
     success(res, hold, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('already being held') || err.message.includes('conflict')) {
+    if ((isMessage(err.message, 'errors:slotHold.thisSlotIsAlreadyBeingHeld') || err.message.includes('already being held')) || (isMessage(err.message, 'errors:booking.staffMemberHasAConflictingBooking', 'errors:booking.resourceHasAConflictingBookingAt', 'errors:booking.customerHasAConflictingBookingAt', 'errors:slotHold.staffHasAConflictingBookingAt') || err.message.includes('conflict'))) {
       error(res, err.message, 'CONFLICT', 409);
     } else {
-      error(res, 'Failed to hold slot', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:bookings.failedToHoldSlot'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -1381,11 +1390,11 @@ bookingsRouter.delete('/hold/:id', requirePermission('bookings:*'), async (req: 
   try {
     const authReq = req as AuthenticatedRequest;
     const released = await holdService.releaseHold(req.params.id, authReq.user.sub);
-    if (!released) { error(res, 'Hold not found', 'NOT_FOUND', 404); return; }
+    if (!released) { error(res, msg('errors:bookings.holdNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { released: true });
   } catch (err: any) {
     console.error('Failed to release hold', err?.message || err);
-    error(res, 'Failed to release hold', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToReleaseHold'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1405,7 +1414,7 @@ const joinWaitlistSchema = Joi.object({
 bookingsRouter.post('/:id/waitlist', requirePermission('bookings:*'), validate(joinWaitlistSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     // Both the session's service and the person must belong to this business.
     const { rows: ownRows } = await adminPool.query(
@@ -1413,8 +1422,8 @@ bookingsRouter.post('/:id/waitlist', requirePermission('bookings:*'), validate(j
               (SELECT COUNT(*) FROM cus_customers WHERE id = $2 AND business_id = $3)::int AS cust`,
       [req.params.id, req.body.customer_id, businessId],
     );
-    if (!ownRows[0].svc) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
-    if (!ownRows[0].cust) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!ownRows[0].svc) { error(res, msg('errors:bookings.serviceNotFound'), 'NOT_FOUND', 404); return; }
+    if (!ownRows[0].cust) { error(res, msg('errors:bookings.customerNotFound'), 'NOT_FOUND', 404); return; }
 
     const entry = await waitlistService.joinWaitlist(
       businessId, req.params.id, req.body.customer_id,
@@ -1422,11 +1431,11 @@ bookingsRouter.post('/:id/waitlist', requirePermission('bookings:*'), validate(j
     );
     success(res, entry, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('Already on') || err.message.includes('full')) {
+    if ((isMessage(err.message, 'errors:membership.alreadyOnThisPlan', 'errors:waitlist.alreadyOnTheWaitlistForThis') || err.message.includes('Already on')) || messageHas(err.message, 'full')) {
       error(res, err.message, 'CONFLICT', 409);
     } else {
       console.error('Failed to join waitlist', err?.message || err);
-      error(res, 'Failed to join waitlist', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:bookings.failedToJoinWaitlist'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -1437,16 +1446,16 @@ bookingsRouter.delete('/:id/waitlist', requirePermission('bookings:*'), async (r
     const customerId = req.query.customer_id as string;
     const slotStartTime = req.query.slot_start_time as string;
     if (!customerId || !slotStartTime) {
-      error(res, 'customer_id and slot_start_time required', 'VALIDATION_ERROR', 400);
+      error(res, msg('errors:bookings.customerIdAndSlotStartTime'), 'VALIDATION_ERROR', 400);
       return;
     }
 
     const removed = await waitlistService.leaveWaitlist(req.params.id, slotStartTime, customerId, req.query.business_id as string | undefined);
-    if (!removed) { error(res, 'Waitlist entry not found', 'NOT_FOUND', 404); return; }
+    if (!removed) { error(res, msg('errors:bookings.waitlistEntryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
   } catch (err: any) {
     console.error('Failed to leave waitlist', err?.message || err);
-    error(res, 'Failed to leave waitlist', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToLeaveWaitlist'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1456,10 +1465,10 @@ bookingsRouter.put('/waitlist/:entryId/confirm', requirePermission('bookings:*')
     const authReq = req as AuthenticatedRequest;
     // Resolve customer from user
     const customerId = req.query.customer_id as string;
-    if (!customerId) { error(res, 'customer_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!customerId) { error(res, msg('errors:bookings.customerIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await waitlistService.confirmPromotion(req.params.entryId, customerId, { businessId, tenantId: authReq.tenantId, userId: authReq.user.sub });
     if (!result.confirmed) {
       error(res, result.error!, 'VALIDATION_ERROR', 400);
@@ -1468,7 +1477,7 @@ bookingsRouter.put('/waitlist/:entryId/confirm', requirePermission('bookings:*')
     success(res, { confirmed: true, booking: result.booking });
   } catch (err: any) {
     console.error('Failed to confirm waitlist', err?.message || err);
-    error(res, 'Failed to confirm waitlist', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToConfirmWaitlist'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1478,6 +1487,7 @@ bookingsRouter.put('/waitlist/:entryId/confirm', requirePermission('bookings:*')
 // ============================================================
 
 import * as recurringService from '../services/recurring-bookings.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 const createRecurringSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
@@ -1517,10 +1527,10 @@ bookingsRouter.post('/recurring', requirePermission('bookings:*'), validate(crea
 
     success(res, result, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('required')) {
+    if (messageHas(err.message, 'required')) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to create recurring series', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:bookings.failedToCreateRecurringSeries'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -1532,13 +1542,13 @@ bookingsRouter.put('/recurring/:seriesId/cancel', requirePermission('bookings:*'
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:bookings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await recurringService.cancelSeries(req.params.seriesId, businessId, authReq.user.sub, authReq.tenantId);
     success(res, result);
   } catch (err: any) {
     console.error('Failed to cancel series', err?.message || err);
-    error(res, 'Failed to cancel series', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookings.failedToCancelSeries'), 'INTERNAL_ERROR', 500);
   }
 });
 

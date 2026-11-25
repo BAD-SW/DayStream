@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ModuleDefinition } from './moduleRegistry';
 import styles from './ModuleTile.module.css';
 
@@ -10,6 +11,7 @@ interface SortableTileProps {
 
 export function SortableTile({ module }: SortableTileProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation('nav');
   const {
     attributes,
     listeners,
@@ -46,8 +48,8 @@ export function SortableTile({ module }: SortableTileProps) {
       data-module-id={module.id}
     >
       <span className={styles.icon}>{module.icon}</span>
-      <span className={styles.title}>{module.titleKey}</span>
-      <span className={styles.description}>{module.descriptionKey}</span>
+      <span className={styles.title}>{t(module.titleKey)}</span>
+      <span className={styles.description}>{t(module.descriptionKey)}</span>
     </div>
   );
 }

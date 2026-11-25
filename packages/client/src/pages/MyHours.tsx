@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatDay, formatDateTime } from '../utils/format';
 import * as clockApi from '../api/clock';
 import { Table } from '../design-system/components/data/Table';
 import type { ClockEvent, ClockEventType, DayHours } from '../api/clock';
@@ -11,26 +13,16 @@ import type { ClockEvent, ClockEventType, DayHours } from '../api/clock';
  * the authenticated user, so this can only ever show the caller's own data.
  */
 
-const EVENT_LABEL: Record<ClockEventType, string> = {
-  clock_in: 'Clock In',
-  break_start: 'Start Break',
-  break_end: 'End Break',
-  clock_out: 'Clock Out',
-};
-
 function isoDaysAgo(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
 }
 function isoToday(): string { return new Date().toISOString().slice(0, 10); }
-function fmtMinutes(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = Math.round(mins % 60);
-  return `${h}h ${m}m`;
-}
 
 export function MyHours() {
+  const { t } = useTranslation('staff');
+  const fmtMinutes = (mins: number): string => t('hours.hm', { h: Math.floor(mins / 60), m: Math.round(mins % 60) });
   const [start, setStart] = useState(isoDaysAgo(13));
   const [end, setEnd] = useState(isoToday());
 
@@ -51,7 +43,7 @@ export function MyHours() {
       setEvents(ev);
       setHours(hr);
     } catch {
-      setErrorMsg('Failed to load your clock records.');
+      setErrorMsg(t('hours.errLoadMine'));
       setEvents([]); setHours([]);
     } finally { setLoading(false); }
   }, [start, end]);
@@ -63,8 +55,8 @@ export function MyHours() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>My Hours</h1>
-        <p style={styles.subtitle}>Your own clock entries. To correct an entry, speak to your manager.</p>
+        <h1 style={styles.title}>{t('hours.myTitle')}</h1>
+        <p style={styles.subtitle}>{t('hours.myIntro')}</p>
       </div>
 
       <div style={styles.toolbar}>
@@ -76,18 +68,18 @@ export function MyHours() {
 
       {/* Daily hours summary */}
       <div style={styles.card}>
-        <div style={styles.cardHeader}>Daily Hours {hours.length > 0 && <span style={styles.muted}>· total {fmtMinutes(totalWorked)}</span>}</div>
-        {loading ? <p style={styles.muted}>Loading…</p> : hours.length === 0 ? (
-          <p style={styles.muted}>No clocked hours in this range.</p>
+        <div style={styles.cardHeader}>{t('hours.daily')} {hours.length > 0 && <span style={styles.muted}>{t('hours.total', { time: fmtMinutes(totalWorked) })}</span>}</div>
+        {loading ? <p style={styles.muted}>{t('hours.loading')}</p> : hours.length === 0 ? (
+          <p style={styles.muted}>{t('hours.noHours')}</p>
         ) : (
           <Table
             rowId={(d: DayHours) => d.date}
             data={hours}
             clientSort
             columns={[
-              { key: 'date', header: 'Date', sortable: true, filter: 'date' as const },
-              { key: 'worked_minutes', header: 'Worked', sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
-              { key: 'break_minutes', header: 'Break', sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
+              { key: 'date', header: t('hours.date'), sortable: true, filter: 'date' as const, render: (v: string) => formatDay(v) },
+              { key: 'worked_minutes', header: t('hours.worked'), sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
+              { key: 'break_minutes', header: t('hours.break'), sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
             ]}
           />
         )}
@@ -95,19 +87,19 @@ export function MyHours() {
 
       {/* Punches (read-only) */}
       <div style={styles.card}>
-        <div style={styles.cardHeader}>Punches</div>
-        {loading ? <p style={styles.muted}>Loading…</p> : events.length === 0 ? (
-          <p style={styles.muted}>No punches in this range.</p>
+        <div style={styles.cardHeader}>{t('hours.punches')}</div>
+        {loading ? <p style={styles.muted}>{t('hours.loading')}</p> : events.length === 0 ? (
+          <p style={styles.muted}>{t('hours.noPunches')}</p>
         ) : (
           <Table
             rowId={(ev: ClockEvent) => ev.id}
             data={events}
             clientSort
             columns={[
-              { key: 'event_at', header: 'When', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) },
-              { key: 'event_type', header: 'Event', sortable: true, filterLabel: (v: string) => EVENT_LABEL[v as ClockEventType] || v, render: (v: ClockEventType) => EVENT_LABEL[v] },
-              { key: 'source', header: 'Source', sortable: true, filterLabel: (v: string) => (v === 'manual' ? 'Manual' : 'Clock'), render: (v: string) => (v === 'manual' ? 'Manual' : 'Clock') },
-              { key: 'note', header: 'Note', sortable: true, render: (v: string) => v || '—' },
+              { key: 'event_at', header: t('hours.when'), sortable: true, filter: 'date' as const, render: (v: string) => formatDateTime(v, undefined, { dateStyle: 'short', timeStyle: 'short' }) },
+              { key: 'event_type', header: t('hours.event'), sortable: true, filterLabel: (v: string) => t(`clock.event.${v}`, { defaultValue: v }), render: (v: ClockEventType) => t(`clock.event.${v}`) },
+              { key: 'source', header: t('hours.source'), sortable: true, filterLabel: (v: string) => (v === 'manual' ? t('hours.sourceManual') : t('hours.sourceClock')), render: (v: string) => (v === 'manual' ? t('hours.sourceManual') : t('hours.sourceClock')) },
+              { key: 'note', header: t('hours.note'), sortable: true, render: (v: string) => v || '—' },
             ]}
           />
         )}

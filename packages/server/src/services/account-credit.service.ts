@@ -2,6 +2,7 @@ import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import { logAudit } from './audit.service';
 import { generateReference } from './customer-payment.service';
+import { msg } from '../i18n';
 
 /**
  * Customer account credit (unapplied payments).
@@ -108,12 +109,12 @@ export async function applyCreditToInvoice(args: {
       [invoiceId, businessId],
     );
     const invoice = invRows[0];
-    if (!invoice) throw new AccountCreditError('Invoice not found for this business', 'INVOICE_NOT_FOUND');
-    if (invoice.status === 'paid') throw new AccountCreditError('Invoice is already paid', 'ALREADY_PAID');
-    if (invoice.status === 'void') throw new AccountCreditError('Invoice is void', 'INVOICE_VOID');
+    if (!invoice) throw new AccountCreditError(msg('errors:accountCredit.invoiceNotFoundForThisBusiness'), 'INVOICE_NOT_FOUND');
+    if (invoice.status === 'paid') throw new AccountCreditError(msg('errors:accountCredit.invoiceIsAlreadyPaid'), 'ALREADY_PAID');
+    if (invoice.status === 'void') throw new AccountCreditError(msg('errors:accountCredit.invoiceIsVoid'), 'INVOICE_VOID');
 
     const outstanding = invoice.total_cents - invoice.amount_paid_cents;
-    if (outstanding <= 0) throw new AccountCreditError('Invoice has no outstanding balance', 'NO_BALANCE');
+    if (outstanding <= 0) throw new AccountCreditError(msg('errors:accountCredit.invoiceHasNoOutstandingBalance'), 'NO_BALANCE');
 
     // Available credit rows for this customer, oldest first (lock them).
     const { rows: creditRows } = await client.query(
@@ -125,15 +126,15 @@ export async function applyCreditToInvoice(args: {
       [businessId, invoice.customer_id],
     );
     const totalAvailable = creditRows.reduce((n, r) => n + r.remaining_cents, 0);
-    if (totalAvailable <= 0) throw new AccountCreditError('Customer has no available account credit', 'NO_CREDIT');
+    if (totalAvailable <= 0) throw new AccountCreditError(msg('errors:accountCredit.customerHasNoAvailableAccountCredit'), 'NO_CREDIT');
 
     // Currency must match the invoice (credit currency is the business currency).
     const mismatched = creditRows.find((r) => r.currency && invoice.currency && r.currency !== invoice.currency);
-    if (mismatched) throw new AccountCreditError('Account credit currency does not match the invoice', 'CURRENCY_MISMATCH');
+    if (mismatched) throw new AccountCreditError(msg('errors:accountCredit.accountCreditCurrencyDoesNotMatch'), 'CURRENCY_MISMATCH');
 
     const requested = args.amountCents && args.amountCents > 0 ? args.amountCents : outstanding;
     const toApply = Math.min(requested, outstanding, totalAvailable);
-    if (toApply <= 0) throw new AccountCreditError('Nothing to apply', 'NOTHING_TO_APPLY');
+    if (toApply <= 0) throw new AccountCreditError(msg('errors:accountCredit.nothingToApply'), 'NOTHING_TO_APPLY');
 
     const reference = generateReference();
 

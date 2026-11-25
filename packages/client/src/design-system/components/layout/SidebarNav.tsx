@@ -1,8 +1,10 @@
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Persona } from '@daystream/shared';
 
 interface NavItem {
-  label: string;
+  /** Key in the nav translation file. */
+  labelKey: string;
   path: string;
   icon: string;
 }
@@ -13,44 +15,45 @@ interface SidebarNavProps {
 
 const navByPersona: Record<Persona, NavItem[]> = {
   system: [
-    { label: 'Dashboard', path: '/dashboard', icon: '🏠' },
-    { label: 'Tenants', path: '/admin/tenants', icon: '🏢' },
-    { label: 'Users', path: '/admin/users', icon: '👤' },
-    { label: 'Configuration', path: '/admin/config', icon: '⚙️' },
-    { label: 'Feature Flags', path: '/admin/feature-flags', icon: '🚩' },
-    { label: 'Audit Log', path: '/admin/audit', icon: '🔍' },
+    { labelKey: 'sidebar_nav.dashboard', path: '/dashboard', icon: '🏠' },
+    { labelKey: 'sidebar_nav.tenants', path: '/admin/tenants', icon: '🏢' },
+    { labelKey: 'sidebar_nav.users', path: '/admin/users', icon: '👤' },
+    { labelKey: 'sidebar_nav.configuration', path: '/admin/config', icon: '⚙️' },
+    { labelKey: 'sidebar_nav.feature_flags', path: '/admin/feature-flags', icon: '🚩' },
+    { labelKey: 'sidebar_nav.audit_log', path: '/admin/audit', icon: '🔍' },
   ],
   tenant: [
-    { label: 'Dashboard', path: '/dashboard', icon: '🏠' },
-    { label: 'Businesses', path: '/businesses', icon: '🏪' },
-    { label: 'Users', path: '/admin/tenant-users', icon: '👤' },
-    { label: 'Billing', path: '/billing', icon: '🧾' },
-    { label: 'Reports', path: '/reports', icon: '📈' },
-    { label: 'Settings', path: '/settings', icon: '⚙️' },
+    { labelKey: 'sidebar_nav.dashboard', path: '/dashboard', icon: '🏠' },
+    { labelKey: 'sidebar_nav.businesses', path: '/businesses', icon: '🏪' },
+    { labelKey: 'sidebar_nav.users', path: '/admin/tenant-users', icon: '👤' },
+    { labelKey: 'sidebar_nav.billing', path: '/billing', icon: '🧾' },
+    { labelKey: 'sidebar_nav.reports', path: '/reports', icon: '📈' },
+    { labelKey: 'sidebar_nav.settings', path: '/settings', icon: '⚙️' },
   ],
   business: [
-    { label: 'Dashboard', path: '/dashboard', icon: '🏠' },
-    { label: 'Bookings', path: '/bookings', icon: '📅' },
-    { label: 'People', path: '/customers', icon: '👥' },
-    { label: 'Services', path: '/services', icon: '💼' },
-    { label: 'Staff', path: '/staff', icon: '👔' },
-    { label: 'Reports', path: '/reports', icon: '📈' },
-    { label: 'Settings', path: '/settings', icon: '⚙️' },
+    { labelKey: 'sidebar_nav.dashboard', path: '/dashboard', icon: '🏠' },
+    { labelKey: 'sidebar_nav.bookings', path: '/bookings', icon: '📅' },
+    { labelKey: 'sidebar_nav.people', path: '/customers', icon: '👥' },
+    { labelKey: 'sidebar_nav.services', path: '/services', icon: '💼' },
+    { labelKey: 'sidebar_nav.staff', path: '/staff', icon: '👔' },
+    { labelKey: 'sidebar_nav.reports', path: '/reports', icon: '📈' },
+    { labelKey: 'sidebar_nav.settings', path: '/settings', icon: '⚙️' },
   ],
   customer: [
-    { label: 'Dashboard', path: '/dashboard', icon: '🏠' },
-    { label: 'Book', path: '/book', icon: '📅' },
-    { label: 'My Bookings', path: '/my-bookings', icon: '📋' },
-    { label: 'Account', path: '/profile', icon: '👤' },
+    { labelKey: 'sidebar_nav.dashboard', path: '/dashboard', icon: '🏠' },
+    { labelKey: 'sidebar_nav.book', path: '/book', icon: '📅' },
+    { labelKey: 'sidebar_nav.my_bookings', path: '/my-bookings', icon: '📋' },
+    { labelKey: 'sidebar_nav.account', path: '/profile', icon: '👤' },
   ],
 };
 
 export function SidebarNav({ persona }: SidebarNavProps) {
   const location = useLocation();
+  const { t } = useTranslation('nav');
   const items = navByPersona[persona] || navByPersona.customer;
 
   return (
-    <nav style={styles.nav} aria-label="Main navigation">
+    <nav style={styles.nav} aria-label={t('sidebar_nav.label')}>
       {items.map((item) => {
         const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
         return (
@@ -61,7 +64,7 @@ export function SidebarNav({ persona }: SidebarNavProps) {
             aria-current={isActive ? 'page' : undefined}
           >
             <span style={styles.icon}>{item.icon}</span>
-            <span>{item.label}</span>
+            <span>{t(item.labelKey)}</span>
           </a>
         );
       })}

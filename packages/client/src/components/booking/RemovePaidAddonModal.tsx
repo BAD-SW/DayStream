@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { Button } from '../../design-system/components/actions/Button';
 import { RadioGroup } from '../../design-system/components/forms/RadioGroup';
@@ -19,15 +20,16 @@ export function RemovePaidAddonModal({ bookingId, businessId, bookingAddonId, na
   name: string; amount: number; hasCustomer: boolean;
   onClose: () => void; onDone: (message: string) => void;
 }) {
+  const { t } = useTranslation('calendar');
   const [refundTo, setRefundTo] = useState<RefundTo>('original');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   const options: Array<{ value: RefundTo; label: string }> = [
-    { value: 'original', label: `Refund ${formatCurrency(amount)} to the payment` },
-    ...(hasCustomer ? [{ value: 'account_credit' as RefundTo, label: `Refund ${formatCurrency(amount)} as account credit` }] : []),
-    { value: 'none', label: 'No refund (an alternative is given)' },
+    { value: 'original', label: t('removeAddon.refundToPayment', { amount: formatCurrency(amount) }) },
+    ...(hasCustomer ? [{ value: 'account_credit' as RefundTo, label: t('removeAddon.refundAsCredit', { amount: formatCurrency(amount) }) }] : []),
+    { value: 'none', label: t('removeAddon.noRefund') },
   ];
 
   const remove = async () => {
@@ -35,25 +37,27 @@ export function RemovePaidAddonModal({ bookingId, businessId, bookingAddonId, na
     try {
       const r = await bookingsApi.removePaidAddon(bookingId, businessId, bookingAddonId, refundTo, reason.trim() || undefined);
       const refunded = r.refund?.amount ? formatCurrency(r.refund.amount) : null;
-      onDone(`${name} removed${refunded ? `, ${refunded} refunded${refundTo === 'account_credit' ? ' as account credit' : ' to the payment'}` : refundTo === 'none' ? ', not refunded' : ''}.`);
+      onDone(refunded
+        ? t(refundTo === 'account_credit' ? 'removeAddon.doneRefundedCredit' : 'removeAddon.doneRefundedPayment', { name, amount: refunded })
+        : t(refundTo === 'none' ? 'removeAddon.doneNotRefunded' : 'removeAddon.done', { name }));
     } catch (e: any) {
-      const m = e?.response?.data?.error; setErr(typeof m === 'string' ? m : 'The add-on could not be removed.');
+      const m = e?.response?.data?.error; setErr(typeof m === 'string' ? m : t('removeAddon.failed'));
     } finally { setBusy(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Remove ${name}`} size="sm"
+    <Modal open onClose={onClose} title={t('removeAddon.title', { name })} size="sm"
       footer={<>
-        <Button variant="ghost" onClick={onClose} disabled={busy}>Keep it</Button>
-        <Button variant="destructive" onClick={remove} loading={busy}>Remove add-on</Button>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>{t('removeAddon.keep')}</Button>
+        <Button variant="destructive" onClick={remove} loading={busy}>{t('removeAddon.remove')}</Button>
       </>}>
       <div style={styles.form}>
         {err && <Alert variant="error">{err}</Alert>}
-        <p style={styles.text}>{name} was paid at reservation ({formatCurrency(amount)}).</p>
-        <RadioGroup label="Refund" name="remove-addon-refund" value={refundTo} onChange={(v) => setRefundTo(v as RefundTo)} options={options} />
-        <Textarea label="Reason" name="remove-addon-reason" value={reason} onChange={setReason} rows={2}
-          helperText="Optional, for example not available today. Kept in the appointment's history." />
-        <p style={styles.text}>The refund is made now. To give an alternative, add it to this visit after this.</p>
+        <p style={styles.text}>{t('removeAddon.paidAtReservation', { name, amount: formatCurrency(amount) })}</p>
+        <RadioGroup label={t('removeAddon.refund')} name="remove-addon-refund" value={refundTo} onChange={(v) => setRefundTo(v as RefundTo)} options={options} />
+        <Textarea label={t('removeAddon.reason')} name="remove-addon-reason" value={reason} onChange={setReason} rows={2}
+          helperText={t('removeAddon.reasonHelper')} />
+        <p style={styles.text}>{t('removeAddon.refundNote')}</p>
       </div>
     </Modal>
   );

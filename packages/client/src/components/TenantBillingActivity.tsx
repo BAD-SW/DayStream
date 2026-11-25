@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatDateTime } from '../utils/format';
 import { Button } from '../design-system/components/actions/Button';
 import { Table, applyTableFilters } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
@@ -37,6 +39,10 @@ const RUN_FILTER_COLUMNS = [
 ];
 
 export function TenantBillingActivity() {
+  const { t } = useTranslation('tenantOps');
+  // Stored run statuses and charge outcomes are shown through a key, never printed raw.
+  const runStatusText = (v: string) => t(`schedule.runStatus.${v}`, { defaultValue: v });
+  const outcomeText = (v: string) => t(`activity.outcome.${v}`, { defaultValue: v });
   // Column filters beside the sort icon (David, 2026-11-02). The Started filter asks the server
   // for that range (default last 7 days); the other columns filter the runs on screen.
   // No page starts filtered (David, 2026-11-04): with no range, every run.
@@ -83,8 +89,8 @@ export function TenantBillingActivity() {
 
   return (
     <div>
-      <h3 style={styles.title}>Billing Activity</h3>
-      <p style={styles.subtext}>Runs in the selected range (default last 7 days). Click a run to see the charges it attempted.</p>
+      <h3 style={styles.title}>{t('activity.title')}</h3>
+      <p style={styles.subtext}>{t('activity.subtitle')}</p>
 
 
       {(
@@ -98,39 +104,39 @@ export function TenantBillingActivity() {
               filters={runFilters}
               onFiltersChange={setRunFilters}
               loading={loading}
-              emptyMessage="No runs in this range."
+              emptyMessage={t('activity.noRuns')}
               onRowClick={(r) => toggleRun(r.id)}
               activeRowId={openRunId}
               clientSort
               columns={[
-                { key: 'startedAt', header: 'Started', sortable: true, filter: 'date' as const, render: (v: string) => (v ? new Date(v).toLocaleString() : '—') },
-                { key: 'status', header: 'Status', sortable: true, render: (v: string) => <span style={{ color: v === 'success' ? 'var(--color-success, #17794A)' : v === 'failed' ? 'var(--color-error, #C4291C)' : 'var(--color-text)' }}>{v}</span> },
-                { key: 'newCharges', header: 'New', align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '—' },
-                { key: 'settled', header: 'Set.', align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.settled ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.settled ?? '—' },
-                { key: 'failed', header: 'Fail', align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.failed ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.failed ?? '—' },
+                { key: 'startedAt', header: t('activity.col.started'), sortable: true, filter: 'date' as const, render: (v: string) => (v ? formatDateTime(v) : '—') },
+                { key: 'status', header: t('activity.col.status'), sortable: true, filterLabel: (v: string) => runStatusText(v), render: (v: string) => <span style={{ color: v === 'success' ? 'var(--color-success, #17794A)' : v === 'failed' ? 'var(--color-error, #C4291C)' : 'var(--color-text)' }}>{runStatusText(v)}</span> },
+                { key: 'newCharges', header: t('activity.col.new'), align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '—' },
+                { key: 'settled', header: t('activity.col.settled'), align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.settled ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.settled ?? '—' },
+                { key: 'failed', header: t('activity.col.failed'), align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.failed ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.failed ?? '—' },
               ]}
             />
           </div>
 
           <div style={styles.detailPane}>
             {!openRunId ? (
-              <p style={styles.subtext}>Select a run to see the charges it attempted.</p>
+              <p style={styles.subtext}>{t('activity.selectRun')}</p>
             ) : loadingCharges ? (
-              <p style={styles.subtext}>Loading charges…</p>
+              <p style={styles.subtext}>{t('activity.loadingCharges')}</p>
             ) : runCharges.length === 0 ? (
-              <p style={styles.subtext}>This run attempted no charges.</p>
+              <p style={styles.subtext}>{t('activity.noCharges')}</p>
             ) : (
               <Table
                 rowId={(a: payApi.BusinessRunChargeAttempt) => a.id}
                 data={runCharges}
                 clientSort
                 columns={[
-                  { key: 'reference_number', header: 'Ref', sortable: true, render: (v: string) => v ?? '—' },
-                  { key: 'business_name', header: 'Business', sortable: true },
-                  { key: 'cycle', header: 'Cycle', sortable: true, filterValue: cycleOf, render: (_: any, a: payApi.BusinessRunChargeAttempt) => cycleOf(a) },
-                  { key: 'amount_cents', header: 'Amount', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), runCharges[0]?.currency), render: (v: number, a: payApi.BusinessRunChargeAttempt) => formatCurrency(v, a.currency) },
-                  { key: 'outcome', header: 'Outcome', sortable: true, render: (v: string) => <span style={{ color: CHARGE_STATUS_COLOR[v] }}>{v}</span> },
-                  { key: 'detail', header: 'Detail', filterValue: (a: payApi.BusinessRunChargeAttempt) => a.failure_reason || a.provider_reference || '', render: (_: any, a: payApi.BusinessRunChargeAttempt) => a.failure_reason || a.provider_reference || '—' },
+                  { key: 'reference_number', header: t('activity.col.ref'), sortable: true, render: (v: string) => v ?? '—' },
+                  { key: 'business_name', header: t('activity.col.business'), sortable: true },
+                  { key: 'cycle', header: t('activity.col.cycle'), sortable: true, filterValue: cycleOf, render: (_: any, a: payApi.BusinessRunChargeAttempt) => cycleOf(a) },
+                  { key: 'amount_cents', header: t('activity.col.amount'), align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), runCharges[0]?.currency), render: (v: number, a: payApi.BusinessRunChargeAttempt) => formatCurrency(v, a.currency) },
+                  { key: 'outcome', header: t('activity.col.outcome'), sortable: true, filterLabel: (v: string) => outcomeText(v), render: (v: string) => <span style={{ color: CHARGE_STATUS_COLOR[v] }}>{outcomeText(v)}</span> },
+                  { key: 'detail', header: t('activity.col.detail'), filterValue: (a: payApi.BusinessRunChargeAttempt) => a.failure_reason || a.provider_reference || '', render: (_: any, a: payApi.BusinessRunChargeAttempt) => a.failure_reason || a.provider_reference || '—' },
                 ]}
               />
             )}
@@ -139,24 +145,24 @@ export function TenantBillingActivity() {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-lg)' }}>
-        <h4 style={styles.label}>Failed-charge report</h4>
-        <Button variant="outline" size="sm" onClick={toggleFailedReport}>{showFailed ? 'Hide' : 'Show'}</Button>
+        <h4 style={styles.label}>{t('activity.failedReport')}</h4>
+        <Button variant="outline" size="sm" onClick={toggleFailedReport}>{showFailed ? t('activity.hide') : t('activity.show')}</Button>
       </div>
       {showFailed && (
         failed.length === 0 ? (
-          <p style={styles.subtext}>No outstanding failed charges.</p>
+          <p style={styles.subtext}>{t('activity.noFailed')}</p>
         ) : (
           <Table
             rowId={(f: payApi.BusinessWideCharge) => f.id}
             data={failed}
             clientSort
             columns={[
-              { key: 'reference_number', header: 'Ref', sortable: true },
-              { key: 'business_name', header: 'Business', sortable: true },
-              { key: 'cycle', header: 'Cycle', sortable: true, filterValue: cycleOf, render: (_: any, f: payApi.BusinessWideCharge) => cycleOf(f) },
-              { key: 'amount_charged_cents', header: 'Amount', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), failed[0]?.currency), render: (v: number, f: payApi.BusinessWideCharge) => formatCurrency(v, f.currency) },
-              { key: 'attempts', header: 'Attempts', align: 'right' as const, sortable: true },
-              { key: 'failure_reason', header: 'Reason', sortable: true, render: (v: string) => v || '—' },
+              { key: 'reference_number', header: t('activity.col.ref'), sortable: true },
+              { key: 'business_name', header: t('activity.col.business'), sortable: true },
+              { key: 'cycle', header: t('activity.col.cycle'), sortable: true, filterValue: cycleOf, render: (_: any, f: payApi.BusinessWideCharge) => cycleOf(f) },
+              { key: 'amount_charged_cents', header: t('activity.col.amount'), align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), failed[0]?.currency), render: (v: number, f: payApi.BusinessWideCharge) => formatCurrency(v, f.currency) },
+              { key: 'attempts', header: t('activity.col.attempts'), align: 'right' as const, sortable: true },
+              { key: 'failure_reason', header: t('activity.col.reason'), sortable: true, render: (v: string) => v || '—' },
             ]}
           />
         )

@@ -1,8 +1,12 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
+import { PublicLanguageBar } from '../components/PublicLanguageBar';
 
 export function Login() {
+  const { t } = useTranslation('auth');
+  const { t: tc } = useTranslation('common');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -24,7 +28,7 @@ export function Login() {
       await login(TENANT_ID, email, password);
       navigate('/dashboard');
     } catch (err: any) {
-      const msg = err.response?.data?.error || 'Login failed';
+      const msg = err.response?.data?.error || t('login.failed');
       setError(msg);
     } finally {
       setLoading(false);
@@ -33,19 +37,20 @@ export function Login() {
 
   return (
     <div style={styles.container}>
+      <PublicLanguageBar />
       <div style={styles.card}>
-        <h1 style={styles.title}>DayStream</h1>
-        <p style={styles.subtitle}>Sign in to your account</p>
+        <h1 style={styles.title}>{tc('app_name')}</h1>
+        <p style={styles.subtitle}>{t('sign_in_subtitle')}</p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.fieldGroup}>
-            <label htmlFor="email" style={styles.label}>Email</label>
+            <label htmlFor="email" style={styles.label}>{t('email')}</label>
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder={t('login.emailPlaceholder')}
               required
               style={styles.input}
               autoComplete="email"
@@ -53,7 +58,7 @@ export function Login() {
           </div>
 
           <div style={styles.fieldGroup}>
-            <label htmlFor="password" style={styles.label}>Password</label>
+            <label htmlFor="password" style={styles.label}>{t('password')}</label>
             <div style={styles.passwordWrapper}>
               <input
                 id="password"
@@ -69,7 +74,7 @@ export function Login() {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 style={styles.revealBtn}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
               >
                 {showPassword ? '🙈' : '👁️'}
               </button>
@@ -79,10 +84,10 @@ export function Login() {
           {error && <p style={styles.error}>{error}</p>}
 
           <button type="submit" disabled={loading} style={styles.button}>
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? t('signing_in') : t('sign_in')}
           </button>
 
-          <Link to="/forgot-password" style={styles.forgotLink}>Forgot your password?</Link>
+          <Link to="/forgot-password" style={styles.forgotLink}>{t('login.forgotYourPassword')}</Link>
         </form>
       </div>
     </div>
@@ -98,6 +103,8 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--color-background)',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     padding: '16px',
+    paddingTop: 'var(--space-xl)',
+    position: 'relative' as const,
   },
   card: {
     backgroundColor: 'var(--color-surface)',

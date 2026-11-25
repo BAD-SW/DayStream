@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -33,6 +34,7 @@ function ordered(saved: string[] | null): ReportCategory[] {
  * order is saved to their profile and used every time (owner, 19 Nov 2026).
  */
 export function Reports() {
+  const { t } = useTranslation('reports');
   const navigate = useNavigate();
   const { user } = useAuth();
   const permissions = getPermissionsFromRole(user?.role || '');
@@ -63,7 +65,7 @@ export function Reports() {
     const before = savedOrder;
     setSavedOrder(order);
     setNote(null);
-    setPreference(ORDER_KEY, order).catch(() => { setSavedOrder(before); setNote('Could not save the order. Try again.'); });
+    setPreference(ORDER_KEY, order).catch(() => { setSavedOrder(before); setNote(t('hub.saveFailed')); });
   };
 
   function handleDragEnd(e: DragEndEvent) {
@@ -77,10 +79,10 @@ export function Reports() {
     <div style={styles.page}>
       <div style={styles.titleRow}>
         <div>
-          <h1 style={styles.pageTitle}>Reports &amp; Analytics</h1>
-          <p style={styles.pageSubtitle}>Run detailed reports over any date range, filter on screen, and save as PDF or CSV. Drag a category by its handle to put them in your own order.</p>
+          <h1 style={styles.pageTitle}>{t('hub.title')}</h1>
+          <p style={styles.pageSubtitle}>{t('hub.subtitle')}</p>
         </div>
-        {savedOrder && <button type="button" style={styles.resetBtn} onClick={() => save(null)}>Reset order</button>}
+        {savedOrder && <button type="button" style={styles.resetBtn} onClick={() => save(null)}>{t('hub.resetOrder')}</button>}
       </div>
       {note && <p role="alert" style={styles.note}>{note}</p>}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -97,6 +99,8 @@ export function Reports() {
 }
 
 function SortableCategory({ category, onOpen }: { category: ReportCategory; onOpen: (reportId: string) => void }) {
+  const { t } = useTranslation('reports');
+  const categoryLabel = t(`catalog.category.${category.id}`);
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: category.id });
   return (
     <section
@@ -114,8 +118,8 @@ function SortableCategory({ category, onOpen }: { category: ReportCategory; onOp
           type="button"
           ref={setActivatorNodeRef}
           style={{ ...styles.handle, cursor: isDragging ? 'grabbing' : 'grab' }}
-          aria-label={`Move ${category.label}`}
-          title="Drag to move this category"
+          aria-label={t('hub.move', { name: categoryLabel })}
+          title={t('hub.dragToMove')}
           {...attributes}
           {...listeners}
         >
@@ -126,7 +130,7 @@ function SortableCategory({ category, onOpen }: { category: ReportCategory; onOp
           </svg>
         </button>
         <span style={{ ...styles.accentBar, background: category.accentColor }} aria-hidden="true" />
-        <h2 style={styles.categoryLabel}>{category.label}</h2>
+        <h2 style={styles.categoryLabel}>{categoryLabel}</h2>
       </div>
       <div style={styles.tileGrid}>
         {category.reports.map((report) => (
@@ -139,9 +143,9 @@ function SortableCategory({ category, onOpen }: { category: ReportCategory; onOp
             onClick={report.comingSoon ? undefined : () => onOpen(report.id)}
           >
             <span style={styles.tileIcon} aria-hidden="true">{report.icon}</span>
-            <span style={styles.tileTitle}>{report.title}</span>
-            <span style={styles.tileDescription}>{report.description}</span>
-            {report.comingSoon && <span style={styles.comingSoonBadge}>Coming soon</span>}
+            <span style={styles.tileTitle}>{t(`catalog.report.${report.id}.title`)}</span>
+            <span style={styles.tileDescription}>{t(`catalog.report.${report.id}.description`)}</span>
+            {report.comingSoon && <span style={styles.comingSoonBadge}>{t('hub.comingSoon')}</span>}
           </button>
         ))}
       </div>

@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Get resource requirements for a service.
@@ -26,7 +27,7 @@ export async function createRequirement(input: {
   bufferMinutes?: number;
 }) {
   if (!input.resourceId && !input.resourceTypeId) {
-    throw new Error('Either resource_id or resource_type_id is required');
+    throw new Error(msg('errors:resourceRequirements.eitherResourceIdOrResourceType'));
   }
 
   const { rows } = await adminPool.query(

@@ -1,9 +1,12 @@
+import { askConfirm } from '../../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { FormRenderer } from '../forms/FormRenderer';
 import { validateFormAnswers } from '@daystream/shared';
 import type { FormAnswer } from '@daystream/shared';
+import { formatDateTime } from '../../utils/format';
 import * as chartsApi from '../../api/charts';
 import * as formsApi from '../../api/forms';
 import type { Chart, ChartSummary, ChartAnswers } from '../../api/charts';
@@ -24,7 +27,7 @@ interface Props {
   defaultChartGroupId?: string | null;
 }
 
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
+const when = (iso: string | null) => (iso ? formatDateTime(iso) : '');
 
 function errorText(e: unknown, fallback: string): string {
   const err = e as { response?: { data?: { error?: string } }; message?: string };
@@ -32,6 +35,7 @@ function errorText(e: unknown, fallback: string): string {
 }
 
 export function ChartsPanel({ businessId, customerId, bookingId = null, defaultChartGroupId = null }: Props) {
+  const { t } = useTranslation('customers');
   const [templates, setTemplates] = useState<Form[]>([]);
   const [charts, setCharts] = useState<ChartSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,11 +46,11 @@ export function ChartsPanel({ businessId, customerId, bookingId = null, defaultC
 
   const load = useCallback(async () => {
     try {
-      const [t, c] = await Promise.all([
+      const [tpl, c] = await Promise.all([
         formsApi.listForms(businessId, 'chart'),
         chartsApi.listCustomerCharts(businessId, customerId),
       ]);
-      const active = t.filter((x) => x.isActive);
+      const active = tpl.filter((x) => x.isActive);
       setTemplates(active);
       setCharts(c);
       setTemplateId((cur) => {
@@ -56,11 +60,11 @@ export function ChartsPanel({ businessId, customerId, bookingId = null, defaultC
       });
       setError(null);
     } catch (e) {
-      setError(errorText(e, 'Could not load the charts.'));
+      setError(errorText(e, t('charts.loadFailed')));
     } finally {
       setLoading(false);
     }
-  }, [businessId, customerId, defaultChartGroupId]);
+  }, [businessId, customerId, defaultChartGroupId, t]);
   useEffect(() => { load(); }, [load]);
 
   const start = async () => {
@@ -70,10 +74,10 @@ export function ChartsPanel({ businessId, customerId, bookingId = null, defaultC
       const chart = await chartsApi.createChart(businessId, { customerId, formId: templateId, bookingId });
       await load();
       setOpenId(chart.id);
-    } catch (e) { setError(errorText(e, 'Could not start the chart.')); } finally { setCreating(false); }
+    } catch (e) { setError(errorText(e, t('charts.startFailed'))); } finally { setCreating(false); }
   };
 
-  if (loading) return <p style={s.muted}>Loading charts...</p>;
+  if (loading) return <p style={s.muted}>{t('charts.loading')}</p>;
 
   const thisVisit = bookingId ? charts.filter((c) => c.bookingId === bookingId) : [];
   const others = bookingId ? charts.filter((c) => c.bookingId !== bookingId) : charts;
@@ -83,46 +87,46 @@ export function ChartsPanel({ businessId, customerId, bookingId = null, defaultC
       <div style={s.rowInfo}>
         <span style={s.name}>{c.formName}</span>
         <span style={{ ...s.tag, color: c.status === 'signed' ? 'var(--color-success)' : 'var(--color-warning)' }}>
-          {c.status === 'signed' ? 'Signed off' : 'Draft'}
+          {c.status === 'signed' ? t('charts.signedOff') : t('charts.draft')}
         </span>
-        {c.amendmentCount > 0 && <span style={s.tag}>{c.amendmentCount} amendment{c.amendmentCount === 1 ? '' : 's'}</span>}
+        {c.amendmentCount > 0 && <span style={s.tag}>{t('charts.amendmentCount', { count: c.amendmentCount })}</span>}
         <span style={s.meta}>
-          {when(c.signedAt ?? c.createdAt)}{(c.signedByName ?? c.createdByName) ? ` by ${c.signedByName ?? c.createdByName}` : ''}
+          {when(c.signedAt ?? c.createdAt)}{(c.signedByName ?? c.createdByName) ? ` ${t('charts.by', { name: c.signedByName ?? c.createdByName })}` : ''}
         </span>
       </div>
-      <Button size="sm" variant="secondary" onClick={() => setOpenId(c.id)}>{c.status === 'draft' ? 'Continue' : 'Open'}</Button>
+      <Button size="sm" variant="secondary" onClick={() => setOpenId(c.id)}>{c.status === 'draft' ? t('charts.continue') : t('charts.open')}</Button>
     </li>
   );
 
   return (
     <div>
-      <p style={s.helper}>Charts are private to staff who work with clients. Opening or changing one is recorded.</p>
+      <p style={s.helper}>{t('charts.privacy')}</p>
       {error && <p style={s.error} role="alert">{error}</p>}
 
       <div style={s.newRow}>
         {templates.length === 0 ? (
-          <span style={s.muted}>No chart templates yet. Add one in Business Setup &gt; Templates &gt; Charts.</span>
+          <span style={s.muted}>{t('charts.noTemplates')}</span>
         ) : (
           <>
-            <label htmlFor="chart-template" style={s.label}>New chart</label>
+            <label htmlFor="chart-template" style={s.label}>{t('charts.newChart')}</label>
             <select id="chart-template" style={s.select} value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {templates.map((tpl) => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}
             </select>
-            <Button size="sm" onClick={start} loading={creating} disabled={!templateId}>Start chart</Button>
+            <Button size="sm" onClick={start} loading={creating} disabled={!templateId}>{t('charts.startChart')}</Button>
           </>
         )}
       </div>
 
       {bookingId && (
         <>
-          <h4 style={s.heading}>This visit</h4>
-          {thisVisit.length === 0 ? <p style={s.muted}>No chart for this visit yet.</p> : <ul style={s.list}>{thisVisit.map(row)}</ul>}
+          <h4 style={s.heading}>{t('charts.thisVisit')}</h4>
+          {thisVisit.length === 0 ? <p style={s.muted}>{t('charts.noneThisVisit')}</p> : <ul style={s.list}>{thisVisit.map(row)}</ul>}
         </>
       )}
 
-      <h4 style={s.heading}>{bookingId ? 'Previous charts' : 'Charts'}</h4>
+      <h4 style={s.heading}>{bookingId ? t('charts.previous') : t('charts.heading')}</h4>
       {others.length === 0
-        ? <p style={s.muted}>{bookingId ? 'No previous charts for this customer.' : 'No charts yet for this customer.'}</p>
+        ? <p style={s.muted}>{bookingId ? t('charts.nonePrevious') : t('charts.noneYet')}</p>
         : <ul style={s.list}>{others.map(row)}</ul>}
 
       {openId && (
@@ -136,6 +140,7 @@ export function ChartsPanel({ businessId, customerId, bookingId = null, defaultC
 // ---------------------------------------------------------------------------
 
 function ChartModal({ businessId, chartId, onClose }: { businessId: string; chartId: string; onClose: () => void }) {
+  const { t } = useTranslation('customers');
   const [chart, setChart] = useState<Chart | null>(null);
   const [answers, setAnswers] = useState<ChartAnswers>({});
   const [dirty, setDirty] = useState(false);
@@ -149,9 +154,9 @@ function ChartModal({ businessId, chartId, onClose }: { businessId: string; char
     let live = true;
     chartsApi.getChart(businessId, chartId)
       .then((c) => { if (live) { setChart(c); setAnswers(c.answers); } })
-      .catch((e) => { if (live) setError(errorText(e, 'Could not open the chart.')); });
+      .catch((e) => { if (live) setError(errorText(e, t('charts.openFailed'))); });
     return () => { live = false; };
-  }, [businessId, chartId]);
+  }, [businessId, chartId, t]);
 
   const isDraft = chart?.status === 'draft';
 
@@ -162,10 +167,10 @@ function ChartModal({ businessId, chartId, onClose }: { businessId: string; char
       setSaveState('saved'); setDirty(false);
       return true;
     } catch (e) {
-      setSaveState('error'); setError(errorText(e, 'Could not save the chart.'));
+      setSaveState('error'); setError(errorText(e, t('charts.saveFailed')));
       return false;
     }
-  }, [businessId, chartId]);
+  }, [businessId, chartId, t]);
 
   // Save a moment after the practitioner stops typing.
   useEffect(() => {
@@ -190,23 +195,23 @@ function ChartModal({ businessId, chartId, onClose }: { businessId: string; char
     if (found.length > 0) {
       const map: Record<string, string> = {};
       for (const i of found) if (i.itemId) map[i.itemId] = i.message;
-      setErrors(map); setError('Some answers need attention before sign-off.');
+      setErrors(map); setError(t('charts.needAttention'));
       return;
     }
-    if (!confirm('Sign off this chart? It will be locked. Later corrections are added as amendments.')) return;
+    if (!(await askConfirm({ message: t('charts.signOffConfirm') }))) return;
     setBusy(true); setError(null); setErrors({});
     try {
       if (!(await persist(answers))) return;
       const signed = await chartsApi.signOffChart(businessId, chartId);
       setChart(signed); setAnswers(signed.answers);
-    } catch (e) { setError(errorText(e, 'Could not sign off the chart.')); } finally { setBusy(false); }
+    } catch (e) { setError(errorText(e, t('charts.signOffFailed'))); } finally { setBusy(false); }
   };
 
   const deleteDraft = async () => {
-    if (!confirm('Delete this draft chart? This cannot be undone.')) return;
+    if (!(await askConfirm({ message: t('charts.deleteConfirm'), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     setBusy(true); setError(null);
     try { await chartsApi.deleteChart(businessId, chartId); onClose(); }
-    catch (e) { setError(errorText(e, 'Could not delete the draft.')); setBusy(false); }
+    catch (e) { setError(errorText(e, t('charts.deleteFailed'))); setBusy(false); }
   };
 
   const addAmendment = async () => {
@@ -215,7 +220,7 @@ function ChartModal({ businessId, chartId, onClose }: { businessId: string; char
     try {
       const updated = await chartsApi.amendChart(businessId, chartId, amendment.trim());
       setChart(updated); setAmendment('');
-    } catch (e) { setError(errorText(e, 'Could not add the amendment.')); } finally { setBusy(false); }
+    } catch (e) { setError(errorText(e, t('charts.amendFailed'))); } finally { setBusy(false); }
   };
 
   const openPdf = async () => {
@@ -225,48 +230,48 @@ function ChartModal({ businessId, chartId, onClose }: { businessId: string; char
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener');
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) { setError(errorText(e, 'Could not open the PDF.')); }
+    } catch (e) { setError(errorText(e, t('charts.pdfFailed'))); }
   };
 
   return (
-    <Modal open onClose={close} title={chart ? chart.formName : 'Chart'} size="lg">
+    <Modal open onClose={close} title={chart ? chart.formName : t('charts.chart')} size="lg">
       {error && <p style={s.error} role="alert">{error}</p>}
-      {!chart ? (!error && <p style={s.muted}>Loading...</p>) : (
+      {!chart ? (!error && <p style={s.muted}>{t('common:loading')}</p>) : (
         <>
           <p style={s.helper}>
             {isDraft
-              ? 'Draft. Your answers save as you type. Sign off when the chart is complete.'
-              : `Signed off by ${chart.signedByName ?? 'unknown'} on ${when(chart.signedAt)}. This chart is locked.`}
+              ? t('charts.draftHelp')
+              : t('charts.signedHelp', { name: chart.signedByName ?? t('charts.unknown'), when: when(chart.signedAt) })}
           </p>
           <FormRenderer definition={chart.definition} idPrefix={`chart-${chart.id}`} answers={answers}
             onChange={change} errors={errors} disabled={!isDraft || busy} />
 
           {isDraft ? (
             <div style={s.actions}>
-              <Button onClick={signOff} loading={busy}>Sign off</Button>
-              <Button variant="ghost" onClick={deleteDraft} disabled={busy}>Delete draft</Button>
+              <Button onClick={signOff} loading={busy}>{t('charts.signOff')}</Button>
+              <Button variant="ghost" onClick={deleteDraft} disabled={busy}>{t('charts.deleteDraft')}</Button>
               <span style={s.saveState} aria-live="polite">
-                {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : dirty ? 'Unsaved changes' : ''}
+                {saveState === 'saving' ? t('charts.saving') : saveState === 'saved' ? t('charts.saved') : dirty ? t('charts.unsaved') : ''}
               </span>
             </div>
           ) : (
             <>
-              <h4 style={s.heading}>Amendments</h4>
-              {chart.amendments.length === 0 && <p style={s.muted}>No amendments.</p>}
+              <h4 style={s.heading}>{t('charts.amendments')}</h4>
+              {chart.amendments.length === 0 && <p style={s.muted}>{t('charts.noAmendments')}</p>}
               <ul style={s.list}>
                 {chart.amendments.map((a) => (
                   <li key={a.id} style={s.amend}>
-                    <span style={s.meta}>{a.createdByName ?? 'Unknown'}, {when(a.createdAt)}</span>
+                    <span style={s.meta}>{t('charts.amendmentMeta', { name: a.createdByName ?? t('charts.unknownCap'), when: when(a.createdAt) })}</span>
                     <span style={s.amendText}>{a.content}</span>
                   </li>
                 ))}
               </ul>
-              <label htmlFor="chart-amend" style={s.label}>Add an amendment</label>
+              <label htmlFor="chart-amend" style={s.label}>{t('charts.addAmendmentLabel')}</label>
               <textarea id="chart-amend" style={s.textarea} rows={3} maxLength={5000} value={amendment}
                 onChange={(e) => setAmendment(e.target.value)} />
               <div style={s.actions}>
-                <Button onClick={addAmendment} loading={busy} disabled={!amendment.trim()}>Add amendment</Button>
-                <Button variant="secondary" onClick={openPdf} disabled={busy}>Open PDF</Button>
+                <Button onClick={addAmendment} loading={busy} disabled={!amendment.trim()}>{t('charts.addAmendment')}</Button>
+                <Button variant="secondary" onClick={openPdf} disabled={busy}>{t('charts.openPdf')}</Button>
               </div>
             </>
           )}

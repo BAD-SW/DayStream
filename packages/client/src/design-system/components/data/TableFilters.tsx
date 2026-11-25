@@ -1,5 +1,9 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Trans, useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import i18n, { currentLocale } from '../../../i18n';
+import { formatDay, formatDate, formatNumber } from '../../../utils/format';
 import { formatCurrency, getCurrencySymbol } from '../../../utils/currency';
 import './TableFilters.css';
 
@@ -17,6 +21,9 @@ export type TableFilters = Record<string, ColumnFilter>;
 export interface FilterOption { value: string; label?: string; count?: number }
 
 export const isFilterOn = (f?: ColumnFilter) => !!f && (!!f.values?.length || !!f.contains || !!f.from || !!f.to || f.min != null || f.max != null);
+
+/** The translator for code outside a component (describeFilter, date presets). */
+const tc = (): TFunction => i18n.getFixedT(null, 'common');
 
 const pad = (n: number) => String(n).padStart(2, '0');
 /** A date or timestamp as the local calendar day 'YYYY-MM-DD'. */
@@ -120,6 +127,7 @@ export function ValuesFilter({ anchor, title, current, loadOptions, onApply, onC
   loadOptions: () => Promise<FilterOption[]> | FilterOption[];
   onApply: (f: ColumnFilter | undefined) => void; onClose: () => void;
 }) {
+  const { t } = useTranslation('common');
   const [options, setOptions] = useState<FilterOption[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [q, setQ] = useState('');
@@ -138,7 +146,7 @@ export function ValuesFilter({ anchor, title, current, loadOptions, onApply, onC
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const shown = useMemo(() => (options || []).filter((o) => plain(o.label || o.value || '(empty)').includes(plain(q))), [options, q]);
+  const shown = useMemo(() => (options || []).filter((o) => plain(o.label || o.value || t('tableFilter.empty')).includes(plain(q))), [options, q]);
   const all = options ? options.length : 0;
   const toggle = (v: string) => setSel((s) => { const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n; });
   const apply = () => {
@@ -149,23 +157,23 @@ export function ValuesFilter({ anchor, title, current, loadOptions, onApply, onC
   };
 
   return (
-    <Popover anchor={anchor} width={290} label={`Filter ${title}`} onClose={onClose}>
+    <Popover anchor={anchor} width={290} label={t('tableFilter.filterTitle', { title })} onClose={onClose}>
       <div style={pop.vals}>
-        <strong style={pop.title}>Filter {title}</strong>
+        <strong style={pop.title}>{t('tableFilter.filterTitle', { title })}</strong>
         <input ref={searchRef} type="search" style={pop.input} value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder={options ? `Type to search ${all} value${all === 1 ? '' : 's'}` : 'Loading values…'} aria-label="Search values" />
+          placeholder={options ? t('tableFilter.searchValues', { count: all }) : t('tableFilter.loadingValues')} aria-label={t('tableFilter.searchValuesLabel')} />
         <div style={pop.quick}>
-          <button type="button" style={pop.chip} onClick={() => setSel(new Set((options || []).map((o) => o.value)))}>Select all</button>
-          <button type="button" style={pop.chip} onClick={() => setSel(new Set())}>Unselect all</button>
+          <button type="button" style={pop.chip} onClick={() => setSel(new Set((options || []).map((o) => o.value)))}>{t('tableFilter.selectAll')}</button>
+          <button type="button" style={pop.chip} onClick={() => setSel(new Set())}>{t('tableFilter.unselectAll')}</button>
         </div>
-        <div style={pop.list} role="group" aria-label={`${title} values`}>
-          {options === null && <div style={pop.none}>Loading…</div>}
-          {failed && <div style={pop.none}>The values could not be loaded.</div>}
-          {options !== null && !failed && shown.length === 0 && <div style={pop.none}>No value matches. Use “Contains” to filter by part of a value.</div>}
+        <div style={pop.list} role="group" aria-label={t('tableFilter.valuesGroup', { title })}>
+          {options === null && <div style={pop.none}>{t('tableFilter.loading')}</div>}
+          {failed && <div style={pop.none}>{t('tableFilter.loadFailed')}</div>}
+          {options !== null && !failed && shown.length === 0 && <div style={pop.none}>{t('tableFilter.noValueMatches')}</div>}
           {shown.map((o) => (
             <label key={o.value} style={pop.row}>
               <input type="checkbox" checked={!!sel?.has(o.value)} onChange={() => toggle(o.value)} />
-              <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{o.value === '' ? <em>(empty)</em> : (o.label || o.value)}</span>
+              <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{o.value === '' ? <em>{t('tableFilter.empty')}</em> : (o.label || o.value)}</span>
               {o.count !== undefined && <span style={pop.count}>{o.count}</span>}
             </label>
           ))}
@@ -173,16 +181,16 @@ export function ValuesFilter({ anchor, title, current, loadOptions, onApply, onC
         {(q || current?.contains) && (
           <div style={pop.contains}>
             {q
-              ? <>Or filter by part of a value: <button type="button" style={pop.textBtn} onClick={() => onApply({ contains: q })}>Contains “{q}”</button></>
-              : <>Contains “{current?.contains}” is on.</>}
+              ? <Trans i18nKey="tableFilter.orContains" ns="common" values={{ value: q }} components={[<button key="contains" type="button" style={pop.textBtn} onClick={() => onApply({ contains: q })} />]} />
+              : t('tableFilter.containsOn', { value: current?.contains })}
           </div>
         )}
         <div style={pop.foot}>
           {/* Clear sits with Cancel and Apply, as a button like them (David, 2026-11-04). */}
-          <button type="button" style={{ ...pop.btn, marginLeft: 'auto' }} onClick={() => onApply(undefined)}>Clear</button>
-          <button type="button" style={pop.btn} onClick={onClose}>Cancel</button>
+          <button type="button" style={{ ...pop.btn, marginLeft: 'auto' }} onClick={() => onApply(undefined)}>{t('tableFilter.clear')}</button>
+          <button type="button" style={pop.btn} onClick={onClose}>{t('tableFilter.cancel')}</button>
           <button type="button" style={{ ...pop.btn, ...pop.primary, ...(sel && sel.size === 0 ? pop.disabled : {}) }} disabled={!sel || sel.size === 0} onClick={apply}
-            title={sel && sel.size === 0 ? 'Tick at least one value' : undefined}>Apply</button>
+            title={sel && sel.size === 0 ? t('tableFilter.tickOne') : undefined}>{t('tableFilter.apply')}</button>
         </div>
       </div>
     </Popover>
@@ -193,18 +201,24 @@ export function ValuesFilter({ anchor, title, current, loadOptions, onApply, onC
 
 const DAY = 86400000;
 /** The quick date ranges: [label, () => [first day, last day] as local-midnight times]. */
+/** Each preset is its translation key and the range it covers. */
 function datePresets(): Array<[string, () => [number, number]]> {
   const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   return [
-    ['Today', () => [today, today]], ['Yesterday', () => [today - DAY, today - DAY]],
-    ['Last 7 days', () => [today - 6 * DAY, today]], ['Last 30 days', () => [today - 29 * DAY, today]],
-    ['This month', () => [monthStart(today), today]], ['Last month', () => [monthStart(today, -1), monthStart(today) - DAY]],
+    ['tableFilter.today', () => [today, today]], ['tableFilter.yesterday', () => [today - DAY, today - DAY]],
+    ['tableFilter.last7', () => [today - 6 * DAY, today]], ['tableFilter.last30', () => [today - 29 * DAY, today]],
+    ['tableFilter.thisMonth', () => [monthStart(today), today]], ['tableFilter.lastMonth', () => [monthStart(today, -1), monthStart(today) - DAY]],
   ];
 }
 const toDay = (t: number) => dayOf(t)!;
 const fromDay = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd).getTime(); };
 const monthStart = (t: number, add = 0) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth() + add, 1).getTime(); };
-const showDay = (d: string) => new Date(fromDay(d)).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+const showDay = (d: string) => formatDay(d, { day: '2-digit', month: 'short', year: 'numeric' });
+/** Two-letter weekday headings, Monday first, in the language shown. */
+const weekdayHeadings = (): string[] => Array.from({ length: 7 }, (_, i) => {
+  const name = new Intl.DateTimeFormat(currentLocale(), { weekday: 'short' }).format(new Date(2024, 0, 1 + i)).slice(0, 2);
+  return name.charAt(0).toLocaleUpperCase(currentLocale()) + name.slice(1);
+});
 const dmy = (d: string) => { const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 const parseDmy = (s: string): string | null => {
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s.trim()); if (!m) return null;
@@ -217,6 +231,7 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
   countFor?: (from: string | null, to: string | null) => number | null;
   onApply: (f: ColumnFilter | undefined) => void; onClose: () => void;
 }) {
+  const { t } = useTranslation('common');
   const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const presets = datePresets();
   const [from, setFrom] = useState<string | null>(current?.from || null);
@@ -247,7 +262,7 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
   };
   const end = to || from;
   const count = countFor ? countFor(from, end) : null;
-  const summary = !from ? 'Any date' : preset || (end && end !== from ? `${showDay(from)} – ${showDay(end)}` : showDay(from));
+  const summary = !from ? t('tableFilter.anyDate') : preset ? t(preset) : (end && end !== from ? t('tableFilter.range', { from: showDay(from), to: showDay(end) }) : showDay(from));
 
   const month = (start: number, side: 'left' | 'right') => {
     const d0 = new Date(start); const blanks = (d0.getDay() + 6) % 7; const n = new Date(d0.getFullYear(), d0.getMonth() + 1, 0).getDate();
@@ -267,34 +282,34 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
     return (
       <div style={{ minWidth: 0 }}>
         <div style={pop.mhead}>
-          {side === 'left' ? <button type="button" style={pop.nav} aria-label="Previous month" onClick={() => setView(monthStart(view, -1))}>‹</button> : <span style={{ width: 28 }} />}
-          <strong style={{ flex: 1, textAlign: 'center' }}>{d0.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
-          {side === 'right' ? <button type="button" style={pop.nav} aria-label="Next month" onClick={() => setView(monthStart(view, 1))}>›</button> : <span style={{ width: 28 }} />}
+          {side === 'left' ? <button type="button" style={pop.nav} aria-label={t('tableFilter.previousMonth')} onClick={() => setView(monthStart(view, -1))}>‹</button> : <span style={{ width: 28 }} />}
+          <strong style={{ flex: 1, textAlign: 'center' }}>{formatDate(d0, { month: 'long', year: 'numeric' })}</strong>
+          {side === 'right' ? <button type="button" style={pop.nav} aria-label={t('tableFilter.nextMonth')} onClick={() => setView(monthStart(view, 1))}>›</button> : <span style={{ width: 28 }} />}
         </div>
-        <div style={pop.dow}>{['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((x) => <span key={x}>{x}</span>)}</div>
+        <div style={pop.dow}>{weekdayHeadings().map((x, i) => <span key={i}>{x}</span>)}</div>
         <div style={pop.grid}>{cells}</div>
       </div>
     );
   };
 
   return (
-    <Popover anchor={anchor} width={680} label={`Filter ${title}`} onClose={onClose}>
+    <Popover anchor={anchor} width={680} label={t('tableFilter.filterTitle', { title })} onClose={onClose}>
       <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-        <nav aria-label="Quick ranges" style={pop.presets}>
-          {presets.map(([label, range]) => (
-            <button key={label} type="button" style={{ ...pop.preset, ...(preset === label ? pop.presetOn : {}) }}
-              onClick={() => { const [a, b] = range(); setFrom(toDay(a)); setTo(toDay(b)); setPreset(label); setView(monthStart(b, -1)); }}>{label}</button>
+        <nav aria-label={t('tableFilter.quickRanges')} style={pop.presets}>
+          {presets.map(([presetKey, range]) => (
+            <button key={presetKey} type="button" style={{ ...pop.preset, ...(preset === presetKey ? pop.presetOn : {}) }}
+              onClick={() => { const [a, b] = range(); setFrom(toDay(a)); setTo(toDay(b)); setPreset(presetKey); setView(monthStart(b, -1)); }}>{t(presetKey)}</button>
           ))}
-          <button type="button" style={{ ...pop.preset, ...(from && !preset ? pop.presetOn : {}) }} onClick={() => setPreset(null)}>Custom range</button>
+          <button type="button" style={{ ...pop.preset, ...(from && !preset ? pop.presetOn : {}) }} onClick={() => setPreset(null)}>{t('tableFilter.customRange')}</button>
         </nav>
         <div style={{ flex: '1 1 380px', minWidth: 0, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-            <label style={pop.fld}>From
-              <input style={{ ...pop.input, ...(bad === 'from' ? pop.inputBad : {}) }} placeholder="dd/mm/yyyy" value={typedFrom}
+            <label style={pop.fld}>{t('tableFilter.from')}
+              <input style={{ ...pop.input, ...(bad === 'from' ? pop.inputBad : {}) }} placeholder={t('tableFilter.dateFormat')} value={typedFrom}
                 onChange={(e) => setTypedFrom(e.target.value)} onBlur={(e) => typed('from', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') typed('from', (e.target as HTMLInputElement).value); }} />
             </label>
-            <label style={pop.fld}>To
-              <input style={{ ...pop.input, ...(bad === 'to' ? pop.inputBad : {}) }} placeholder="dd/mm/yyyy" value={typedTo}
+            <label style={pop.fld}>{t('tableFilter.to')}
+              <input style={{ ...pop.input, ...(bad === 'to' ? pop.inputBad : {}) }} placeholder={t('tableFilter.dateFormat')} value={typedTo}
                 onChange={(e) => setTypedTo(e.target.value)} onBlur={(e) => typed('to', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') typed('to', (e.target as HTMLInputElement).value); }} />
             </label>
           </div>
@@ -306,11 +321,11 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
       </div>
       <div style={{ ...pop.foot, borderTop: '1px solid var(--color-border)', padding: '10px 14px' }}>
         <span style={{ marginRight: 'auto', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-          {summary}{count !== null ? ` · ${count} ${count === 1 ? 'row' : 'rows'}` : ''}
+          {count !== null ? t('tableFilter.summaryRows', { summary, count }) : summary}
         </span>
-        <button type="button" style={pop.btn} onClick={() => { setFrom(null); setTo(null); setPreset(null); }}>Clear</button>
-        <button type="button" style={pop.btn} onClick={onClose}>Cancel</button>
-        <button type="button" style={{ ...pop.btn, ...pop.primary }} onClick={() => onApply(from ? { from, to: end || from } : undefined)}>Apply</button>
+        <button type="button" style={pop.btn} onClick={() => { setFrom(null); setTo(null); setPreset(null); }}>{t('tableFilter.clear')}</button>
+        <button type="button" style={pop.btn} onClick={onClose}>{t('tableFilter.cancel')}</button>
+        <button type="button" style={{ ...pop.btn, ...pop.primary }} onClick={() => onApply(from ? { from, to: end || from } : undefined)}>{t('tableFilter.apply')}</button>
       </div>
     </Popover>
   );
@@ -352,7 +367,7 @@ const pop: Record<string, React.CSSProperties> = {
 
 const BINS = 14;
 /** A number with up to two decimals, as people read it (7.5, not 7.50). */
-const plainNumber = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+const plainNumber = (n: number) => formatNumber(n, { maximumFractionDigits: 2 });
 /** What a typed number means ('' = no limit, null = not a number), times `scale` (100 for cents). */
 const parseNumber = (s: string, scale: number): number | null | undefined => {
   const t = s.trim().replace(/[^\d,.\-−]/g, '').replace('−', '-').replace(',', '.');
@@ -378,6 +393,7 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
   /** Stored value per shown unit: 100 for cents (money) or basis points; 1 for plain numbers. */
   scale?: number;
 }) {
+  const { t } = useTranslation('common');
   const scale = scaleProp ?? (isMoney ? 100 : 1);
   const shown = (v: number) => (isMoney ? formatCurrency(Math.round(v)) : `${plainNumber(v / scale)}${unit ? (unit === '%' ? '%' : ` ${unit}`) : ''}`);
   const typedText = (v: number) => (isMoney ? (v / scale).toFixed(2) : String(Math.round((v / scale) * 100) / 100));
@@ -431,14 +447,14 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
     if (lower != null && upper != null && lower > upper) [lower, upper] = [upper, lower];
     onApply(lower == null && upper == null ? undefined : { ...(lower != null ? { min: lower } : {}), ...(upper != null ? { max: upper } : {}) });
   };
-  const summary = min == null && max == null ? (isMoney ? 'Any amount' : 'Any value') : min == null ? `Up to ${shown(max!)}` : max == null ? `From ${shown(min)}` : `${shown(min)} – ${shown(max)}`;
+  const summary = min == null && max == null ? (isMoney ? t('tableFilter.anyAmount') : t('tableFilter.anyValue')) : min == null ? t('tableFilter.upTo', { value: shown(max!) }) : max == null ? t('tableFilter.fromValue', { value: shown(min) }) : t('tableFilter.range', { from: shown(min), to: shown(max) });
 
   return (
-    <Popover anchor={anchor} width={360} label={`Filter ${title}`} onClose={onClose}>
+    <Popover anchor={anchor} width={360} label={t('tableFilter.filterTitle', { title })} onClose={onClose}>
       <div style={pop.vals}>
-        <strong style={pop.title}>Filter {title}</strong>
-        {points === null && <div style={pop.none}>Loading…</div>}
-        {failed && <div style={pop.none}>The values could not be loaded.</div>}
+        <strong style={pop.title}>{t('tableFilter.filterTitle', { title })}</strong>
+        {points === null && <div style={pop.none}>{t('tableFilter.loading')}</div>}
+        {failed && <div style={pop.none}>{t('tableFilter.loadFailed')}</div>}
         {points !== null && !failed && (
           <>
             <div style={amt.hist} aria-hidden="true">
@@ -449,17 +465,17 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
             </div>
             <div style={amt.dual}>
               <div style={amt.track} />
-              <input type="range" className="ds-amount-range" min={lo} max={hi} step={scale / 100} value={a} aria-label={`Lowest ${title}`}
+              <input type="range" className="ds-amount-range" min={lo} max={hi} step={scale / 100} value={a} aria-label={t('tableFilter.lowest', { title })}
                 onChange={(e) => slide('min', Number(e.target.value))} style={amt.range} />
-              <input type="range" className="ds-amount-range" min={lo} max={hi} step={scale / 100} value={b} aria-label={`Highest ${title}`}
+              <input type="range" className="ds-amount-range" min={lo} max={hi} step={scale / 100} value={b} aria-label={t('tableFilter.highest', { title })}
                 onChange={(e) => slide('max', Number(e.target.value))} style={amt.range} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-              <label style={pop.fld}>From{boxUnit ? ` (${boxUnit})` : ''}
+              <label style={pop.fld}>{boxUnit ? t('tableFilter.fromUnit', { unit: boxUnit }) : t('tableFilter.from')}
                 <input style={{ ...pop.input, ...(bad === 'min' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={shown(lo)} value={typedMin}
                   onChange={(e) => { setTypedMin(e.target.value); typed('min', e.target.value); }} />
               </label>
-              <label style={pop.fld}>To{boxUnit ? ` (${boxUnit})` : ''}
+              <label style={pop.fld}>{boxUnit ? t('tableFilter.toUnit', { unit: boxUnit }) : t('tableFilter.to')}
                 <input style={{ ...pop.input, ...(bad === 'max' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={shown(hi)} value={typedMax}
                   onChange={(e) => { setTypedMax(e.target.value); typed('max', e.target.value); }} />
               </label>
@@ -468,11 +484,11 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
         )}
         <div style={pop.foot}>
           <span style={{ marginRight: 'auto', whiteSpace: 'nowrap', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-            {summary}{points ? ` · ${inRange} of ${total}` : ''}
+            {points ? t('tableFilter.summaryOfTotal', { summary, inRange, total }) : summary}
           </span>
-          <button type="button" style={pop.btn} onClick={() => { setMin(undefined); setMax(undefined); setTypedMin(''); setTypedMax(''); setBad(null); }}>Clear</button>
-          <button type="button" style={pop.btn} onClick={onClose}>Cancel</button>
-          <button type="button" style={{ ...pop.btn, ...pop.primary, ...(bad ? pop.disabled : {}) }} disabled={!!bad} onClick={apply}>Apply</button>
+          <button type="button" style={pop.btn} onClick={() => { setMin(undefined); setMax(undefined); setTypedMin(''); setTypedMax(''); setBad(null); }}>{t('tableFilter.clear')}</button>
+          <button type="button" style={pop.btn} onClick={onClose}>{t('tableFilter.cancel')}</button>
+          <button type="button" style={{ ...pop.btn, ...pop.primary, ...(bad ? pop.disabled : {}) }} disabled={!!bad} onClick={apply}>{t('tableFilter.apply')}</button>
         </div>
       </div>
     </Popover>
@@ -499,45 +515,49 @@ const amt: Record<string, React.CSSProperties> = {
 export interface ChipColumn { key: string; header: string; kind: 'values' | 'date' | 'amount' | 'number'; label?: (v: string) => string; unit?: string; scale?: number }
 
 export function describeFilter(c: ChipColumn, f: ColumnFilter): { text: string; full: string; more?: string } {
+  const t = tc();
   if (c.kind === 'date' && f.from) {
     const end = f.to || f.from;
-    const preset = datePresets().find(([, range]) => { const [x, y] = range(); return toDay(x) === f.from && toDay(y) === end; })?.[0];
-    const range = preset || (end === f.from ? showDay(f.from) : `${showDay(f.from)} – ${showDay(end)}`);
-    return { text: `${c.header}: ${range}`, full: `${c.header}: ${range}` };
+    const presetKey = datePresets().find(([, range]) => { const [x, y] = range(); return toDay(x) === f.from && toDay(y) === end; })?.[0];
+    const range = presetKey ? t(presetKey) : (end === f.from ? showDay(f.from) : t('tableFilter.range', { from: showDay(f.from), to: showDay(end) }));
+    const text = t('tableFilter.chipText', { header: c.header, value: range });
+    return { text, full: text };
   }
   if ((c.kind === 'amount' || c.kind === 'number') && (f.min != null || f.max != null)) {
     const scale = c.scale ?? (c.kind === 'amount' ? 100 : 1);
     const shown = (v: number) => (c.kind === 'amount' ? formatCurrency(Math.round(v)) : `${plainNumber(v / scale)}${c.unit ? (c.unit === '%' ? '%' : ` ${c.unit}`) : ''}`);
-    const range = f.min != null && f.max != null ? `${shown(f.min)} – ${shown(f.max)}` : f.min != null ? `≥ ${shown(f.min)}` : `≤ ${shown(f.max!)}`;
-    return { text: `${c.header}: ${range}`, full: `${c.header}: ${range}` };
+    const range = f.min != null && f.max != null ? t('tableFilter.range', { from: shown(f.min), to: shown(f.max) }) : f.min != null ? t('tableFilter.atLeast', { value: shown(f.min) }) : t('tableFilter.atMost', { value: shown(f.max!) });
+    const text = t('tableFilter.chipText', { header: c.header, value: range });
+    return { text, full: text };
   }
-  if (f.contains) return { text: `${c.header} contains “${f.contains}”`, full: `${c.header} contains “${f.contains}”` };
-  const names = (f.values || []).map((v) => (v === '' ? '(empty)' : c.label ? c.label(v) : v));
+  if (f.contains) { const text = t('tableFilter.chipContains', { header: c.header, value: f.contains }); return { text, full: text }; }
+  const names = (f.values || []).map((v) => (v === '' ? t('tableFilter.empty') : c.label ? c.label(v) : v));
   // "+N" stays visible; only the names are cut with "…" when they don't fit.
-  return { text: `${c.header}: ${names.slice(0, 2).join(', ')}`, more: names.length > 2 ? `+${names.length - 2}` : undefined, full: `${c.header}: ${names.join(', ')}` };
+  return { text: t('tableFilter.chipText', { header: c.header, value: names.slice(0, 2).join(', ') }), more: names.length > 2 ? t('tableFilter.chipMore', { count: names.length - 2 }) : undefined, full: t('tableFilter.chipText', { header: c.header, value: names.join(', ') }) };
 }
 
 export function FilterChips({ columns, filters, onOpen, onClear, onClearAll }: {
   columns: ChipColumn[]; filters: TableFilters;
   onOpen: (key: string) => void; onClear: (key: string) => void; onClearAll: () => void;
 }) {
+  const { t } = useTranslation('common');
   const on = columns.filter((c) => isFilterOn(filters[c.key]));
   if (!on.length) return null;
   return (
-    <div role="group" aria-label="Filters on this list" style={chip.bar}>
-      <span style={chip.lead}>Filtered:</span>
+    <div role="group" aria-label={t('tableFilter.filtersOnList')} style={chip.bar}>
+      <span style={chip.lead}>{t('tableFilter.filtered')}</span>
       {on.map((c) => {
         const { text, full, more } = describeFilter(c, filters[c.key]);
         return (
           <span key={c.key} style={chip.chip} title={full}>
-            <button type="button" style={chip.open} onClick={() => onOpen(c.key)} aria-label={`Change filter: ${full}`}>
+            <button type="button" style={chip.open} onClick={() => onOpen(c.key)} aria-label={t('tableFilter.changeFilter', { filter: full })}>
               <span style={chip.text}>{text}</span>{more && <span style={chip.more}>{more}</span>}
             </button>
-            <button type="button" style={chip.x} onClick={() => onClear(c.key)} aria-label={`Remove filter on ${c.header}`}>✕</button>
+            <button type="button" style={chip.x} onClick={() => onClear(c.key)} aria-label={t('tableFilter.removeFilter', { column: c.header })}>✕</button>
           </span>
         );
       })}
-      <button type="button" style={chip.all} onClick={onClearAll}>Clear all</button>
+      <button type="button" style={chip.all} onClick={onClearAll}>{t('tableFilter.clearAll')}</button>
     </div>
   );
 }

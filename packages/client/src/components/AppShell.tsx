@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react';
 import { confirmLeave } from './unsaved/LeaveGuard';
 import { Link, useLocation } from 'react-router-dom';
 import { icons } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { ContextSwitcher } from './ContextSwitcher';
@@ -10,7 +11,8 @@ import { Logo } from '../design-system/components/layout/Logo';
 import { Icon } from '../design-system/components/icons/Icon';
 import { Profile } from '../pages/Profile';
 import { NotificationBell } from './NotificationBell';
-import { resolvePersona } from '../context/ContextManager';
+import { resolvePersona, useContextManager } from '../context/ContextManager';
+import { useBusinessLanguages } from '../context/useBusinessLanguages';
 import './AppLayout.css';
 
 export type NavIconName = keyof typeof icons;
@@ -63,7 +65,12 @@ function initials(first?: string | null, last?: string | null, email?: string): 
  * sidebar on the left, top bar with context switcher / language / theme / user on the right.
  */
 export function AppShell({ groups, brandTag, children }: AppShellProps) {
+  // Working in a business, the menu bar offers only its languages (Phase 44, requirement 8.3).
+  const businessId = useContextManager().activeContext.businessId;
+  const { languages: businessLanguages } = useBusinessLanguages();
   const { user, logout } = useAuth();
+  const { t } = useTranslation('nav');
+  const { t: ts } = useTranslation('shell');
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showProfile, setShowProfile] = useState(false);
@@ -71,19 +78,22 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
   const fullName = user?.first_name ? `${user.first_name} ${user.last_name}` : user?.email;
 
   // All rendered nav paths, so active-state can prefer the most specific match.
+  // Labels arrive as nav keys (modules.<id>.title, sidebar.*); a plain phrase is shown as it is.
+  const label = (text: string) => t(text, { defaultValue: text });
+
   const allPaths = groups.flatMap((g) => g.items.map((i) => i.path));
 
   return (
     <div className={`app-shell${sidebarOpen ? '' : ' app-shell--collapsed'}`}>
-      <nav className="app-sidebar" aria-label="Main">
-        <Link to="/dashboard" className="app-sidebar__brand" aria-label="DayStream home">
+      <nav className="app-sidebar" aria-label={t('sidebar.main')}>
+        <Link to="/dashboard" className="app-sidebar__brand" aria-label={t('sidebar.home')}>
           <Logo size={30} showWordmark={sidebarOpen} />
-          {brandTag && sidebarOpen && <span className="app-sidebar__brand-tag">{brandTag}</span>}
+          {brandTag && sidebarOpen && <span className="app-sidebar__brand-tag">{label(brandTag)}</span>}
         </Link>
 
         {groups.map((group) => (
           <div className="app-sidebar__group" key={group.label || 'more'}>
-            {group.label && sidebarOpen && <h2 className="app-sidebar__group-label">{group.label}</h2>}
+            {group.label && sidebarOpen && <h2 className="app-sidebar__group-label">{label(group.label)}</h2>}
             {group.items.map((item) => {
               const active = isActivePath(pathname, item.path, allPaths);
               return (
@@ -92,12 +102,12 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
                   to={item.path}
                   className={`app-sidebar__link${active ? ' is-active' : ''}${item.off ? ' is-off' : ''}`}
                   aria-current={active ? 'page' : undefined}
-                  title={sidebarOpen ? undefined : `${item.label}${item.off ? ' (off)' : ''}`}
+                  title={sidebarOpen ? undefined : (item.off ? t('sidebar.item_off', { label: label(item.label) }) : label(item.label))}
                 >
                   <Icon name={item.icon} size="md" />
-                  {sidebarOpen && <span className="app-sidebar__label">{item.label}</span>}
-                  {sidebarOpen && item.off && <span className="app-sidebar__tag">Off</span>}
-                  {item.badge ? <span className="app-sidebar__badge" aria-label={`${item.badge} unread`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}
+                  {sidebarOpen && <span className="app-sidebar__label">{label(item.label)}</span>}
+                  {sidebarOpen && item.off && <span className="app-sidebar__tag">{t('sidebar.off')}</span>}
+                  {item.badge ? <span className="app-sidebar__badge" aria-label={t('sidebar.unread', { count: item.badge })}>{item.badge > 99 ? '99+' : item.badge}</span> : null}
                 </Link>
               );
             })}
@@ -111,7 +121,7 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
             type="button"
             className="app-topbar__icon-btn"
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-label={sidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
             aria-expanded={sidebarOpen}
           >
             <Icon name={sidebarOpen ? 'PanelLeftClose' : 'PanelLeftOpen'} size="md" />
@@ -120,17 +130,17 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
 
           <div className="app-topbar__right">
             {user && resolvePersona(user.role) !== 'customer' && <NotificationBell />}
-            <LanguageSwitcher />
+            <LanguageSwitcher languages={businessId ? businessLanguages : undefined} />
             {user && <ThemeModeToggle />}
             {user && (
-              <button type="button" className="app-topbar__user" onClick={() => setShowProfile(true)} title="Profile settings">
+              <button type="button" className="app-topbar__user" onClick={() => setShowProfile(true)} title={ts('topbar.profile_settings')}>
                 <span className="app-topbar__avatar" aria-hidden="true">{initials(user.first_name, user.last_name, user.email)}</span>
                 <span className="app-topbar__name">{fullName}</span>
               </button>
             )}
             <button type="button" className="app-topbar__signout" onClick={() => confirmLeave(logout)}>
               <Icon name="LogOut" size="sm" />
-              Sign out
+              {ts('topbar.sign_out')}
             </button>
           </div>
         </header>
@@ -144,8 +154,8 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
         <div className="app-profile-overlay">
           <div className="app-profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
             <div className="app-profile-modal__header">
-              <h3 id="profile-title" className="app-profile-modal__title">Profile</h3>
-              <button type="button" className="app-profile-modal__close" onClick={() => setShowProfile(false)} aria-label="Close">
+              <h3 id="profile-title" className="app-profile-modal__title">{ts('topbar.profile_title')}</h3>
+              <button type="button" className="app-profile-modal__close" onClick={() => setShowProfile(false)} aria-label={ts('topbar.close')}>
                 <Icon name="X" size="md" />
               </button>
             </div>

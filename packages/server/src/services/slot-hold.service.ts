@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 const DEFAULT_HOLD_SECONDS = 300; // 5 minutes
 
@@ -30,7 +31,7 @@ export async function createHold(input: CreateHoldInput) {
   );
 
   if (existing.length > 0) {
-    throw new Error('This slot is already being held by another user');
+    throw new Error(msg('errors:slotHold.thisSlotIsAlreadyBeingHeld'));
   }
 
   // Check if staff has a conflict (booking or hold)
@@ -43,7 +44,7 @@ export async function createHold(input: CreateHoldInput) {
       [input.staffId, input.startTime, input.endTime],
     );
     if (conflicts.length > 0) {
-      throw new Error('Staff has a conflicting booking at this time');
+      throw new Error(msg('errors:slotHold.staffHasAConflictingBookingAt'));
     }
   }
 

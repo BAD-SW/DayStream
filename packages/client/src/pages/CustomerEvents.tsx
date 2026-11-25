@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import i18n from '../i18n';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { Badge } from '../design-system/components/data/Badge';
@@ -10,14 +13,14 @@ import { TabBar } from '../design-system/components/navigation/TabBar';
 import { Alert } from '../design-system/components/feedback/Alert';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
 import { formatCurrency } from '../utils/currency';
+import { formatDate } from '../utils/format';
 import * as eventsApi from '../api/events';
 import type { CustomerEventSummary, MyEventRow } from '../api/events';
 import './CustomerEvents.css';
 
 /** Dates and times of an event are shown in the hosting business's own time zone. */
 export function eventDateParts(iso: string, timeZone: string) {
-  const d = new Date(iso);
-  const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { timeZone, ...o }).format(d);
+  const part = (o: Intl.DateTimeFormatOptions) => formatDate(iso, { timeZone, ...o });
   return {
     month: part({ month: 'short' }).toUpperCase(),
     day: part({ day: '2-digit' }),
@@ -35,23 +38,27 @@ export function eventWhen(start: string, end: string, timeZone: string) {
 }
 
 export function refundWording(to: 'card' | 'credit' | null | undefined) {
-  return to === 'credit' ? 'as account credit' : 'to your card';
+  return i18n.t(to === 'credit' ? 'portal:events.refund.credit' : 'portal:events.refund.card');
 }
 
 type Tab = 'upcoming' | 'mine';
 
 // "My events" row texts — shared by the cells and their column filters.
-function myStatus(m: MyEventRow): string {
-  return m.kind === 'waitlist' ? (m.status === 'notified' ? 'Place offered' : `Waitlist #${m.position}`)
-    : m.status === 'confirmed' ? (m.upcoming ? 'Registered' : 'Attended / past')
-    : m.status === 'pending' ? (m.awaiting_payment === 'online' ? 'Payment not finished' : 'Pay at reception')
-    : m.status === 'cancelled' ? 'Cancelled' : m.status;
+function myStatus(m: MyEventRow, t: TFunction): string {
+  return m.kind === 'waitlist' ? (m.status === 'notified' ? t('events.my.placeOffered') : t('events.my.waitlistNumber', { position: m.position }))
+    : m.status === 'confirmed' ? (m.upcoming ? t('events.registered') : t('events.my.attendedPast'))
+    : m.status === 'pending' ? (m.awaiting_payment === 'online' ? t('events.my.paymentNotFinished') : t('events.my.payAtReception'))
+    : m.status === 'cancelled' ? t('events.my.cancelled') : t(`events.my.status.${m.status}`, { defaultValue: m.status.replace('_', ' ') });
 }
-function myTicket(m: MyEventRow): string {
-  return m.kind === 'waitlist' ? '—' : `${m.tier_name || 'Ticket'}${m.group_size && m.group_size > 1 ? ` × ${m.group_size}` : ''}${m.amount ? ` · ${formatCurrency(m.amount, m.currency)}` : ''}`;
+function myTicket(m: MyEventRow, t: TFunction): string {
+  if (m.kind === 'waitlist') return '—';
+  const name = m.tier_name || t('events.ticket');
+  const ticket = m.group_size && m.group_size > 1 ? t('events.ticketGroup', { name, size: m.group_size }) : name;
+  return m.amount ? t('events.ticketAmount', { ticket, amount: formatCurrency(m.amount, m.currency) }) : ticket;
 }
 
 export function CustomerEvents() {
+  const { t } = useTranslation('portal');
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get('tab') === 'mine' ? 'mine' : 'upcoming';
@@ -70,7 +77,7 @@ export function CustomerEvents() {
     try {
       const [list, my] = await Promise.all([eventsApi.getCustomerEvents(), eventsApi.getMyEvents()]);
       setEvents(list); setMine(my);
-    } catch (e: any) { setError(e?.response?.data?.error || 'Events could not be loaded.'); }
+    } catch (e: any) { setError(e?.response?.data?.error || t('events.notice.loadFailed')); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -87,43 +94,43 @@ export function CustomerEvents() {
     try {
       if (row.kind === 'waitlist') {
         await eventsApi.leaveWaitlist(row.id);
-        setNotice(`You left the waitlist for ${row.title}.`);
+        setNotice(t('events.notice.leftWaitlist', { title: row.title }));
       } else {
         const out = await eventsApi.cancelMyRegistration(row.id);
         setNotice(out.refund
-          ? `Registration cancelled. ${formatCurrency(out.refund.amount, row.currency)} ${out.refund.to === 'credit' ? 'was added to your account credit' : 'will be refunded to your card'}.`
-          : 'Registration cancelled.');
+          ? t(out.refund.to === 'credit' ? 'events.notice.cancelledCredit' : 'events.notice.cancelledCard', { amount: formatCurrency(out.refund.amount, row.currency) })
+          : t('events.notice.cancelled'));
       }
       await load();
-    } catch (e: any) { setError(e?.response?.data?.error || 'It could not be cancelled.'); }
+    } catch (e: any) { setError(e?.response?.data?.error || t('events.notice.cancelFailed')); }
   };
 
   const tabs = [
-    { key: 'upcoming' as Tab, label: 'Upcoming events' },
-    { key: 'mine' as Tab, label: `My events${activeMine.length ? ` (${activeMine.length})` : ''}` },
+    { key: 'upcoming' as Tab, label: t('events.tab.upcoming') },
+    { key: 'mine' as Tab, label: activeMine.length ? t('events.tab.mineCount', { n: activeMine.length }) : t('events.tab.mine') },
   ];
 
   return (
     <div>
-      <PageHeader title="Events" />
-      <TabBar aria-label="Events" tabs={tabs} active={tab} onChange={(t) => setParams(t === 'mine' ? { tab: 'mine' } : {})} />
+      <PageHeader title={t('events.title')} />
+      <TabBar aria-label={t('events.title')} tabs={tabs} active={tab} onChange={(k) => setParams(k === 'mine' ? { tab: 'mine' } : {})} />
       {error && <Alert variant="error">{error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
 
       {tab === 'upcoming' && (
         <>
           <div className="cev-filters">
-            <SearchInput value={search} onChange={setSearch} placeholder="Search events…" />
-            <select className="cev-select" aria-label="Type" value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="">All types</option>
-              {types.map((t) => <option key={t} value={t}>{t}</option>)}
+            <SearchInput value={search} onChange={setSearch} placeholder={t('events.searchPlaceholder')} />
+            <select className="cev-select" aria-label={t('events.type')} value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">{t('events.allTypes')}</option>
+              {types.map((ty) => <option key={ty} value={ty}>{ty}</option>)}
             </select>
-            <select className="cev-select" aria-label="Location" value={location} onChange={(e) => setLocation(e.target.value)}>
-              <option value="">All locations</option>
+            <select className="cev-select" aria-label={t('events.location')} value={location} onChange={(e) => setLocation(e.target.value)}>
+              <option value="">{t('events.allLocations')}</option>
               {locations.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           </div>
-          {loading ? <ListEmpty>Loading...</ListEmpty> : shown.length === 0 ? <ListEmpty>No upcoming events</ListEmpty> : (
+          {loading ? <ListEmpty>{t('common:loading')}</ListEmpty> : shown.length === 0 ? <ListEmpty>{t('events.noUpcoming')}</ListEmpty> : (
             <div className="cev-list">
               {shown.map((ev) => {
                 const d = eventDateParts(ev.start_time, ev.timezone);
@@ -137,15 +144,15 @@ export function CustomerEvents() {
                       <p className="cev-meta">{eventWhen(ev.start_time, ev.end_time, ev.timezone)}{ev.location_name ? ` · ${ev.location_name}` : ''}</p>
                     </div>
                     <div className="cev-side">
-                      <span className="cev-price">{ev.from_price ? `From ${formatCurrency(ev.from_price, ev.currency)}` : 'Free'}</span>
+                      <span className="cev-price">{ev.from_price ? t('events.fromPrice', { price: formatCurrency(ev.from_price, ev.currency) }) : t('events.free')}</span>
                       <span className={full || ev.places_left <= 5 ? 'cev-spots cev-spots--low' : 'cev-spots'}>
-                        {full ? 'Full · waitlist open' : `${ev.places_left} ${ev.places_left === 1 ? 'spot' : 'spots'} left`}
+                        {full ? t('events.fullWaitlist') : t('events.spotsLeft', { count: ev.places_left })}
                       </span>
-                      {ev.my_status === 'registered' ? <Badge variant="success">Registered</Badge>
-                        : ev.my_status === 'awaiting_payment' ? <Badge variant="warning">Awaiting payment</Badge>
-                        : ev.my_status === 'waitlisted' ? <Badge variant="info">On the waitlist</Badge> : null}
+                      {ev.my_status === 'registered' ? <Badge variant="success">{t('events.registered')}</Badge>
+                        : ev.my_status === 'awaiting_payment' ? <Badge variant="warning">{t('events.awaitingPayment')}</Badge>
+                        : ev.my_status === 'waitlisted' ? <Badge variant="info">{t('events.onWaitlist')}</Badge> : null}
                       <Button size="sm" variant={full ? 'secondary' : 'primary'} onClick={() => navigate(`/events/${ev.id}`)}>
-                        {ev.my_status ? 'View' : full ? 'Join waitlist' : 'View & register'}
+                        {ev.my_status ? t('events.view') : full ? t('events.joinWaitlist') : t('events.viewRegister')}
                       </Button>
                     </div>
                   </div>
@@ -156,26 +163,26 @@ export function CustomerEvents() {
         </>
       )}
 
-      {tab === 'mine' && (loading ? <ListEmpty>Loading...</ListEmpty> : mine.length === 0 ? <ListEmpty>You have no event registrations yet</ListEmpty> : (
+      {tab === 'mine' && (loading ? <ListEmpty>{t('common:loading')}</ListEmpty> : mine.length === 0 ? <ListEmpty>{t('events.noneMine')}</ListEmpty> : (
         <Table
           rowId={(m: MyEventRow) => `${m.kind}-${m.id}`}
           data={mine}
           clientSort
           columns={[
-            { key: 'title', header: 'Event', sortable: true, render: (_: any, m: MyEventRow) => <button className="cev-link" onClick={() => navigate(`/events/${m.event_id}`)}>{m.title}</button> },
-            { key: 'start_time', header: 'Date/time', sortable: true, filter: 'date' as const, render: (_: any, m: MyEventRow) => { const d = eventDateParts(m.start_time, m.timezone); return `${d.shortDate} · ${d.time}`; } },
-            { key: 'ticket', header: 'Ticket', sortable: true, filterValue: myTicket, render: (_: any, m: MyEventRow) => myTicket(m) },
-            { key: 'status', header: 'Status', sortable: true, filterValue: myStatus, render: (_: any, m: MyEventRow) => {
+            { key: 'title', header: t('events.col.event'), sortable: true, render: (_: any, m: MyEventRow) => <button className="cev-link" onClick={() => navigate(`/events/${m.event_id}`)}>{m.title}</button> },
+            { key: 'start_time', header: t('events.col.dateTime'), sortable: true, filter: 'date' as const, render: (_: any, m: MyEventRow) => { const d = eventDateParts(m.start_time, m.timezone); return `${d.shortDate} · ${d.time}`; } },
+            { key: 'ticket', header: t('events.col.ticket'), sortable: true, filterValue: (m: MyEventRow) => myTicket(m, t), render: (_: any, m: MyEventRow) => myTicket(m, t) },
+            { key: 'status', header: t('events.col.status'), sortable: true, filterValue: (m: MyEventRow) => myStatus(m, t), render: (_: any, m: MyEventRow) => {
               const variant = m.kind === 'waitlist' ? 'info' : m.status === 'confirmed' ? 'success' : m.status === 'pending' ? 'warning' : 'neutral';
-              return <Badge variant={variant as any}>{myStatus(m)}</Badge>;
+              return <Badge variant={variant as any}>{myStatus(m, t)}</Badge>;
             } },
             { key: 'actions', header: '', filter: false as const, render: (_: any, m: MyEventRow) => {
               const canAct = m.upcoming && (m.kind === 'waitlist' || m.can_cancel);
               return (
                 <div className="cev-actions">
-                  {canAct && <Button size="sm" variant="secondary" onClick={() => setToCancel(m)}>{m.kind === 'waitlist' ? 'Leave waitlist' : 'Cancel'}</Button>}
+                  {canAct && <Button size="sm" variant="secondary" onClick={() => setToCancel(m)}>{m.kind === 'waitlist' ? t('events.leaveWaitlist') : t('common:cancel')}</Button>}
                   {!canAct && m.kind === 'registration' && m.upcoming && (m.status === 'confirmed' || m.status === 'pending') && m.cancel_blocked_reason && (
-                    <span className="cev-hint" title={m.cancel_blocked_reason}>Contact the business to cancel</span>
+                    <span className="cev-hint" title={m.cancel_blocked_reason}>{t('events.contactToCancel')}</span>
                   )}
                 </div>
               );
@@ -188,11 +195,11 @@ export function CustomerEvents() {
         open={!!toCancel}
         onClose={() => setToCancel(null)}
         onConfirm={() => { if (toCancel) cancel(toCancel); }}
-        title={toCancel?.kind === 'waitlist' ? 'Leave the waitlist?' : 'Cancel your registration?'}
-        message={toCancel?.kind === 'waitlist' ? `You will lose your place on the waitlist for ${toCancel?.title}.`
-          : `${toCancel?.title}. ${toCancel?.paid ? `What you paid is returned ${refundWording(toCancel?.refund_to)}.` : ''}`}
-        confirmLabel={toCancel?.kind === 'waitlist' ? 'Leave waitlist' : 'Cancel registration'}
-        cancelLabel="Keep it"
+        title={toCancel?.kind === 'waitlist' ? t('events.cancel.leaveTitle') : t('events.cancel.title')}
+        message={toCancel?.kind === 'waitlist' ? t('events.cancel.leaveMessage', { title: toCancel?.title })
+          : toCancel?.paid ? t('events.cancel.messagePaid', { title: toCancel?.title, where: refundWording(toCancel?.refund_to) }) : t('events.cancel.message', { title: toCancel?.title })}
+        confirmLabel={toCancel?.kind === 'waitlist' ? t('events.leaveWaitlist') : t('events.cancel.confirm')}
+        cancelLabel={t('events.cancel.keep')}
       />
     </div>
   );

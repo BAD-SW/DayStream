@@ -6,6 +6,7 @@ import {
   OneTimeIntentInput, OneTimeIntentSession,
 } from './adapter';
 import { schemeForCurrency } from './bank-debit-schemes';
+import { msg } from '../../i18n';
 
 /**
  * StripeAdapter — the real Stripe implementation of PaymentAdapter.
@@ -41,6 +42,19 @@ export class StripeAdapter implements PaymentAdapter {
    * (e.g. ['card'] for a card, ['sepa_debit'] for a SEPA mandate). Defaults to
    * card to preserve the original behavior.
    */
+  /**
+   * The Stripe account's public business name (the name customers see), or null when it has none or
+   * cannot be read. Used as the creditor in direct-debit mandates (Phase 44 follow-up).
+   */
+  async accountName(): Promise<string | null> {
+    try {
+      const account = await this.stripe.accounts.retrieveCurrent();
+      return account.business_profile?.name?.trim() || account.settings?.dashboard?.display_name?.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
   async createSetupIntent(
     paymentMethodTypes: string[] = ['card'],
     customerId?: string,
@@ -197,7 +211,7 @@ export class StripeAdapter implements PaymentAdapter {
    */
   async tokenize(input: CaptureInput): Promise<TokenResult> {
     const pmId = String((input.capturePayload as any)?.paymentMethodId || '');
-    if (!pmId) throw new Error('Stripe tokenize requires a captured paymentMethodId');
+    if (!pmId) throw new Error(msg('errors:stripeAdapter.stripeTokenizeRequiresACapturedPaymentmethodid'));
     const pm = await this.stripe.paymentMethods.retrieve(pmId);
 
     // Card: brand + last4 + expiry.
@@ -259,7 +273,7 @@ export class StripeAdapter implements PaymentAdapter {
   }
 
   parseWebhook(rawBody: string | Buffer, signature: string): NormalizedEvent {
-    if (!this.webhookSecret) throw new Error('Webhook secret not configured');
+    if (!this.webhookSecret) throw new Error(msg('errors:stripeAdapter.webhookSecretNotConfigured'));
     const event = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
     const map: Record<string, NormalizedEventType> = {
       'payment_intent.succeeded': 'charge.succeeded',

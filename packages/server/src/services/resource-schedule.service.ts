@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface ScheduleSlotInput {
   dayOfWeek: number;
@@ -70,7 +71,7 @@ export async function createSchedule(resourceId: string, input: {
   // Check for overlapping schedules
   const overlap = await checkScheduleOverlap(resourceId, effectiveFrom, effectiveTo);
   if (overlap) {
-    throw new Error('A schedule already exists that overlaps with this date range. Edit the existing schedule or adjust the dates.');
+    throw new Error(msg('errors:resourceSchedule.aScheduleAlreadyExistsThatOverlaps'));
   }
 
   const client = await adminPool.connect();
@@ -118,7 +119,7 @@ export async function updateSchedule(id: string, resourceId: string, updates: {
       const to = updates.effectiveTo !== undefined ? updates.effectiveTo : current[0].effective_to;
       const overlap = await checkScheduleOverlap(resourceId, typeof from === 'string' ? from : from?.toISOString?.()?.slice(0,10), to ? (typeof to === 'string' ? to : to?.toISOString?.()?.slice(0,10)) : null, id);
       if (overlap) {
-        throw new Error('A schedule already exists that overlaps with this date range. Edit the existing schedule or adjust the dates.');
+        throw new Error(msg('errors:resourceSchedule.aScheduleAlreadyExistsThatOverlaps'));
       }
     }
   }

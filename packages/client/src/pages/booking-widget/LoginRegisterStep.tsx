@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { setWidgetToken, widgetLogin, widgetRegister, WidgetApiError, WidgetAuthResult } from '../../api/widget';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function LoginRegisterStep({ tenantId, businessId, onAuthenticated, onBack }: Props) {
+  const { t } = useTranslation('widget');
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,7 +30,7 @@ export function LoginRegisterStep({ tenantId, businessId, onAuthenticated, onBac
       setWidgetToken(result.access_token);
       onAuthenticated(result);
     } catch (err) {
-      setError(err instanceof WidgetApiError ? err.message : 'Something went wrong');
+      setError(err instanceof WidgetApiError ? err.message : t('login.error'));
     } finally {
       setLoading(false);
     }
@@ -36,8 +38,8 @@ export function LoginRegisterStep({ tenantId, businessId, onAuthenticated, onBac
 
   return (
     <div className="dsw-step">
-      <h2 className="dsw-step-title">{mode === 'login' ? 'Log in to continue' : 'Create your account'}</h2>
-      <p className="dsw-step-text">An account is required to complete your booking.</p>
+      <h2 className="dsw-step-title">{mode === 'login' ? t('login.loginTitle') : t('login.registerTitle')}</h2>
+      <p className="dsw-step-text">{t('login.required')}</p>
 
       <div className="dsw-tabs">
         <button
@@ -45,14 +47,14 @@ export function LoginRegisterStep({ tenantId, businessId, onAuthenticated, onBac
           className={`dsw-tab ${mode === 'login' ? 'dsw-tab--active' : ''}`}
           onClick={() => { setMode('login'); setError(null); }}
         >
-          Log in
+          {t('login.loginTab')}
         </button>
         <button
           type="button"
           className={`dsw-tab ${mode === 'register' ? 'dsw-tab--active' : ''}`}
           onClick={() => { setMode('register'); setError(null); }}
         >
-          Create account
+          {t('login.registerTab')}
         </button>
       </div>
 
@@ -61,11 +63,11 @@ export function LoginRegisterStep({ tenantId, businessId, onAuthenticated, onBac
           <>
             <div className="dsw-field-row">
               <div className="dsw-field">
-                <label className="dsw-label" htmlFor="first_name">First name</label>
+                <label className="dsw-label" htmlFor="first_name">{t('login.firstName')}</label>
                 <input id="first_name" className="dsw-input" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
               </div>
               <div className="dsw-field">
-                <label className="dsw-label" htmlFor="last_name">Last name</label>
+                <label className="dsw-label" htmlFor="last_name">{t('login.lastName')}</label>
                 <input id="last_name" className="dsw-input" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
               </div>
             </div>
@@ -73,12 +75,12 @@ export function LoginRegisterStep({ tenantId, businessId, onAuthenticated, onBac
         )}
 
         <div className="dsw-field">
-          <label className="dsw-label" htmlFor="email">Email</label>
+          <label className="dsw-label" htmlFor="email">{t('login.email')}</label>
           <input id="email" type="email" className="dsw-input" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
         </div>
 
         <div className="dsw-field">
-          <label className="dsw-label" htmlFor="password">Password</label>
+          <label className="dsw-label" htmlFor="password">{t('login.password')}</label>
           <input
             id="password"
             type="password"
@@ -89,18 +91,18 @@ export function LoginRegisterStep({ tenantId, businessId, onAuthenticated, onBac
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           />
           {mode === 'register' && (
-            <span className="dsw-hint">At least 10 characters, with upper &amp; lower case, a number, and a symbol.</span>
+            <span className="dsw-hint">{t('login.passwordHint')}</span>
           )}
         </div>
 
         {error && <p className="dsw-step-error">{error}</p>}
 
         <button type="submit" className="dsw-btn dsw-btn--primary" disabled={loading}>
-          {loading ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
+          {loading ? t('login.wait') : mode === 'login' ? t('login.loginTab') : t('login.registerTab')}
         </button>
       </form>
 
-      <button type="button" className="dsw-btn dsw-btn--ghost" onClick={onBack}>Back</button>
+      <button type="button" className="dsw-btn dsw-btn--ghost" onClick={onBack}>{t('common:back')}</button>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 interface CommunicationRecord {
   eventId: string;
@@ -43,7 +44,7 @@ export async function sendConfirmation(registrationId: string) {
      WHERE er.id = $1`,
     [registrationId],
   );
-  if (rows.length === 0) throw new Error('Registration not found');
+  if (rows.length === 0) throw new Error(msg('errors:eventCommunications.registrationNotFound'));
 
   const reg = rows[0];
   const subject = `Registration Confirmed: ${reg.event_title}`;
@@ -69,7 +70,7 @@ export async function sendReminder(eventId: string, daysBefore: number) {
   const { rows: eventRows } = await adminPool.query(
     `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
-  if (eventRows.length === 0) throw new Error('Event not found');
+  if (eventRows.length === 0) throw new Error(msg('errors:eventCommunications.eventNotFound'));
 
   const event = eventRows[0];
   const { rows: registrants } = await adminPool.query(
@@ -102,7 +103,7 @@ export async function sendPreparation(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
     `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
-  if (eventRows.length === 0) throw new Error('Event not found');
+  if (eventRows.length === 0) throw new Error(msg('errors:eventCommunications.eventNotFound'));
 
   const event = eventRows[0];
   const { rows: registrants } = await adminPool.query(
@@ -132,7 +133,7 @@ export async function sendFollowUp(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
     `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
-  if (eventRows.length === 0) throw new Error('Event not found');
+  if (eventRows.length === 0) throw new Error(msg('errors:eventCommunications.eventNotFound'));
 
   const event = eventRows[0];
   const { rows: attendees } = await adminPool.query(
@@ -164,7 +165,7 @@ export async function sendCancellationNotice(eventId: string, registrationId?: s
   const { rows: eventRows } = await adminPool.query(
     `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
-  if (eventRows.length === 0) throw new Error('Event not found');
+  if (eventRows.length === 0) throw new Error(msg('errors:eventCommunications.eventNotFound'));
 
   const event = eventRows[0];
   let recipientCount = 1;

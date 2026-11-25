@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * A small, dependency-free rich-text editor for document body content.
@@ -63,22 +64,23 @@ interface RichTextEditorProps {
   minHeight?: number;
 }
 
-type Command = { cmd: string; arg?: string; label: string; title: string };
+type Command = { cmd: string; arg?: string; labelKey: string; titleKey: string };
 
 const TOOLBAR: Command[] = [
-  { cmd: 'bold', label: 'B', title: 'Bold' },
-  { cmd: 'italic', label: 'I', title: 'Italic' },
-  { cmd: 'underline', label: 'U', title: 'Underline' },
-  { cmd: 'formatBlock', arg: 'H3', label: 'Heading', title: 'Heading' },
-  { cmd: 'formatBlock', arg: 'H4', label: 'Subheading', title: 'Subheading' },
-  { cmd: 'formatBlock', arg: 'P', label: 'Normal', title: 'Normal text' },
-  { cmd: 'insertUnorderedList', label: '• List', title: 'Bulleted list' },
-  { cmd: 'insertOrderedList', label: '1. List', title: 'Numbered list' },
-  { cmd: 'removeFormat', label: 'Clear', title: 'Clear formatting' },
+  { cmd: 'bold', labelKey: 'richText.boldLabel', titleKey: 'richText.bold' },
+  { cmd: 'italic', labelKey: 'richText.italicLabel', titleKey: 'richText.italic' },
+  { cmd: 'underline', labelKey: 'richText.underlineLabel', titleKey: 'richText.underline' },
+  { cmd: 'formatBlock', arg: 'H3', labelKey: 'richText.heading', titleKey: 'richText.heading' },
+  { cmd: 'formatBlock', arg: 'H4', labelKey: 'richText.subheading', titleKey: 'richText.subheading' },
+  { cmd: 'formatBlock', arg: 'P', labelKey: 'richText.normal', titleKey: 'richText.normalText' },
+  { cmd: 'insertUnorderedList', labelKey: 'richText.bulletListLabel', titleKey: 'richText.bulletList' },
+  { cmd: 'insertOrderedList', labelKey: 'richText.numberedListLabel', titleKey: 'richText.numberedList' },
+  { cmd: 'removeFormat', labelKey: 'richText.clearLabel', titleKey: 'richText.clearFormatting' },
 ];
 
 export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(
   function RichTextEditor({ value, onChange, onFocus, ariaLabel, minHeight = 180 }, ref) {
+    const { t } = useTranslation('common');
     const editableRef = useRef<HTMLDivElement>(null);
 
     // Keep the DOM in sync when the value changes from outside (e.g. loading a
@@ -115,18 +117,18 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     return (
       <div style={styles.wrap}>
-        <div style={styles.toolbar} role="toolbar" aria-label="Text formatting">
+        <div style={styles.toolbar} role="toolbar" aria-label={t('richText.textFormatting')}>
           {TOOLBAR.map((c) => (
             <button
-              key={c.label}
+              key={c.titleKey}
               type="button"
-              title={c.title}
-              aria-label={c.title}
+              title={t(c.titleKey)}
+              aria-label={t(c.titleKey)}
               style={styles.toolBtn}
               // Use onMouseDown + preventDefault so the editor keeps its selection.
               onMouseDown={(e) => { e.preventDefault(); exec(c); }}
             >
-              {c.label}
+              {t(c.labelKey)}
             </button>
           ))}
         </div>

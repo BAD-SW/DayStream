@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
@@ -94,7 +95,7 @@ export function AuditLog() {
       const a = document.createElement('a');
       a.href = url; a.download = `audit-log-${new Date().toISOString().split('T')[0]}.csv`;
       a.click(); URL.revokeObjectURL(url);
-    } catch { alert('Export failed'); }
+    } catch { void showMessage({ message: 'Export failed', tone: 'error' }); }
   };
 
   const columns = [

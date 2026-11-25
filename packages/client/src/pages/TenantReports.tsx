@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button } from '../design-system/components/actions/Button';
+import { useTranslation } from 'react-i18next';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
+import { formatDate } from '../utils/format';
 
 interface ReportData {
   revenue: any;
@@ -17,6 +18,7 @@ interface DetailModal {
 }
 
 export function TenantReports() {
+  const { t } = useTranslation('tenantOps');
   const [data, setData] = useState<ReportData>({ revenue: null, customers: null, bookings: null, memberships: null });
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<DetailModal | null>(null);
@@ -42,41 +44,48 @@ export function TenantReports() {
     } finally { setDetailLoading(false); }
   }
 
-  if (loading) return <p style={styles.muted}>Loading reports...</p>;
+  if (loading) return <p style={styles.muted}>{t('reports.loading')}</p>;
 
   const rev = data.revenue || {};
   const cust = data.customers || {};
 
+  // Stored business statuses are shown through a key, never printed raw.
+  const statusText = (v: string) => t(`reports.status.${v}`, { defaultValue: v });
+  const dateText = (v: string) => formatDate(v);
+  const businessCol = { key: 'name', label: t('reports.col.business') };
+  const statusCol = { key: 'status', label: t('reports.col.status'), render: statusText };
+  const createdCol = { key: 'created_at', label: t('reports.col.created'), render: dateText };
+
   return (
     <div>
-      <h2 style={styles.heading}>Reports</h2>
-      <p style={styles.subtext}>Analytics and insights across your businesses.</p>
+      <h2 style={styles.heading}>{t('reports.title')}</h2>
+      <p style={styles.subtext}>{t('reports.subtitle')}</p>
 
       {/* Revenue Row */}
       <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>📊 Revenue</h3>
+        <h3 style={styles.sectionTitle}>📊 {t('reports.revenue.section')}</h3>
         <div style={styles.statsRow}>
-          <StatCard label="Revenue YTD" value={formatCurrency(rev.total_revenue_ytd || 0)} prior={formatCurrency(rev.total_revenue_ytd_prior || 0)}
-            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=ytd', 'Revenue YTD by Business', [{ key: 'name', label: 'Business' }, { key: 'revenue', label: 'Revenue YTD', render: (v: number) => formatCurrency(v) }])} />
-          <StatCard label="Revenue MTD" value={formatCurrency(rev.month_revenue || 0)} prior={formatCurrency(rev.month_revenue_prior || 0)}
-            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=month', 'Revenue MTD by Business', [{ key: 'name', label: 'Business' }, { key: 'revenue', label: 'Revenue MTD', render: (v: number) => formatCurrency(v) }])} />
-          <StatCard label="Still Expected MTD" value={formatCurrency(rev.expected_remaining_mtd || 0)}
-            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=expected_mtd', 'Still Expected This Month', [{ key: 'name', label: 'Business' }, { key: 'billing_amount', label: 'Amount Due', render: (v: number) => formatCurrency(v) }, { key: 'next_billing_date', label: 'Due Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' }])} />
-          <StatCard label="Active Businesses" value={String(rev.active_businesses || 0)}
-            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=businesses', 'Active Businesses', [{ key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Created', render: (v: string) => new Date(v).toLocaleDateString() }])} />
+          <StatCard label={t('reports.revenue.ytd')} value={formatCurrency(rev.total_revenue_ytd || 0)} prior={formatCurrency(rev.total_revenue_ytd_prior || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=ytd', t('reports.revenue.ytdDetailTitle'), [businessCol, { key: 'revenue', label: t('reports.revenue.ytd'), render: (v: number) => formatCurrency(v) }])} />
+          <StatCard label={t('reports.revenue.mtd')} value={formatCurrency(rev.month_revenue || 0)} prior={formatCurrency(rev.month_revenue_prior || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=month', t('reports.revenue.mtdDetailTitle'), [businessCol, { key: 'revenue', label: t('reports.revenue.mtd'), render: (v: number) => formatCurrency(v) }])} />
+          <StatCard label={t('reports.revenue.expected')} value={formatCurrency(rev.expected_remaining_mtd || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=expected_mtd', t('reports.revenue.expectedDetailTitle'), [businessCol, { key: 'billing_amount', label: t('reports.col.amountDue'), render: (v: number) => formatCurrency(v) }, { key: 'next_billing_date', label: t('reports.col.dueDate'), render: (v: string) => v ? dateText(v) : '—' }])} />
+          <StatCard label={t('reports.revenue.activeBusinesses')} value={String(rev.active_businesses || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=businesses', t('reports.revenue.activeBusinesses'), [{ key: 'name', label: t('reports.col.name') }, statusCol, createdCol])} />
         </div>
       </div>
 
       {/* Businesses Row */}
       <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>👥 Businesses</h3>
+        <h3 style={styles.sectionTitle}>👥 {t('reports.businesses.section')}</h3>
         <div style={styles.statsRow}>
-          <StatCard label="Active Businesses" value={String(cust.active_businesses || 0)} prior={String(cust.active_businesses_prior || 0)}
-            onClick={() => openDetail('/v1/admin/reports/tenant-customers/detail?type=active', 'Active Businesses', [{ key: 'name', label: 'Business' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Created', render: (v: string) => new Date(v).toLocaleDateString() }])} />
-          <StatCard label="New This Month" value={String(cust.new_this_month || 0)} prior={String(cust.new_this_month_prior || 0)}
-            onClick={() => openDetail('/v1/admin/reports/tenant-customers/detail?type=new', 'New Businesses This Month', [{ key: 'name', label: 'Business' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Created', render: (v: string) => new Date(v).toLocaleDateString() }])} />
-          <StatCard label="Churned This Month" value={String(cust.churned_this_month || 0)} prior={String(cust.churned_this_month_prior || 0)}
-            onClick={() => openDetail('/v1/admin/reports/tenant-customers/detail?type=churned', 'Churned Businesses This Month', [{ key: 'name', label: 'Business' }, { key: 'status', label: 'Status' }, { key: 'updated_at', label: 'Churned', render: (v: string) => new Date(v).toLocaleDateString() }])} />
+          <StatCard label={t('reports.revenue.activeBusinesses')} value={String(cust.active_businesses || 0)} prior={String(cust.active_businesses_prior || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-customers/detail?type=active', t('reports.revenue.activeBusinesses'), [businessCol, statusCol, createdCol])} />
+          <StatCard label={t('reports.businesses.newThisMonth')} value={String(cust.new_this_month || 0)} prior={String(cust.new_this_month_prior || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-customers/detail?type=new', t('reports.businesses.newDetailTitle'), [businessCol, statusCol, createdCol])} />
+          <StatCard label={t('reports.businesses.churnedThisMonth')} value={String(cust.churned_this_month || 0)} prior={String(cust.churned_this_month_prior || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-customers/detail?type=churned', t('reports.businesses.churnedDetailTitle'), [businessCol, statusCol, { key: 'updated_at', label: t('reports.col.churned'), render: dateText }])} />
         </div>
       </div>
 
@@ -87,12 +96,12 @@ export function TenantReports() {
           <div style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{detail.title}</h3>
-              <button style={styles.closeBtn} onClick={() => setDetail(null)}>&times;</button>
+              <button style={styles.closeBtn} onClick={() => setDetail(null)} aria-label={t('common:modal.close')}>×</button>
             </div>
             {detailLoading ? (
-              <p style={styles.muted}>Loading...</p>
+              <p style={styles.muted}>{t('common:loading')}</p>
             ) : detail.rows.length === 0 ? (
-              <p style={styles.muted}>No records found.</p>
+              <p style={styles.muted}>{t('reports.noRecords')}</p>
             ) : (
               <div style={styles.detailTable}>
                 <div style={styles.detailHeader}>
@@ -123,17 +132,18 @@ export function TenantReports() {
 // ============================================================
 
 function StatCard({ label, value, prior, onClick }: { label: string; value: string; prior?: string; onClick?: () => void }) {
+  const { t } = useTranslation('tenantOps');
   return (
     <div style={{ ...styles.statCard, ...(onClick ? { cursor: 'pointer' } : {}) }} onClick={onClick}>
       <span style={styles.statValue}>{value}</span>
       <span style={styles.statLabel}>{label}</span>
       {prior !== undefined && (
         <div style={styles.priorBlock}>
-          <span style={styles.priorLabel}>Same period last year:</span>
+          <span style={styles.priorLabel}>{t('reports.samePeriodLastYear')}</span>
           <span style={styles.priorValue}>{prior}</span>
         </div>
       )}
-      {onClick && <span style={styles.statClickHint}>Click for details</span>}
+      {onClick && <span style={styles.statClickHint}>{t('reports.clickForDetails')}</span>}
     </div>
   );
 }

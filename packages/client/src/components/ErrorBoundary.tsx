@@ -1,4 +1,5 @@
 import { Component, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   children: ReactNode;
@@ -7,6 +8,25 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+}
+
+/** The error screen. A function component, so it can use the translation hook (the boundary itself is a class). */
+function ErrorScreen({ error }: { error: Error | null }) {
+  const { t } = useTranslation('shell');
+  return (
+    <div style={styles.container}>
+      <h2 style={styles.title}>{t('error_boundary.title')}</h2>
+      <p style={styles.message}>
+        {error?.message || t('error_boundary.fallback_message')}
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        style={styles.button}
+      >
+        {t('error_boundary.reload')}
+      </button>
+    </div>
+  );
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -21,20 +41,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      return (
-        <div style={styles.container}>
-          <h2 style={styles.title}>Something went wrong</h2>
-          <p style={styles.message}>
-            {this.state.error?.message || 'An unexpected error occurred.'}
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            style={styles.button}
-          >
-            Reload page
-          </button>
-        </div>
-      );
+      return <ErrorScreen error={this.state.error} />;
     }
 
     return this.props.children;

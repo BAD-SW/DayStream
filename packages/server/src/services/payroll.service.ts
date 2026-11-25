@@ -5,6 +5,7 @@ import { getUserSummary, generateFromBookings } from './time-tracking.service';
 import { commissionTotalsByStaff } from './commission.service';
 import { clockedHoursForUser, scheduledHoursForUser } from './clock.service';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 interface PayPeriodInput {
   businessId: string;
@@ -21,7 +22,7 @@ export async function openPayPeriod(input: PayPeriodInput) {
     'SELECT id FROM fin_pay_periods WHERE business_id = $1 AND period_start = $2 AND period_end = $3',
     [input.businessId, input.periodStart, input.periodEnd],
   );
-  if (existing.length > 0) throw new Error('Pay period already exists for this date range');
+  if (existing.length > 0) throw new Error(msg('errors:payroll.payPeriodAlreadyExistsForThis'));
 
   const { rows } = await adminPool.query(
     `INSERT INTO fin_pay_periods (business_id, period_start, period_end)
@@ -51,7 +52,7 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
     "SELECT * FROM fin_pay_periods WHERE id = $1 AND business_id = $2 AND status IN ('open', 'processing')",
     [periodId, businessId],
   );
-  if (periodRows.length === 0) throw new Error('Pay period not found or not open');
+  if (periodRows.length === 0) throw new Error(msg('errors:payroll.payPeriodNotFoundOrNot'));
 
   const period = periodRows[0];
 

@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Table } from '../design-system/components/data/Table';
 import * as payApi from '../api/payments';
 import type { TenantAuditEntry, AuditChange } from '../api/payments';
+import { formatCurrency } from '../utils/currency';
+import { formatDateTime } from '../utils/format';
 
 /**
  * BusinessAuditTrail — the audit trail for a single business (Section B): every
@@ -14,16 +18,11 @@ interface Props {
   businessId: string;
 }
 
-// Human-readable labels for the action codes we log at the business level.
-const ACTION_LABEL: Record<string, string> = {
-  'billing_plan.created': 'Billing plan created',
-  'billing_plan.updated': 'Billing plan updated',
-  'billing_credit.issued': 'Credit issued',
-  'business.suspended': 'Business suspended',
-  'business.activated': 'Business activated',
-  'business.archived': 'Business archived',
-  'business.updated': 'Business settings updated',
-};
+// The action codes we log at the business level; each is shown through payments:audit.action.<code>.
+const ACTION_CODES = [
+  'billing_plan.created', 'billing_plan.updated', 'billing_credit.issued',
+  'business.suspended', 'business.activated', 'business.archived', 'business.updated',
+];
 
 // Fields stored as integer cents, so the audit renders them as currency.
 const CENTS_FIELDS = new Set([
@@ -33,22 +32,26 @@ const CENTS_FIELDS = new Set([
 function fmtValue(field: string, v: unknown): string {
   if (v === null || v === undefined || v === '') return '—';
   if (CENTS_FIELDS.has(field) && typeof v === 'number') {
-    return `$${(v / 100).toFixed(2)}`;
+    return formatCurrency(v);
   }
   if (CENTS_FIELDS.has(field) && typeof v === 'string' && /^\d+$/.test(v)) {
-    return `$${(parseInt(v, 10) / 100).toFixed(2)}`;
+    return formatCurrency(parseInt(v, 10));
   }
   return String(v);
 }
 
-function fieldLabel(field: string): string {
-  return field
+function fieldLabel(field: string, t: TFunction): string {
+  // Known fields have a translated name; any other is its stored name made readable.
+  const readable = field
     .replace(/_cents$/, '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
+  return t(`audit.field.${field}`, { defaultValue: readable });
 }
 
 export function BusinessAuditTrail({ businessId }: Props) {
+  const { t } = useTranslation('payments');
+  const actionLabel = (code: string) => (ACTION_CODES.includes(code) ? t(`audit.action.${code}`) : code);
   const [entries, setEntries] = useState<TenantAuditEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -77,7 +80,7 @@ export function BusinessAuditTrail({ businessId }: Props) {
 
   function who(e: TenantAuditEntry): string {
     const name = [e.user_first_name, e.user_last_name].filter(Boolean).join(' ').trim();
-    return name || e.user_email || 'System';
+    return name || e.user_email || t('audit.system');
   }
 
   function renderChanges(e: TenantAuditEntry): React.ReactNode {
@@ -88,7 +91,7 @@ export function BusinessAuditTrail({ businessId }: Props) {
         <ul style={styles.changeList}>
           {d.changes.map((c: AuditChange, i: number) => (
             <li key={i}>
-              <span style={styles.field}>{fieldLabel(c.field)}:</span>{' '}
+              <span style={styles.field}>{fieldLabel(c.field, t)}:</span>{' '}
               <span style={styles.from}>{fmtValue(c.field, c.from)}</span>
               {' → '}
               <span style={styles.to}>{fmtValue(c.field, c.to)}</span>
@@ -103,22 +106,22 @@ export function BusinessAuditTrail({ businessId }: Props) {
     return <span style={styles.muted}>{JSON.stringify(d)}</span>;
   }
 
-  if (loading && entries.length === 0) return <p style={styles.muted}>Loading audit trail…</p>;
-  if (!loading && entries.length === 0) return <p style={styles.muted}>No changes recorded for this business yet.</p>;
+  if (loading && entries.length === 0) return <p style={styles.muted}>{t('audit.loading')}</p>;
+  if (!loading && entries.length === 0) return <p style={styles.muted}>{t('audit.empty')}</p>;
 
   return (
     <div>
-      <p style={styles.muted}>{total} change{total === 1 ? '' : 's'} recorded</p>
+      <p style={styles.muted}>{t('audit.recorded', { count: total })}</p>
       <Table
         rowId={(e: TenantAuditEntry) => e.id}
         data={entries}
         loading={loading}
         clientSort
         columns={[
-          { key: 'created_at', header: 'When', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleString() },
-          { key: 'who', header: 'Who', sortable: true, filterValue: (e: TenantAuditEntry) => who(e), render: (_: any, e: TenantAuditEntry) => who(e) },
-          { key: 'action', header: 'Action', sortable: true, filterLabel: (v: string) => ACTION_LABEL[v] || v, render: (v: string) => ACTION_LABEL[v] || v },
-          { key: 'details', header: 'Details', filter: false as const, render: (_: any, e: TenantAuditEntry) => renderChanges(e) },
+          { key: 'created_at', header: t('audit.col.when'), sortable: true, filter: 'date' as const, render: (v: string) => formatDateTime(v) },
+          { key: 'who', header: t('audit.col.who'), sortable: true, filterValue: (e: TenantAuditEntry) => who(e), render: (_: any, e: TenantAuditEntry) => who(e) },
+          { key: 'action', header: t('audit.col.action'), sortable: true, filterLabel: (v: string) => actionLabel(v), render: (v: string) => actionLabel(v) },
+          { key: 'details', header: t('audit.col.details'), filter: false as const, render: (_: any, e: TenantAuditEntry) => renderChanges(e) },
         ]}
       />
     </div>

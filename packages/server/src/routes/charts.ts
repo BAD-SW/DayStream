@@ -8,6 +8,7 @@ import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as charts from '../services/chart.service';
 import type { ChartActor } from '../services/chart.service';
+import { msg } from '../i18n';
 
 /**
  * Treatment charts (spec 51, gap 2). Only clinical roles may use any of this; the guard runs
@@ -64,14 +65,14 @@ function actorOf(req: Request): ChartActor {
 /** Reads business_id from the query and checks it; sends the error and returns null if it fails. */
 async function queryBusiness(req: Request, res: Response): Promise<string | null> {
   const businessId = req.query.business_id as string;
-  if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return null; }
-  if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return null; }
+  if (!businessId || !UUID_RE.test(businessId)) { error(res, msg('errors:charts.businessIdRequired'), 'VALIDATION_ERROR', 400); return null; }
+  if (!(await ownBusiness(req, businessId))) { error(res, msg('errors:charts.businessNotFound'), 'NOT_FOUND', 404); return null; }
   return businessId;
 }
 
 async function bodyBusiness(req: Request, res: Response): Promise<string | null> {
   const businessId = req.body.business_id as string;
-  if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return null; }
+  if (!(await ownBusiness(req, businessId))) { error(res, msg('errors:charts.businessNotFound'), 'NOT_FOUND', 404); return null; }
   return businessId;
 }
 
@@ -79,7 +80,7 @@ async function bodyBusiness(req: Request, res: Response): Promise<string | null>
 chartsRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
   try {
     const businessId = await queryBusiness(req, res); if (!businessId) return;
-    if (!UUID_RE.test(req.params.customerId)) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.customerId)) { error(res, msg('errors:charts.customerNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await charts.listCustomerCharts(businessId, req.params.customerId, actorOf(req)));
   } catch (e) { fail(res, e, 'Failed to list charts'); }
 });
@@ -88,7 +89,7 @@ chartsRouter.get('/customer/:customerId', async (req: Request, res: Response) =>
 chartsRouter.get('/booking/:bookingId', async (req: Request, res: Response) => {
   try {
     const businessId = await queryBusiness(req, res); if (!businessId) return;
-    if (!UUID_RE.test(req.params.bookingId)) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.bookingId)) { error(res, msg('errors:charts.bookingNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await charts.listBookingCharts(businessId, req.params.bookingId, actorOf(req)));
   } catch (e) { fail(res, e, 'Failed to list charts'); }
 });
@@ -97,7 +98,7 @@ chartsRouter.get('/booking/:bookingId', async (req: Request, res: Response) => {
 chartsRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const businessId = await queryBusiness(req, res); if (!businessId) return;
-    if (!UUID_RE.test(req.params.id)) { error(res, 'Chart not found', 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.id)) { error(res, msg('errors:charts.chartNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await charts.getChart(businessId, req.params.id, actorOf(req)));
   } catch (e) { fail(res, e, 'Failed to load chart'); }
 });
@@ -106,7 +107,7 @@ chartsRouter.get('/:id', async (req: Request, res: Response) => {
 chartsRouter.get('/:id/pdf', async (req: Request, res: Response) => {
   try {
     const businessId = await queryBusiness(req, res); if (!businessId) return;
-    if (!UUID_RE.test(req.params.id)) { error(res, 'Chart not found', 'NOT_FOUND', 404); return; }
+    if (!UUID_RE.test(req.params.id)) { error(res, msg('errors:charts.chartNotFound'), 'NOT_FOUND', 404); return; }
     const { data, filename } = await charts.getPdf(businessId, req.params.id, actorOf(req));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);

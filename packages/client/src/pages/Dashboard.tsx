@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiClient } from '../api/client';
 
 interface HealthResponse {
@@ -9,6 +10,7 @@ interface HealthResponse {
 }
 
 export function Dashboard() {
+  const { t } = useTranslation('calendar');
   const [health, setHealth] = useState<HealthResponse | null>(null);
 
   useEffect(() => {
@@ -19,15 +21,15 @@ export function Dashboard() {
 
   return (
     <div>
-      <h2 style={styles.heading}>Dashboard</h2>
+      <h2 style={styles.heading}>{t('dashboard.heading')}</h2>
       <p style={styles.text}>
-        You're signed in. This is a placeholder until Phase 04 (Design System) is implemented.
+        {t('dashboard.placeholder')}
       </p>
 
       {health && (
         <div style={styles.statusCard}>
-          <p style={styles.statusLabel}>API Status</p>
-          <p style={styles.statusValue}>✓ {health.status} — v{health.version} — uptime {health.uptime}s</p>
+          <p style={styles.statusLabel}>{t('dashboard.apiStatus')}</p>
+          <p style={styles.statusValue}>{t('dashboard.apiStatusValue', { status: health.status, version: health.version, uptime: health.uptime })}</p>
         </div>
       )}
     </div>

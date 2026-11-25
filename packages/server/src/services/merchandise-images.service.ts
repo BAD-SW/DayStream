@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { adminPool } from '../db/pool';
 import { storage } from './storage.service';
 import { storagePaths, tenantOfBusiness } from '../utils/storage-paths';
+import { msg } from '../i18n';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -35,10 +36,10 @@ export async function uploadImage(
 ): Promise<string> {
   // Validate
   if (!ALLOWED_MIMES.includes(file.mimetype)) {
-    throw new Error('Invalid format. Accepted: JPEG, PNG, WebP');
+    throw new Error(msg('errors:merchandiseImages.invalidFormatAcceptedJpegPngWebp'));
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error('File too large. Maximum: 5MB');
+    throw new Error(msg('errors:merchandiseImages.fileTooLargeMaximum5mb'));
   }
 
   // Generate unique filename

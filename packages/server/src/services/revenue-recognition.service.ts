@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 const DEFERRED_REVENUE_CODE = '2400';  // Deferred Revenue (liability)
 const MEMBERSHIP_REVENUE_CODE = '4200'; // Membership Revenue
@@ -38,7 +39,7 @@ export async function recognizeRevenue(businessId: string, dateFrom: string, dat
   const revenueAccountId = accountMap.get(MEMBERSHIP_REVENUE_CODE);
 
   if (!deferredAccountId || !revenueAccountId) {
-    throw new Error('Required accounts (2400 Deferred Revenue, 4200 Membership Revenue) not found. Ensure Chart of Accounts is seeded.');
+    throw new Error(msg('errors:revenueRecognition.requiredAccounts2400DeferredRevenue4200'));
   }
 
   // Get business timezone for posting date

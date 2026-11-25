@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation, Trans } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as marketingApi from '../api/marketing';
@@ -7,6 +8,7 @@ import * as customersApi from '../api/customers';
 import type { Segment, AudienceSummary } from '../api/customers';
 
 export function CampaignCreate() {
+  const { t } = useTranslation('marketing');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,15 +46,15 @@ export function CampaignCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!businessId) { setError('No business context.'); return; }
-    if (!segmentId) { setError('Choose who this campaign goes to.'); return; }
+    if (!businessId) { setError(t('campaign.noBusiness')); return; }
+    if (!segmentId) { setError(t('campaign.chooseAudience')); return; }
     setLoading(true);
     setError('');
     try {
       const campaign = await marketingApi.createCampaign({ ...form, segmentId, business_id: businessId });
       navigate(`/marketing/campaigns/${campaign.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create campaign');
+      setError(err.response?.data?.error || t('campaign.createFailed'));
     } finally {
       setLoading(false);
     }
@@ -60,42 +62,42 @@ export function CampaignCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/marketing')}>← Back to Marketing</button>
-      <h1 style={styles.title}>Create Campaign</h1>
+      <button style={styles.back} onClick={() => navigate('/marketing')}>{t('page.back')}</button>
+      <h1 style={styles.title}>{t('campaign.createTitle')}</h1>
       {error && <Alert variant="error">{error}</Alert>}
       <form onSubmit={handleSubmit} style={styles.form}>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Campaign Name *</label>
+          <label style={styles.label}>{t('campaign.name')}</label>
           <input style={styles.input} value={form.name} onChange={(e) => handleChange('name', e.target.value)} required />
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Channel</label>
+            <label style={styles.label}>{t('campaign.channel')}</label>
             <select style={styles.input} value={form.channel} onChange={(e) => handleChange('channel', e.target.value)}>
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-              <option value="push">Push Notification</option>
+              <option value="email">{t('campaign.channelEmail')}</option>
+              <option value="sms">{t('campaign.channelSms')}</option>
+              <option value="push">{t('campaign.channelPush')}</option>
             </select>
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Subject *</label>
+            <label style={styles.label}>{t('campaign.subject')}</label>
             <input style={styles.input} value={form.subject} onChange={(e) => handleChange('subject', e.target.value)} required />
           </div>
         </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label} htmlFor="campaign-audience">Audience *</label>
+          <label style={styles.label} htmlFor="campaign-audience">{t('campaign.audience')}</label>
           <select id="campaign-audience" style={styles.input} value={segmentId} onChange={(e) => setSegmentId(e.target.value)} required>
-            <option value="">Choose a segment or fixed list…</option>
-            {segments.map((seg) => <option key={seg.id} value={seg.id}>{seg.name}{seg.kind === 'static' ? ' (fixed list)' : ''}</option>)}
+            <option value="">{t('campaign.audiencePlaceholder')}</option>
+            {segments.map((seg) => <option key={seg.id} value={seg.id}>{seg.kind === 'static' ? t('campaign.fixedList', { name: seg.name }) : seg.name}</option>)}
           </select>
           {segmentId && (
             <p style={styles.audience} aria-live="polite">
-              {!audience && 'Checking the audience…'}
+              {!audience && t('campaign.checking')}
               {audience && (
                 <>
-                  <strong>{audience.willReceive} of {audience.total}</strong> {audience.total === 1 ? 'person' : 'people'} will receive it.
+                  <Trans t={t} i18nKey="campaign.willReceive" count={audience.total} values={{ willReceive: audience.willReceive, total: audience.total }} components={[<strong />]} />
                   {audience.excludedByReason.length > 0 && (
-                    <> Left out: {audience.excludedByReason.map((r) => `${r.label} (${r.count})`).join('; ')}.</>
+                    <>{' '}{t('campaign.leftOut', { reasons: audience.excludedByReason.map((r) => `${r.label} (${r.count})`).join('; ') })}</>
                   )}
                 </>
               )}
@@ -103,12 +105,12 @@ export function CampaignCreate() {
           )}
         </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Content *</label>
+          <label style={styles.label}>{t('campaign.content')}</label>
           <textarea style={{ ...styles.input, minHeight: '120px' }} value={form.content} onChange={(e) => handleChange('content', e.target.value)} required />
         </div>
         <div style={styles.actions}>
-          <Button type="button" onClick={() => navigate('/marketing')}>Cancel</Button>
-          <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Campaign'}</Button>
+          <Button type="button" onClick={() => navigate('/marketing')}>{t('common:cancel')}</Button>
+          <Button type="submit" disabled={loading}>{loading ? t('campaign.creating') : t('campaign.createTitle')}</Button>
         </div>
       </form>
     </div>

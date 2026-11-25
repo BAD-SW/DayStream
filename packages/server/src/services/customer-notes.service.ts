@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { encrypt, decrypt } from '../utils/encryption';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 interface CreateNoteInput {
   customerId: string;
@@ -23,7 +24,7 @@ export async function createNote(input: CreateNoteInput) {
       [input.businessId, category],
     );
     if (catRows.length === 0) {
-      throw new Error(`Note category "${category}" does not exist for this business`);
+      throw new Error(msg('errors:customerNotes.noteCategoryDoesNotExistFor', { category }));
     }
     categorySensitive = catRows[0].is_sensitive;
   }

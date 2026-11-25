@@ -39,7 +39,7 @@ pricingRouter.post('/calculate', requirePermission('bookings:read'), validate(ca
     success(res, breakdown);
   } catch (err: any) {
     console.error('Failed to calculate price', err?.message || err);
-    error(res, 'Failed to calculate price', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:pricing.failedToCalculatePrice'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -91,10 +91,10 @@ const updateRuleSchema = Joi.object({
 pricingRouter.get('/rules', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const rules = await rulesService.getRules(businessId, req.query.rule_type as string);
     success(res, rules);
-  } catch (err: any) { console.error('Failed to list rules', err?.message || err); error(res, 'Failed to list rules', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list rules', err?.message || err); error(res, msg('errors:pricing.failedToListRules'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/pricing/rules
@@ -114,29 +114,29 @@ pricingRouter.post('/rules', requirePermission('services:*'), validate(createRul
       timeFrom: req.body.time_from, timeTo: req.body.time_to, daysOfWeek: req.body.days_of_week,
     });
     success(res, rule, undefined, 201);
-  } catch (err: any) { console.error('Failed to create rule', err?.message || err); error(res, 'Failed to create rule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create rule', err?.message || err); error(res, msg('errors:pricing.failedToCreateRule'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/pricing/rules/:id
 pricingRouter.put('/rules/:id', requirePermission('services:*'), validate(updateRuleSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const rule = await rulesService.updateRule(req.params.id, businessId, req.body);
-    if (!rule) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    if (!rule) { error(res, msg('errors:pricing.ruleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rule);
-  } catch (err: any) { console.error('Failed to update rule', err?.message || err); error(res, 'Failed to update rule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update rule', err?.message || err); error(res, msg('errors:pricing.failedToUpdateRule'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/pricing/rules/:id
 pricingRouter.delete('/rules/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const deleted = await rulesService.deleteRule(req.params.id, businessId);
-    if (!deleted) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:pricing.ruleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to delete rule', err?.message || err); error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete rule', err?.message || err); error(res, msg('errors:pricing.failedToDeleteRule'), 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -190,10 +190,10 @@ const updateCodeSchema = Joi.object({
 pricingRouter.get('/codes', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const codes = await codesService.getCodes(businessId);
     success(res, codes);
-  } catch (err: any) { console.error('Failed to list codes', err?.message || err); error(res, 'Failed to list codes', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list codes', err?.message || err); error(res, msg('errors:pricing.failedToListCodes'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/pricing/codes
@@ -211,9 +211,9 @@ pricingRouter.post('/codes', requirePermission('services:*'), validate(createCod
     });
     success(res, code, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('duplicate') || err.message.includes('unique')) {
-      error(res, 'Code already exists', 'DUPLICATE', 409);
-    } else { error(res, 'Failed to create code', 'INTERNAL_ERROR', 500); }
+    if ((isMessage(err.message, 'errors:customers.failedToGetPossibleDuplicates') || err.message.includes('duplicate')) || messageHas(err.message, 'unique')) {
+      error(res, msg('errors:pricing.codeAlreadyExists'), 'DUPLICATE', 409);
+    } else { error(res, msg('errors:pricing.failedToCreateCode'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -222,7 +222,7 @@ pricingRouter.post('/codes/validate', requirePermission('bookings:read'), valida
   try {
     const result = await codesService.validateCode(req.body.code, req.body.business_id, req.body.customer_id, req.body.purchase_amount);
     success(res, result);
-  } catch (err: any) { console.error('Failed to validate code', err?.message || err); error(res, 'Failed to validate code', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to validate code', err?.message || err); error(res, msg('errors:pricing.failedToValidateCode'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/pricing/codes/bulk
@@ -234,18 +234,18 @@ pricingRouter.post('/codes/bulk', requirePermission('services:*'), validate(bulk
       { validTo: req.body.valid_to, isSingleUse: req.body.is_single_use },
     );
     success(res, { codes, count: codes.length }, undefined, 201);
-  } catch (err: any) { console.error('Failed to generate codes', err?.message || err); error(res, 'Failed to generate codes', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to generate codes', err?.message || err); error(res, msg('errors:pricing.failedToGenerateCodes'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/pricing/codes/:id
 pricingRouter.put('/codes/:id', requirePermission('services:*'), validate(updateCodeSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const code = await codesService.updateCode(req.params.id, businessId, req.body);
-    if (!code) { error(res, 'Code not found', 'NOT_FOUND', 404); return; }
+    if (!code) { error(res, msg('errors:pricing.codeNotFound'), 'NOT_FOUND', 404); return; }
     success(res, code);
-  } catch (err: any) { console.error('Failed to update code', err?.message || err); error(res, 'Failed to update code', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update code', err?.message || err); error(res, msg('errors:pricing.failedToUpdateCode'), 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -278,10 +278,10 @@ const updateBundleSchema = Joi.object({
 pricingRouter.get('/bundles', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const bundles = await bundlesService.getBundles(businessId);
     success(res, bundles);
-  } catch (err: any) { console.error('Failed to list bundles', err?.message || err); error(res, 'Failed to list bundles', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list bundles', err?.message || err); error(res, msg('errors:pricing.failedToListBundles'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/pricing/bundles
@@ -295,8 +295,8 @@ pricingRouter.post('/bundles', requirePermission('services:*'), validate(createB
     });
     success(res, bundle, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('require')) { error(res, err.message, 'VALIDATION_ERROR', 400); }
-    else { error(res, 'Failed to create bundle', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'require')) { error(res, err.message, 'VALIDATION_ERROR', 400); }
+    else { error(res, msg('errors:pricing.failedToCreateBundle'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -304,22 +304,22 @@ pricingRouter.post('/bundles', requirePermission('services:*'), validate(createB
 pricingRouter.put('/bundles/:id', requirePermission('services:*'), validate(updateBundleSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const bundle = await bundlesService.updateBundle(req.params.id, businessId, req.body);
-    if (!bundle) { error(res, 'Bundle not found', 'NOT_FOUND', 404); return; }
+    if (!bundle) { error(res, msg('errors:pricing.bundleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, bundle);
-  } catch (err: any) { console.error('Failed to update bundle', err?.message || err); error(res, 'Failed to update bundle', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update bundle', err?.message || err); error(res, msg('errors:pricing.failedToUpdateBundle'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/pricing/bundles/:id
 pricingRouter.delete('/bundles/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const archived = await bundlesService.archiveBundle(req.params.id, businessId);
-    if (!archived) { error(res, 'Bundle not found', 'NOT_FOUND', 404); return; }
+    if (!archived) { error(res, msg('errors:pricing.bundleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
-  } catch (err: any) { console.error('Failed to archive bundle', err?.message || err); error(res, 'Failed to archive bundle', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to archive bundle', err?.message || err); error(res, msg('errors:pricing.failedToArchiveBundle'), 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -347,10 +347,10 @@ const addCorporateMemberSchema = Joi.object({
 pricingRouter.get('/corporate', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const accounts = await corporateService.getAccounts(businessId);
     success(res, accounts);
-  } catch (err: any) { console.error('Failed to list corporate accounts', err?.message || err); error(res, 'Failed to list corporate accounts', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list corporate accounts', err?.message || err); error(res, msg('errors:pricing.failedToListCorporateAccounts'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/pricing/corporate
@@ -363,7 +363,7 @@ pricingRouter.post('/corporate', requirePermission('services:*'), validate(creat
       status: req.body.status,
     });
     success(res, account, undefined, 201);
-  } catch (err: any) { console.error('Failed to create corporate account', err?.message || err); error(res, 'Failed to create corporate account', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create corporate account', err?.message || err); error(res, msg('errors:pricing.failedToCreateCorporateAccount'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/pricing/corporate/:id/members
@@ -372,16 +372,16 @@ pricingRouter.post('/corporate/:id/members', requirePermission('services:*'), va
     const result = await corporateService.addMember(req.params.id, req.body.customer_id);
     if (!result.success) { error(res, result.error!, 'CONFLICT', 409); return; }
     success(res, { added: true }, undefined, 201);
-  } catch (err: any) { console.error('Failed to add member', err?.message || err); error(res, 'Failed to add member', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add member', err?.message || err); error(res, msg('errors:pricing.failedToAddMember'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/pricing/corporate/:id/members/:customerId
 pricingRouter.delete('/corporate/:id/members/:customerId', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const removed = await corporateService.removeMember(req.params.id, req.params.customerId);
-    if (!removed) { error(res, 'Member not found', 'NOT_FOUND', 404); return; }
+    if (!removed) { error(res, msg('errors:pricing.memberNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
-  } catch (err: any) { console.error('Failed to remove member', err?.message || err); error(res, 'Failed to remove member', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to remove member', err?.message || err); error(res, msg('errors:pricing.failedToRemoveMember'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/pricing/corporate/:id/members
@@ -389,7 +389,7 @@ pricingRouter.get('/corporate/:id/members', requirePermission('services:read'), 
   try {
     const members = await corporateService.getMembers(req.params.id);
     success(res, members);
-  } catch (err: any) { console.error('Failed to list members', err?.message || err); error(res, 'Failed to list members', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list members', err?.message || err); error(res, msg('errors:pricing.failedToListMembers'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/pricing/corporate/:id
@@ -405,25 +405,25 @@ pricingRouter.put('/corporate/:id', requirePermission('services:*'), async (req:
     if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
     if (agreement_start !== undefined) { fields.push(`agreement_start = $${idx++}`); values.push(agreement_start || null); }
     if (agreement_end !== undefined) { fields.push(`agreement_end = $${idx++}`); values.push(agreement_end || null); }
-    if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
+    if (fields.length === 0) { error(res, msg('errors:pricing.noFieldsToUpdate'), 'VALIDATION_ERROR', 400); return; }
     fields.push('updated_at = NOW()');
     values.push(req.params.id);
     const { rows } = await adminPool.query(
       `UPDATE pri_corporate_accounts SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
       values,
     );
-    if (rows.length === 0) { error(res, 'Account not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:pricing.accountNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to update corporate account', err?.message || err); error(res, 'Failed to update corporate account', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update corporate account', err?.message || err); error(res, msg('errors:pricing.failedToUpdateCorporateAccount'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/pricing/corporate/:id
 pricingRouter.delete('/corporate/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const { rowCount } = await adminPool.query('DELETE FROM pri_corporate_accounts WHERE id = $1', [req.params.id]);
-    if (!rowCount) { error(res, 'Account not found', 'NOT_FOUND', 404); return; }
+    if (!rowCount) { error(res, msg('errors:pricing.accountNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to delete corporate account', err?.message || err); error(res, 'Failed to delete corporate account', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete corporate account', err?.message || err); error(res, msg('errors:pricing.failedToDeleteCorporateAccount'), 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -432,12 +432,13 @@ pricingRouter.delete('/corporate/:id', requirePermission('services:*'), async (r
 // ============================================================
 
 import * as historyService from '../services/price-history.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 // GET /api/v1/pricing/history
 pricingRouter.get('/history', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:pricing.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await historyService.getBusinessHistory(businessId, {
       entityType: req.query.entity_type as string,
@@ -448,5 +449,5 @@ pricingRouter.get('/history', requirePermission('services:read'), async (req: Re
     });
 
     success(res, result.entries, { page: result.page, limit: result.limit, total: result.total });
-  } catch (err: any) { console.error('Failed to get price history', err?.message || err); error(res, 'Failed to get price history', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get price history', err?.message || err); error(res, msg('errors:pricing.failedToGetPriceHistory'), 'INTERNAL_ERROR', 500); }
 });

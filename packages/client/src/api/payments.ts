@@ -72,7 +72,7 @@ export type BankDebitSchemeId = 'sepa' | 'ach' | 'bacs';
 
 export async function beginCaptureSession(
   owner: MethodOwnerParams, methodType: MethodType,
-): Promise<{ provider: string; ownerLevel: OwnerLevel; sessionRef: string; clientSecret?: string; publishableKey?: string; debitScheme?: BankDebitSchemeId }> {
+): Promise<{ provider: string; ownerLevel: OwnerLevel; sessionRef: string; clientSecret?: string; publishableKey?: string; debitScheme?: BankDebitSchemeId; creditorName?: string | null }> {
   const res = await apiClient.post('/v1/pay/methods/capture-session', { ...owner, method_type: methodType });
   return res.data.data;
 }

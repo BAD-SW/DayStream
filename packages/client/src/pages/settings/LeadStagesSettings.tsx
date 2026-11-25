@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Trans, useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import * as leadsApi from '../../api/leads';
 import type { LeadStage } from '../../api/leads';
@@ -28,17 +29,18 @@ const toRows = (list: LeadStage[]): StageRow[] => list.map((s) => ({ key: s.id, 
 let newKey = 0;
 
 export function LeadStagesSettings() {
+  const { t } = useTranslation('settings');
   const businessId = localStorage.getItem('business_id') || '';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [newName, setNewName] = useState('');
 
-  const draft = useDraft<StageRow[]>('lead-stages', 'Leads › Lead stages', [], async (rows) => {
+  const draft = useDraft<StageRow[]>('lead-stages', t('leadStages.draftName'), [], async (rows) => {
     const live = rows.filter((r) => !r.deleted);
-    if (live.length === 0) throw new Error('At least one stage must stay');
-    if (live.some((r) => !r.name.trim())) throw new Error('Every stage needs a name');
+    if (live.length === 0) throw new Error(t('leadStages.oneMustStay'));
+    if (live.some((r) => !r.name.trim())) throw new Error(t('leadStages.needsName'));
     for (const r of rows) {
-      if (r.deleted && r.id && r.lead_count > 0 && !live.some((x) => x.key === r.moveTo)) throw new Error(`Choose where the leads of "${r.name}" move to`);
+      if (r.deleted && r.id && r.lead_count > 0 && !live.some((x) => x.key === r.moveTo)) throw new Error(t('leadStages.chooseMoveTo', { name: r.name }));
     }
     // Applied in this order: new stages first (so leads can move to them), then deletions,
     // renames and the order. What went through is kept if a later step fails.
@@ -74,7 +76,7 @@ export function LeadStagesSettings() {
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
-    leadsApi.getStages(businessId).then((list) => draft.load(toRows(list))).catch(() => setError('Could not load the lead stages')).finally(() => setLoading(false));
+    leadsApi.getStages(businessId).then((list) => draft.load(toRows(list))).catch(() => setError(t('leadStages.loadFailed'))).finally(() => setLoading(false));
   }, [businessId, draft.load]);
 
   const update = (key: string, patch: Partial<StageRow>) => draft.setValue(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -103,8 +105,8 @@ export function LeadStagesSettings() {
     update(r.key, { deleted: true, moveTo: live.find((x) => x.key !== r.key)?.key });
   };
 
-  if (!businessId) return <div style={styles.section}><p style={styles.muted}>Select a business to set up its lead stages.</p></div>;
-  if (loading) return <div style={styles.section}><p style={styles.muted}>Loading…</p></div>;
+  if (!businessId) return <div style={styles.section}><p style={styles.muted}>{t('leadStages.selectBusiness')}</p></div>;
+  if (loading) return <div style={styles.section}><p style={styles.muted}>{t('common:loading')}</p></div>;
 
   // A stage counts as moved when its place among the stored stages that stay has changed.
   const keptNow = live.filter((r) => r.id).map((r) => r.key);
@@ -112,10 +114,9 @@ export function LeadStagesSettings() {
   let position = 0;
   return (
     <div style={{ ...styles.section, ...draftBox(draft.dirty) }} data-testid="lead-stages-settings">
-      <h2 style={styles.title}>Lead stages<UnsavedTag dirty={draft.dirty} /></h2>
+      <h2 style={styles.title}>{t('leadStages.title')}<UnsavedTag dirty={draft.dirty} /></h2>
       <p style={styles.muted}>
-        The stages a lead goes through, in order. A new lead starts in the first stage. A lead who buys or books becomes a customer
-        and leaves the <Link to="/marketing" style={styles.link}>Leads</Link> list.
+        <Trans i18nKey="leadStages.intro" ns="settings" components={{ leadsLink: <Link to="/marketing" style={styles.link} /> }} />
       </p>
 
       <ol style={styles.list}>
@@ -130,16 +131,16 @@ export function LeadStagesSettings() {
               <li key={r.key} style={{ ...styles.row, ...styles.deletedRow }}>
                 <span style={styles.pos}>–</span>
                 <span style={styles.deletedName}>{before?.name || r.name}</span>
-                <span style={styles.tag}>Deleted when you save</span>
+                <span style={styles.tag}>{t('leadStages.deletedOnSave')}</span>
                 {r.lead_count > 0 ? (
                   <label style={styles.confirmLine}>
-                    its {r.lead_count} {r.lead_count === 1 ? 'lead moves' : 'leads move'} to
-                    <select style={{ ...styles.select, ...fieldMark(true) }} aria-label={`Move the leads of ${r.name} to`} value={r.moveTo || ''} onChange={(e) => update(r.key, { moveTo: e.target.value })}>
-                      {others.map((x) => <option key={x.key} value={x.key}>{x.name || '(no name)'}</option>)}
+                    {t('leadStages.leadsMoveTo', { count: r.lead_count })}
+                    <select style={{ ...styles.select, ...fieldMark(true) }} aria-label={t('leadStages.moveLeadsOf', { name: r.name })} value={r.moveTo || ''} onChange={(e) => update(r.key, { moveTo: e.target.value })}>
+                      {others.map((x) => <option key={x.key} value={x.key}>{x.name || t('leadStages.noName')}</option>)}
                     </select>
                   </label>
-                ) : <span style={styles.count}>no leads</span>}
-                <Button size="sm" variant="ghost" onClick={() => update(r.key, { deleted: false, moveTo: undefined })}>Undo</Button>
+                ) : <span style={styles.count}>{t('leadStages.noLeads')}</span>}
+                <Button size="sm" variant="ghost" onClick={() => update(r.key, { deleted: false, moveTo: undefined })}>{t('leadStages.undo')}</Button>
               </li>
             );
           }
@@ -149,34 +150,34 @@ export function LeadStagesSettings() {
               <span style={styles.pos}>{position}</span>
               <input
                 style={{ ...styles.input, ...fieldMark(isNew || renamed) }}
-                aria-label={`Name of stage ${position}`}
+                aria-label={t('leadStages.nameOfStage', { position })}
                 value={r.name}
                 maxLength={60}
                 onChange={(e) => update(r.key, { name: e.target.value })}
               />
-              <span style={styles.count}>{r.lead_count} {r.lead_count === 1 ? 'lead' : 'leads'}</span>
-              <Button size="sm" variant="ghost" disabled={position === 1} aria-label={`Move ${r.name} up`} onClick={() => move(i, -1)}>↑</Button>
-              <Button size="sm" variant="ghost" disabled={position === live.length} aria-label={`Move ${r.name} down`} onClick={() => move(i, 1)}>↓</Button>
-              <Button size="sm" variant="ghost" disabled={live.length === 1} onClick={() => remove(r)}>Delete</Button>
-              {isNew && <span style={styles.tag}>New</span>}
-              {moved && <span style={styles.tag}>Moved</span>}
+              <span style={styles.count}>{t('leadStages.leadCount', { count: r.lead_count })}</span>
+              <Button size="sm" variant="ghost" disabled={position === 1} aria-label={t('leadStages.moveUp', { name: r.name })} onClick={() => move(i, -1)}>↑</Button>
+              <Button size="sm" variant="ghost" disabled={position === live.length} aria-label={t('leadStages.moveDown', { name: r.name })} onClick={() => move(i, 1)}>↓</Button>
+              <Button size="sm" variant="ghost" disabled={live.length === 1} onClick={() => remove(r)}>{t('common:delete')}</Button>
+              {isNew && <span style={styles.tag}>{t('leadStages.new')}</span>}
+              {moved && <span style={styles.tag}>{t('leadStages.moved')}</span>}
             </li>
           );
         })}
       </ol>
-      {live.length === 1 && <p style={styles.hint}>The last stage cannot be deleted.</p>}
+      {live.length === 1 && <p style={styles.hint}>{t('leadStages.lastStage')}</p>}
 
       <div style={styles.addRow}>
         <input
           style={styles.input}
-          placeholder="New stage name"
-          aria-label="New stage name"
+          placeholder={t('leadStages.newStageName')}
+          aria-label={t('leadStages.newStageName')}
           value={newName}
           maxLength={60}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
         />
-        <Button size="sm" disabled={!newName.trim()} onClick={add}>Add stage</Button>
+        <Button size="sm" disabled={!newName.trim()} onClick={add}>{t('leadStages.addStage')}</Button>
       </div>
 
       {error && <p style={styles.error} role="alert">{error}</p>}

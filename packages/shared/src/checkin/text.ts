@@ -1,5 +1,5 @@
 import { DEFAULT_LANGUAGE, isSupportedLanguage } from '../constants/supported';
-import type { SupportedLanguage } from '../constants/supported';
+import type { SupportedLanguage, TranslatedLanguage } from '../constants/supported';
 
 /**
  * The words on the screens a customer sees when they check in (spec 51, gap 3): the phone page, the
@@ -102,7 +102,8 @@ export function fillCheckInTexts(texts: CheckInText, values: Record<string, stri
 export const EDITABLE_CHECK_IN_TEXT_KEYS: readonly CheckInTextKey[] = CHECK_IN_TEXT_FIELDS.map((f) => f.key);
 
 /** The complete default wording of every supported language. */
-export const CHECK_IN_TEXT_DEFAULTS: Record<SupportedLanguage, CheckInText> = {
+/** The built-in wording for every language with translations (Phase 44), used until a business writes its own. */
+export const CHECK_IN_TEXT_DEFAULTS: Record<TranslatedLanguage, CheckInText> = {
   en: {
     loading: 'Loading…',
     greeting: 'Hello, {{first_name}}',
@@ -143,6 +144,48 @@ export const CHECK_IN_TEXT_DEFAULTS: Record<SupportedLanguage, CheckInText> = {
     readyEmailSubject: '{{business_name}}: we are ready for you',
     checkInFailed: 'Check-in did not work. Please see the front desk.',
     formFailed: 'The form could not be opened. Please see the front desk.',
+  },
+  // Spanish (Spain), addressing the customer with "tú" (Phase 44).
+  es: {
+    loading: 'Cargando…',
+    greeting: 'Hola, {{first_name}}',
+    checkInButton: 'Ya estoy aquí',
+    checkingIn: 'Registrando tu llegada…',
+    checkedIn: 'Tu llegada está registrada. Toma asiento; enseguida te atendemos.',
+    ready: 'Adelante, pasa. Te estamos esperando.',
+    started: 'Tu cita ha comenzado.',
+    cannotCheckIn: 'Ya no se puede registrar la llegada a esta cita. Pasa por recepción.',
+    formsLabel: 'Formularios para tu visita',
+    formsAllDone: 'Tus formularios están completos',
+    formsOne: 'Completa este formulario antes de tu cita',
+    formsMany: 'Completa estos formularios antes de tu cita',
+    formDone: 'Completado',
+    formRedo: 'Hay que completarlo de nuevo',
+    formTodo: 'Aún sin completar',
+    formFill: 'Rellenar',
+    formOpening: 'Abriendo…',
+    kioskWelcome: 'Te damos la bienvenida',
+    kioskPrompt: 'Registra tu llegada. Introduce el teléfono o el correo electrónico con el que reservaste.',
+    kioskInputLabel: 'Teléfono o correo electrónico',
+    kioskSubmit: 'Registrar llegada',
+    kioskWelcomeName: 'Hola, {{first_name}}',
+    kioskCheckedIn: 'Tu llegada está registrada para {{service_name}} a las {{time}}.',
+    kioskAlreadyCheckedIn: 'Tu llegada ya está registrada para {{service_name}} a las {{time}}.',
+    kioskFormsTodo: 'Puedes rellenarlos ahora o más tarde en recepción.',
+    kioskAllSet: 'Todo listo. Toma asiento.',
+    kioskDone: 'Hecho',
+    kioskBack: 'Atrás',
+    kioskNothingToday: 'No hay nada programado para hoy',
+    kioskNothingTodayOne: 'No encontramos ninguna cita tuya para hoy, pero tienes esta cita:',
+    kioskNothingTodayMany: 'No encontramos ninguna cita tuya para hoy, pero tienes estas citas:',
+    kioskNothingTodayHelp: 'Si alguna debería ser hoy, pasa por recepción. Puede que se haya cambiado.',
+    kioskOffTitle: 'El registro de llegada no está disponible',
+    kioskOffBody: 'Este quiosco está apagado. Pasa por recepción.',
+    kioskNotSetUpTitle: 'Esta pantalla no está configurada',
+    kioskNotSetUpBody: 'Pide a un miembro del personal que abra la pantalla de registro de llegada desde Ajustes > Quiosco de registro.',
+    readyEmailSubject: '{{business_name}}: te estamos esperando',
+    checkInFailed: 'No se pudo registrar tu llegada. Pasa por recepción.',
+    formFailed: 'No se pudo abrir el formulario. Pasa por recepción.',
   },
 };
 

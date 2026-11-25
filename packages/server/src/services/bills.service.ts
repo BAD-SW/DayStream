@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface CreateBillInput {
   businessId: string;
@@ -129,13 +130,13 @@ export async function recordPayment(id: string, businessId: string, amount: numb
   const { rows } = await adminPool.query('SELECT * FROM fin_bills WHERE id = $1 AND business_id = $2', [id, businessId]);
   if (rows.length === 0) return null;
   const bill = rows[0];
-  if (bill.status === 'paid') throw Object.assign(new Error('This bill is already paid'), { code: 'BILL_ALREADY_PAID' });
+  if (bill.status === 'paid') throw Object.assign(new Error(msg('errors:bills.thisBillIsAlreadyPaid')), { code: 'BILL_ALREADY_PAID' });
   // An approved bill that has passed its due date is 'overdue'; it can still be paid.
   const approved = bill.status === 'approved' || (bill.status === 'overdue' && bill.approved_at);
-  if (!approved) throw Object.assign(new Error(`A bill must be approved before it is paid (this one is ${bill.status})`), { code: 'BILL_NOT_APPROVED' });
+  if (!approved) throw Object.assign(new Error(msg('errors:bills.aBillMustBeApprovedBefore', { status: bill.status })), { code: 'BILL_NOT_APPROVED' });
   const owed = bill.amount - bill.amount_paid;
   if (!Number.isInteger(amount) || amount <= 0 || amount > owed) {
-    throw Object.assign(new Error(`The payment must be between 1 and ${owed} (what is still owed)`), { code: 'BILL_PAYMENT_AMOUNT' });
+    throw Object.assign(new Error(msg('errors:bills.thePaymentMustBeBetween1', { owed })), { code: 'BILL_PAYMENT_AMOUNT' });
   }
   const newPaid = bill.amount_paid + amount;
   const newStatus = newPaid >= bill.amount ? 'paid' : bill.status;

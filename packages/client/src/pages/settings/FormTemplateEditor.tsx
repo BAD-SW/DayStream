@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { MultiSelect } from '../../design-system/components/forms/MultiSelect';
 import { FormRenderer } from '../../components/forms/FormRenderer';
 import { validateFormDefinition, MAX_FORM_COLUMNS } from '@daystream/shared';
 import { LanguageSelect } from '../../components/LanguageSelect';
+import { useBusinessLanguages } from '../../context/useBusinessLanguages';
 import type { FormItem, FormItemType, FormAnswer, FormValidationIssue } from '@daystream/shared';
 import * as formsApi from '../../api/forms';
 import * as systemApi from '../../api/systemTemplates';
@@ -17,17 +20,7 @@ import { getServices } from '../../api/services';
  */
 
 
-const ITEM_TYPE_LABELS: Record<FormItemType, string> = {
-  heading: 'Heading',
-  text: 'Paragraph',
-  write_in: 'Write-in answer',
-  date: 'Date',
-  yes_no: 'Yes / No',
-  single_choice: 'Choose one',
-  multi_choice: 'Checkbox table',
-  agree: '"I agree" box',
-  signature: 'Signature line',
-};
+// The words of each item type come from formEditor.itemType.<type> (and formEditor.addItem.<type>).
 
 const ADD_BUTTONS: FormItemType[] = [
   'heading', 'text', 'write_in', 'date', 'yes_no', 'single_choice', 'multi_choice',
@@ -53,15 +46,16 @@ function newId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
-function blankItem(type: FormItemType): FormItem {
+/** A new item; the agreement and signature start with wording in the language shown (the business can change it). */
+function blankItem(type: FormItemType, t: TFunction): FormItem {
   const id = newId();
   switch (type) {
     case 'heading': return { id, type, text: '' };
     case 'text': return { id, type, text: '' };
     case 'single_choice': return { id, type, label: '', required: false, options: ['', ''] };
     case 'multi_choice': return { id, type, label: '', required: false, options: ['', ''], columns: 2 };
-    case 'agree': return { id, type, label: 'I have read and agree to the above' };
-    case 'signature': return { id, type, label: 'Signature' };
+    case 'agree': return { id, type, label: t('formEditor.defaultAgree') };
+    case 'signature': return { id, type, label: t('formEditor.defaultSignature') };
     default: return { id, type, label: '', required: false } as FormItem;
   }
 }
@@ -80,18 +74,20 @@ interface Props {
 }
 
 export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirtyChange, kind: templateKind = 'form', scope = 'business' }: Props) {
+  const { t } = useTranslation('templates');
   const isChart = templateKind === 'chart';
   const isSystem = scope === 'system';
-  const noun = isChart ? 'chart template' : 'form';
+  const { languages: businessLanguages } = useBusinessLanguages();
+  const languages = isSystem ? undefined : businessLanguages;
   const initial = useMemo(() => ({
-    name: form?.name ?? (isChart ? 'New chart template' : 'New form'),
+    name: form?.name ?? t(isChart ? 'formEditor.newChartName' : 'formEditor.newFormName'),
     language: form?.language ?? '',
     isActive: form?.isActive ?? true,
     renewMonths: form?.renewAfterMonths ? String(form.renewAfterMonths) : '',
     firstVisit: !!form?.applies.first_visit,
     serviceIds: form?.applies.service_ids ?? [],
     items: toBlocks(form?.definition.items ?? ([] as FormItem[])).flat(),
-  }), [form, isChart]);
+  }), [form, isChart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [name, setName] = useState(initial.name);
   const [language, setLanguage] = useState(initial.language);
@@ -147,11 +143,11 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
       return next.flat();
     });
   const remove = (id: string) => setItems((list) => toBlocks(list).filter((b) => b[0].id !== id).flat());
-  const add = (type: FormItemType) => setItems((list) => [...toBlocks(list).flat(), blankItem(type)]);
+  const add = (type: FormItemType) => setItems((list) => [...toBlocks(list).flat(), blankItem(type, t)]);
 
   const hasSigned = items.some((i) => i.type === 'agree') && items.some((i) => i.type === 'signature');
   const addSigned = () =>
-    setItems((list) => [...list.filter((i) => i.type !== 'agree' && i.type !== 'signature'), blankItem('agree'), blankItem('signature')]);
+    setItems((list) => [...list.filter((i) => i.type !== 'agree' && i.type !== 'signature'), blankItem('agree', t), blankItem('signature', t)]);
   const blocks = toBlocks(items);
 
   const handleSave = async () => {
@@ -165,11 +161,11 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
     });
     const found = validateFormDefinition({ items: cleaned }, templateKind);
     setIssues(found);
-    if (!name.trim()) { setError(`The ${noun} needs a name.`); return; }
-    if (found.length > 0) { setError('Fix the items marked below, then save again.'); return; }
+    if (!name.trim()) { setError(t(isChart ? 'formEditor.chartNeedsName' : 'formEditor.formNeedsName')); return; }
+    if (found.length > 0) { setError(t('formEditor.fixItems')); return; }
     const months = renewMonths.trim() === '' ? null : Number(renewMonths);
     if (months !== null && (!Number.isInteger(months) || months < 1)) {
-      setError('Renew after must be a whole number of months.'); return;
+      setError(t('formEditor.renewWhole')); return;
     }
     const input = {
       name: name.trim(),
@@ -193,7 +189,7 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
       onSaved();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } }; message?: string };
-      setError(err.response?.data?.error || err.message || `Could not save the ${noun}.`);
+      setError(err.response?.data?.error || err.message || t(isChart ? 'formEditor.saveChartFailed' : 'formEditor.saveFormFailed'));
     } finally {
       setSaving(false);
     }
@@ -205,25 +201,27 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
     <div style={s.editor}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
         <h3 style={s.subTitle}>
-          {form ? `Edit ${noun}${form.language ? ` (${form.language})` : ''}` : `New ${noun}`}
+          {form
+            ? t(isChart ? 'formEditor.editChart' : form.language ? 'formEditor.editFormLang' : 'formEditor.editForm', { language: form.language })
+            : t(isChart ? 'formEditor.newChart' : 'formEditor.newForm')}
         </h3>
         {/* Preview and Save at the top too, so there is no need to scroll down (owner, 24 Nov 2026) */}
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-          <Button size="sm" variant="secondary" onClick={() => { setPreviewAnswers({}); setPreviewOpen(true); }} disabled={saving || items.length === 0}>Preview</Button>
-          <Button size="sm" onClick={handleSave} loading={saving}>{form ? 'Save changes' : `Create ${noun}`}</Button>
+          <Button size="sm" variant="secondary" onClick={() => { setPreviewAnswers({}); setPreviewOpen(true); }} disabled={saving || items.length === 0}>{t('formEditor.preview')}</Button>
+          <Button size="sm" onClick={handleSave} loading={saving}>{form ? t('formEditor.saveChanges') : t(isChart ? 'formEditor.createChart' : 'formEditor.createForm')}</Button>
         </div>
       </div>
       {error && <p style={s.error} role="alert">{error}</p>}
 
       <div style={s.formGrid}>
         <div style={s.field}>
-          <label style={s.label} htmlFor="frm-name">Name<span style={s.req}>*</span></label>
+          <label style={s.label} htmlFor="frm-name">{t('formEditor.name')}<span style={s.req}>*</span></label>
           <input id="frm-name" style={s.input} value={name} maxLength={200} onChange={(e) => setName(e.target.value)} />
         </div>
         {!isChart && (
           <div style={s.field}>
-            <label style={s.label} htmlFor="frm-lang">Language</label>
-            <LanguageSelect id="frm-lang" style={s.input} value={language} onChange={setLanguage} blankLabel="Default (no language)" />
+            <label style={s.label} htmlFor="frm-lang">{t('formEditor.language')}</label>
+            <LanguageSelect languages={languages} id="frm-lang" style={s.input} value={language} onChange={setLanguage} blankLabel={t('formEditor.defaultNoLanguage')} />
           </div>
         )}
       </div>
@@ -231,45 +229,45 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
       <div style={s.field}>
         <label style={s.checkLabel}>
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-          <span>Active (inactive {noun}s are drafts and are not offered)</span>
+          <span>{t(isChart ? 'formEditor.activeChart' : 'formEditor.activeForm')}</span>
         </label>
       </div>
 
       {/* A system form applies to nothing: each business decides when its own copy is needed. */}
       {!isChart && !isSystem && (
       <div style={s.box}>
-        <h4 style={s.boxTitle}>When this form is needed</h4>
+        <h4 style={s.boxTitle}>{t('formEditor.whenNeeded')}</h4>
         <p style={s.helper}>
-          This only decides what shows as missing for staff. It never blocks a booking.
-          {isVersion && ' These settings are shared by every language version of the form.'}
+          {t('formEditor.whenNeededHelper')}
+          {isVersion && ` ${t('formEditor.sharedByVersions')}`}
         </p>
         <label style={s.checkLabel}>
           <input type="checkbox" checked={firstVisit} onChange={(e) => setFirstVisit(e.target.checked)} />
-          <span>Before a customer's first visit</span>
+          <span>{t('formEditor.beforeFirstVisit')}</span>
         </label>
         <div style={{ ...s.field, marginTop: 'var(--space-md)' }}>
-          <MultiSelect label="Before these services" options={services} selected={serviceIds}
-            onChange={setServiceIds} placeholder="No specific services"
-            emptyMessage="No services found" />
+          <MultiSelect label={t('formEditor.beforeServices')} options={services} selected={serviceIds}
+            onChange={setServiceIds} placeholder={t('formEditor.noSpecificServices')}
+            emptyMessage={t('formEditor.noServicesFound')} />
         </div>
         <div style={{ ...s.field, maxWidth: '260px' }}>
-          <label style={s.label} htmlFor="frm-renew">Renew after (months)</label>
+          <label style={s.label} htmlFor="frm-renew">{t('formEditor.renewAfter')}</label>
           <input id="frm-renew" style={s.input} type="number" min={1} step={1} value={renewMonths}
-            placeholder="Never" onChange={(e) => setRenewMonths(e.target.value)} />
-          <span style={s.helper}>Leave blank if it never needs signing again.</span>
+            placeholder={t('formEditor.never')} onChange={(e) => setRenewMonths(e.target.value)} />
+          <span style={s.helper}>{t('formEditor.renewHelper')}</span>
         </div>
       </div>
       )}
 
-      <h4 style={s.boxTitle}>Items</h4>
+      <h4 style={s.boxTitle}>{t('formEditor.items')}</h4>
       {generalIssues.map((i, n) => <p key={n} style={s.error} role="alert">{i.message}</p>)}
-      {items.length === 0 && <p style={s.muted}>No items yet. Add some below.</p>}
+      {items.length === 0 && <p style={s.muted}>{t('formEditor.noItems')}</p>}
 
       <ol style={s.itemList}>
         {blocks.map((block, index) => {
           const it = block[0];
           const sig = block[1];
-          const kind = sig ? 'Agreement and signature' : ITEM_TYPE_LABELS[it.type];
+          const kind = sig ? t('formEditor.agreementAndSignature') : t(`formEditor.itemType.${it.type}`);
           const problems = [...(issuesById.get(it.id) ?? []), ...(sig ? issuesById.get(sig.id) ?? [] : [])];
           return (
             <li key={it.id} style={{ ...s.item, borderColor: problems.length > 0 ? 'var(--color-error)' : 'var(--color-border)' }}>
@@ -277,36 +275,35 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
                 <span style={s.itemType}>{kind}</span>
                 <div style={s.itemActions}>
                   <Button size="sm" variant="ghost" onClick={() => move(it.id, -1)} disabled={index === 0}
-                    aria-label={`Move ${kind} up`}>Up</Button>
+                    aria-label={t('formEditor.moveUp', { kind })}>{t('formEditor.up')}</Button>
                   <Button size="sm" variant="ghost" onClick={() => move(it.id, 1)} disabled={index === blocks.length - 1}
-                    aria-label={`Move ${kind} down`}>Down</Button>
+                    aria-label={t('formEditor.moveDown', { kind })}>{t('formEditor.down')}</Button>
                   <Button size="sm" variant="ghost" onClick={() => remove(it.id)}
-                    aria-label={`Remove ${kind}`}>Remove</Button>
+                    aria-label={t('formEditor.removeItem', { kind })}>{t('formEditor.remove')}</Button>
                 </div>
               </div>
 
               {(it.type === 'heading' || it.type === 'text') ? (
                 <textarea style={{ ...s.input, minHeight: it.type === 'text' ? '96px' : '44px' }}
-                  aria-label={it.type === 'heading' ? 'Heading text' : 'Paragraph text'}
+                  aria-label={it.type === 'heading' ? t('formEditor.headingText') : t('formEditor.paragraphText')}
                   value={it.text} onChange={(e) => update(it.id, { text: e.target.value })} />
               ) : (
-                <input style={s.input} aria-label={`${ITEM_TYPE_LABELS[it.type]} label`}
-                  placeholder={it.type === 'agree' ? 'Text next to the box' : 'Question or label'}
+                <input style={s.input} aria-label={t('formEditor.itemLabel', { type: t(`formEditor.itemType.${it.type}`) })}
+                  placeholder={it.type === 'agree' ? t('formEditor.textNextToBox') : t('formEditor.questionOrLabel')}
                   value={it.label} onChange={(e) => update(it.id, { label: e.target.value })} />
               )}
 
               {(it.type === 'single_choice' || it.type === 'multi_choice') && (
                 <div style={s.field}>
                   <label style={s.label} htmlFor={`opts-${it.id}`}>
-                    {it.type === 'multi_choice' ? 'Entries (one per line)' : 'Options (one per line)'}
+                    {it.type === 'multi_choice' ? t('formEditor.entriesPerLine') : t('formEditor.optionsPerLine')}
                   </label>
                   <textarea id={`opts-${it.id}`} style={{ ...s.input, minHeight: it.type === 'multi_choice' ? '140px' : '72px' }}
                     value={it.options.join('\n')}
                     onChange={(e) => update(it.id, { options: e.target.value.split('\n') } as Partial<FormItem>)} />
                   {it.type === 'multi_choice' && (
                     <span style={s.helper}>
-                      {it.options.filter((o) => o.trim()).length} entries. The customer ticks the ones that apply.
-                      Group related entries by using several tables, each with its own label.
+                      {t('formEditor.entriesHelper', { count: it.options.filter((o) => o.trim()).length })}
                     </span>
                   )}
                 </div>
@@ -314,7 +311,7 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
 
               {it.type === 'multi_choice' && (
                 <div style={{ ...s.field, maxWidth: '220px' }}>
-                  <label style={s.label} htmlFor={`cols-${it.id}`}>Columns</label>
+                  <label style={s.label} htmlFor={`cols-${it.id}`}>{t('formEditor.columns')}</label>
                   <select id={`cols-${it.id}`} style={s.input} value={it.columns ?? 1}
                     onChange={(e) => update(it.id, { columns: Number(e.target.value) } as Partial<FormItem>)}>
                     {Array.from({ length: MAX_FORM_COLUMNS }, (_, n) => n + 1).map((n) => (
@@ -325,7 +322,7 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
                     {(() => {
                       const filled = it.options.filter((o) => o.trim()).length;
                       const cols = it.columns ?? 1;
-                      return `${filled} entries in ${cols} column${cols === 1 ? '' : 's'}: up to ${Math.ceil(filled / cols) || 0} rows. Entries run down each column first.`;
+                      return t('formEditor.columnsHelper', { count: cols, filled, rows: Math.ceil(filled / cols) || 0 });
                     })()}
                   </span>
                 </div>
@@ -335,17 +332,17 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
                 <label style={s.checkLabel}>
                   <input type="checkbox" checked={it.required}
                     onChange={(e) => update(it.id, { required: e.target.checked } as Partial<FormItem>)} />
-                  <span>Required</span>
+                  <span>{t('formEditor.required')}</span>
                 </label>
               )}
 
               {/* The signature line that always goes with the agreement above. */}
               {sig && sig.type === 'signature' && (
                 <div style={s.field}>
-                  <label style={s.label} htmlFor={`sig-${sig.id}`}>Signature line label</label>
+                  <label style={s.label} htmlFor={`sig-${sig.id}`}>{t('formEditor.signatureLineLabel')}</label>
                   <input id={`sig-${sig.id}`} style={s.input} value={sig.label}
                     onChange={(e) => update(sig.id, { label: e.target.value })} />
-                  <span style={s.helper}>The customer must tick the box above and sign here before submitting.</span>
+                  <span style={s.helper}>{t('formEditor.signatureHelper')}</span>
                 </div>
               )}
 
@@ -355,35 +352,34 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
         })}
       </ol>
 
-      <div style={s.addRow} role="group" aria-label="Add an item">
-        {ADD_BUTTONS.map((t) => (
-          <Button key={t} size="sm" variant="secondary" onClick={() => add(t)}>Add {ITEM_TYPE_LABELS[t].toLowerCase()}</Button>
+      <div style={s.addRow} role="group" aria-label={t('formEditor.addAnItem')}>
+        {ADD_BUTTONS.map((type) => (
+          <Button key={type} size="sm" variant="secondary" onClick={() => add(type)}>{t(`formEditor.addItem.${type}`)}</Button>
         ))}
       </div>
 
       {!isChart && (
       <div style={s.box}>
-        <h4 style={s.boxTitle}>Agreement and signature</h4>
+        <h4 style={s.boxTitle}>{t('formEditor.agreementAndSignature')}</h4>
         <p style={s.helper}>
-          A signed form has an "I agree" box and a signature line. The customer must tick the box and
-          sign before the form can be submitted.
+          {t('formEditor.signedHelper')}
         </p>
         {hasSigned
-          ? <p style={s.helper}>This form is signed. The agreement and signature are one block in the list above; move or remove them together there.</p>
-          : <Button size="sm" variant="secondary" onClick={addSigned}>Add agreement and signature</Button>}
+          ? <p style={s.helper}>{t('formEditor.isSigned')}</p>
+          : <Button size="sm" variant="secondary" onClick={addSigned}>{t('formEditor.addAgreement')}</Button>}
       </div>
       )}
 
       <div style={s.actions}>
-        <Button onClick={handleSave} loading={saving}>{form ? 'Save changes' : `Create ${noun}`}</Button>
+        <Button onClick={handleSave} loading={saving}>{form ? t('formEditor.saveChanges') : t(isChart ? 'formEditor.createChart' : 'formEditor.createForm')}</Button>
         <Button variant="secondary" onClick={() => { setPreviewAnswers({}); setPreviewOpen(true); }} disabled={saving || items.length === 0}>
-          Preview
+          {t('formEditor.preview')}
         </Button>
-        <Button variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
+        <Button variant="ghost" onClick={onCancel} disabled={saving}>{t('common:cancel')}</Button>
       </div>
 
-      <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title={`Preview: ${name}`} size="lg">
-        <p style={s.helper}>{isChart ? 'This is how the practitioner sees the chart.' : 'This is how the customer sees the form.'} Nothing you enter here is saved.</p>
+      <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title={t('formEditor.previewTitle', { name })} size="lg">
+        <p style={s.helper}>{t(isChart ? 'formEditor.previewHelperChart' : 'formEditor.previewHelperForm')}</p>
         <FormRenderer definition={{ items }} idPrefix="preview"
           answers={previewAnswers}
           onChange={(id, v) => setPreviewAnswers((a) => ({ ...a, [id]: v }))} />

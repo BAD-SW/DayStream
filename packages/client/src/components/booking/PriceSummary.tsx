@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
 import { formatCurrency } from '../../utils/currency';
 import type { PaymentRule } from '../../api/services';
@@ -13,10 +14,11 @@ import type { BenefitRef } from '../../api/bookings';
 
 interface Line { label: string; amount: number }
 
+/** The booking:* key of the line saying when each payment rule is paid. */
 const WHEN: Record<PaymentRule, string> = {
-  no_card: 'Paid at Checkout, after the service.',
-  card_required: 'A card or bank account is kept now and charged after the service, at Checkout.',
-  charge_at_booking: 'Paid when the reservation is made, in the next step.',
+  no_card: 'price.when.no_card',
+  card_required: 'price.when.card_required',
+  charge_at_booking: 'price.when.charge_at_booking',
 };
 
 export function PriceSummary({ businessId, customerId, serviceId, variantId, participants, rule, benefit, startTime, addons }: {
@@ -26,6 +28,7 @@ export function PriceSummary({ businessId, customerId, serviceId, variantId, par
   /** The add-ons chosen (spec 51, gap 15): each its own line. */
   addons?: string[];
 }) {
+  const { t } = useTranslation('booking');
   const addonKey = (addons || []).join(',');
   const [lines, setLines] = useState<Line[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -49,16 +52,16 @@ export function PriceSummary({ businessId, customerId, serviceId, variantId, par
 
   if (!serviceId || !variantId) return null;
   return (
-    <div className="q-sec" aria-live="polite"><div className="q-sec-h">Price</div><div className="q-sec-b">
-      {failed ? <p className="mk-warn">The price could not be worked out.</p> : !lines ? <p className="mk-hint">Working out the price…</p> : (
+    <div className="q-sec" aria-live="polite"><div className="q-sec-h">{t('price.title')}</div><div className="q-sec-b">
+      {failed ? <p className="mk-warn">{t('price.failed')}</p> : !lines ? <p className="mk-hint">{t('price.working')}</p> : (
         <>
           <div className="pay-lines">
             {lines.map((l, i) => <div key={i} className={`pay-line${i && l.amount < 0 ? ' sub' : ''}`}><span>{l.label}</span><b>{(l.amount < 0 ? '−' : '') + formatCurrency(Math.abs(l.amount))}</b></div>)}
-            <div className="pay-line tot"><span>Total</span><b>{formatCurrency(total)}</b></div>
+            <div className="pay-line tot"><span>{t('price.total')}</span><b>{formatCurrency(total)}</b></div>
           </div>
           {benefit
-            ? <p className="mk-hint">Paid with the membership or package chosen: nothing is charged or kept now. It is counted as used at Checkout.</p>
-            : rule && <p className="mk-hint">{WHEN[rule]}</p>}
+            ? <p className="mk-hint">{t('price.benefitNote')}</p>
+            : rule && <p className="mk-hint">{t(WHEN[rule])}</p>}
         </>
       )}
     </div></div>

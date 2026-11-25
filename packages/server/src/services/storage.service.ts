@@ -7,6 +7,7 @@ import {
 import { logger } from '../middleware/logger';
 import { adminPool } from '../db/pool';
 import { decrypt } from '../utils/encryption';
+import { msg } from '../i18n';
 
 export interface StoredFile {
   filePath: string;        // relative path within storage root
@@ -126,7 +127,7 @@ class LocalStorage implements StorageBackend {
   private full(relativePath: string): string {
     const root = path.resolve(this.root);
     const full = path.resolve(root, relativePath);
-    if (full !== root && !full.startsWith(root + path.sep)) throw new Error('Path is outside the storage root');
+    if (full !== root && !full.startsWith(root + path.sep)) throw new Error(msg('errors:storage.pathIsOutsideTheStorageRoot'));
     return full;
   }
 
@@ -151,7 +152,7 @@ class LocalStorage implements StorageBackend {
 
   async deleteDirectory(relativePath: string): Promise<void> {
     const fullPath = this.full(relativePath);
-    if (fullPath === path.resolve(this.root)) throw new Error('Refusing to delete the storage root');
+    if (fullPath === path.resolve(this.root)) throw new Error(msg('errors:storage.refusingToDeleteTheStorageRoot'));
     if (fs.existsSync(fullPath)) fs.rmSync(fullPath, { recursive: true, force: true });
     this.pruneEmptyParents(path.dirname(fullPath));
   }
@@ -222,7 +223,7 @@ class S3Storage implements StorageBackend {
   private bucket: string;
 
   constructor(s: S3Settings) {
-    if (!s.bucket) throw new Error('S3 storage is selected but no bucket is configured');
+    if (!s.bucket) throw new Error(msg('errors:storage.s3StorageIsSelectedButNo'));
     this.bucket = s.bucket;
     this.client = new S3Client({
       region: s.region,
@@ -258,7 +259,7 @@ class S3Storage implements StorageBackend {
 
   async deleteDirectory(relativePath: string): Promise<void> {
     const prefix = this.key(relativePath).replace(/\/?$/, '/');
-    if (prefix === '/') throw new Error('Refusing to delete the whole bucket');
+    if (prefix === '/') throw new Error(msg('errors:storage.refusingToDeleteTheWholeBucket'));
     let token: string | undefined;
     do {
       const page = await this.client.send(new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }));
@@ -317,12 +318,12 @@ export async function testStorage(config: StorageConfig, secret?: string): Promi
   const testPath = `_connection-test/${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
   const payload = Buffer.from(`DayStream storage test ${new Date().toISOString()}`);
   const step = async (name: string, fn: () => Promise<unknown>) => {
-    try { return await fn(); } catch (err: any) { throw new Error(`${name} failed: ${err?.message || err}`); }
+    try { return await fn(); } catch (err: any) { throw new Error(msg('errors:storage.failed', { name, value: err?.message || err })); }
   };
   try {
     await step('Writing a test file', () => backend.save(testPath, payload));
     const back = await step('Reading it back', () => backend.read(testPath)) as Buffer | null;
-    if (!back || !back.equals(payload)) throw new Error('Reading it back failed: the file came back different');
+    if (!back || !back.equals(payload)) throw new Error(msg('errors:storage.readingItBackFailedTheFile'));
     await step('Deleting it', () => backend.deleteDirectory('_connection-test'));
     return { ok: true, message: `Storage works: a test file was written to, read from and deleted from ${where}.` };
   } catch (err: any) {

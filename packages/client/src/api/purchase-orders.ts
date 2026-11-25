@@ -1,15 +1,15 @@
 import { apiClient } from './client';
 
-/** Purchase orders (spec 51, gap 7): ordered from a vendor, received into stock, billed. */
+/** Purchase orders (spec 51, gap 7): ordered from a vendor, received into stock, billed. `label` in PO_STATUS is a translation key: show it with t(label). */
 export type PoStatus = 'draft' | 'sent' | 'partly_received' | 'received' | 'closed' | 'cancelled';
 
 export const PO_STATUS: Record<PoStatus, { label: string; variant: 'neutral' | 'info' | 'warning' | 'success' | 'error' }> = {
-  draft: { label: 'Draft', variant: 'neutral' },
-  sent: { label: 'Sent', variant: 'info' },
-  partly_received: { label: 'Partly received', variant: 'warning' },
-  received: { label: 'Received', variant: 'success' },
-  closed: { label: 'Closed', variant: 'neutral' },
-  cancelled: { label: 'Cancelled', variant: 'error' },
+  draft: { label: 'inventory:po.status.draft', variant: 'neutral' },
+  sent: { label: 'inventory:po.status.sent', variant: 'info' },
+  partly_received: { label: 'inventory:po.status.partly_received', variant: 'warning' },
+  received: { label: 'inventory:po.status.received', variant: 'success' },
+  closed: { label: 'inventory:po.status.closed', variant: 'neutral' },
+  cancelled: { label: 'inventory:po.status.cancelled', variant: 'error' },
 };
 
 export interface PoSummary {

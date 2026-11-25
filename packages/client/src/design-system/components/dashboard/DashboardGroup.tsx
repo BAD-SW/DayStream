@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   DndContext,
   closestCenter,
@@ -24,6 +25,7 @@ interface DashboardGroupProps {
  * and its own drag-and-drop context so reordering stays scoped within the group.
  */
 export function DashboardGroup({ group, modules, onDragEnd }: DashboardGroupProps) {
+  const { t } = useTranslation('nav');
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -48,7 +50,7 @@ export function DashboardGroup({ group, modules, onDragEnd }: DashboardGroupProp
         <span className={styles.badge} aria-hidden="true">
           <Icon />
         </span>
-        <h3 id={headingId} className={styles.label}>{group.label}</h3>
+        <h3 id={headingId} className={styles.label}>{t(group.labelKey)}</h3>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={modules.map((m) => m.id)} strategy={rectSortingStrategy}>

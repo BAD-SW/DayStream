@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as servicesApi from '../api/services';
+import { useTranslation } from 'react-i18next';
 
 export function ServiceCreate() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -39,14 +41,14 @@ export function ServiceCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!businessId) { setError('No business context.'); return; }
+    if (!businessId) { setError(t('serviceCreate.noBusiness')); return; }
     setLoading(true);
     setError('');
     try {
       const service = await servicesApi.createService({ ...form, business_id: businessId });
       navigate(`/offers/services/${service.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create service');
+      setError(err.response?.data?.error || t('serviceCreate.createFailed'));
     } finally {
       setLoading(false);
     }
@@ -54,81 +56,81 @@ export function ServiceCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers?tab=services')}>← Back to Offerings</button>
-      <h1 style={styles.title}>Create Service</h1>
+      <button style={styles.back} onClick={() => navigate('/offers?tab=services')}>{t('serviceCreate.backToOfferings')}</button>
+      <h1 style={styles.title}>{t('serviceCreate.title')}</h1>
       {error && <Alert variant="error">{error}</Alert>}
       <form onSubmit={handleSubmit} style={styles.form}>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Name *</label>
+          <label style={styles.label}>{t('serviceCreate.name')}</label>
           <input style={styles.input} value={form.name} onChange={(e) => handleChange('name', e.target.value)} required />
         </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Short Description</label>
+          <label style={styles.label}>{t('serviceCreate.shortDescription')}</label>
           <input style={styles.input} value={form.short_description} onChange={(e) => handleChange('short_description', e.target.value)} />
         </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Description</label>
+          <label style={styles.label}>{t('serviceCreate.description')}</label>
           <textarea style={{ ...styles.input, minHeight: '80px' }} value={form.description} onChange={(e) => handleChange('description', e.target.value)} />
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Booking Type</label>
+            <label style={styles.label}>{t('serviceCreate.bookingType')}</label>
             <select style={styles.input} value={form.booking_type} onChange={(e) => handleChange('booking_type', e.target.value)}>
-              <option value="individual">Individual</option>
-              <option value="shared">Shared</option>
-              <option value="group">Group</option>
-              <option value="resource">Resource</option>
+              <option value="individual">{t('serviceCreate.type.individual')}</option>
+              <option value="shared">{t('serviceCreate.type.shared')}</option>
+              <option value="group">{t('serviceCreate.type.group')}</option>
+              <option value="resource">{t('serviceCreate.type.resource')}</option>
             </select>
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Category *</label>
+            <label style={styles.label}>{t('serviceCreate.category')}</label>
             <select style={styles.input} value={form.category_id} onChange={(e) => handleChange('category_id', e.target.value)} required>
-              <option value="">— Select —</option>
+              <option value="">{t('serviceCreate.select')}</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Duration (min) *</label>
+            <label style={styles.label}>{t('serviceCreate.duration')}</label>
             <input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => handleChange('default_duration', Number(e.target.value))} required />
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Max Capacity</label>
+            <label style={styles.label}>{t('serviceCreate.maxCapacity')}</label>
             <input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => handleChange('max_capacity', Number(e.target.value))} />
           </div>
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Buffer Before (min)</label>
+            <label style={styles.label}>{t('serviceCreate.bufferBefore')}</label>
             <input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => handleChange('buffer_before', Number(e.target.value))} />
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Buffer After (min)</label>
+            <label style={styles.label}>{t('serviceCreate.bufferAfter')}</label>
             <input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => handleChange('buffer_after', Number(e.target.value))} />
           </div>
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Min Advance Booking (hours)</label>
+            <label style={styles.label}>{t('serviceCreate.minAdvance')}</label>
             <input style={styles.input} type="number" min={0} value={form.min_advance_booking_hours} onChange={(e) => handleChange('min_advance_booking_hours', Number(e.target.value))} />
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Max Advance Booking (days)</label>
+            <label style={styles.label}>{t('serviceCreate.maxAdvance')}</label>
             <input style={styles.input} type="number" min={1} value={form.max_advance_booking_days} onChange={(e) => handleChange('max_advance_booking_days', Number(e.target.value))} />
           </div>
         </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Preparation Notes</label>
+          <label style={styles.label}>{t('serviceCreate.prepNotes')}</label>
           <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.preparation_notes} onChange={(e) => handleChange('preparation_notes', e.target.value)} />
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>
           <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => handleChange('online_booking_enabled', e.target.checked)} />
-          Enable online booking
+          {t('serviceCreate.onlineBooking')}
         </label>
         <div style={styles.actions}>
-          <Button type="button" onClick={() => navigate('/offers?tab=services')}>Cancel</Button>
-          <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Service'}</Button>
+          <Button type="button" onClick={() => navigate('/offers?tab=services')}>{t('common:cancel')}</Button>
+          <Button type="submit" disabled={loading}>{loading ? t('serviceCreate.creating') : t('serviceCreate.title')}</Button>
         </div>
       </form>
     </div>

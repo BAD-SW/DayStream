@@ -1,3 +1,4 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
@@ -5,28 +6,26 @@ import { Button } from '../design-system/components/actions/Button';
 import * as pricingApi from '../api/pricing';
 import type { PricingRule, PricingBundle } from '../api/pricing';
 import { formatCurrency } from '../utils/currency';
-
-const TYPE_LABELS: Record<string, string> = {
-  membership: 'Membership', promotion: 'Promotion', seasonal: 'Promotion', first_time: 'First Time',
-  corporate: 'Corporate', volume: 'Volume', time_of_day: 'Time of Day', day_of_week: 'Day of Week',
-};
+import { formatDate, formatPercent } from '../utils/format';
+import { useTranslation } from 'react-i18next';
 
 type PricingTab = 'rules' | 'bundles' | 'corporate';
 
 export function PricingRules() {
+  const { t } = useTranslation('offerings');
   const [activeTab, setActiveTab] = useState<PricingTab>('rules');
   const businessId = localStorage.getItem('business_id') || '';
 
   const tabItems: { key: PricingTab; label: string }[] = [
-    { key: 'rules', label: 'Pricing Rules' },
-    { key: 'bundles', label: 'Bundles' },
-    { key: 'corporate', label: 'Corporate' },
+    { key: 'rules', label: t('pricing.tab.rules') },
+    { key: 'bundles', label: t('pricing.tab.bundles') },
+    { key: 'corporate', label: t('pricing.ruleType.corporate') },
   ];
 
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Pricing</h1>
+        <h1 style={styles.title}>{t('pricing.title')}</h1>
       </div>
       <div style={styles.tabs}>
         {tabItems.map((tab) => (
@@ -48,6 +47,7 @@ export function PricingRules() {
 // ============================================================
 
 function RulesSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('offerings');
   const [rules, setRules] = useState<PricingRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -142,7 +142,7 @@ function RulesSection({ businessId }: { businessId: string }) {
       setShowForm(false);
       setEditingRule(null);
       resetForm();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save rule'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('pricing.saveRuleFailed')); }
     finally { setSaving(false); }
   };
 
@@ -153,30 +153,30 @@ function RulesSection({ businessId }: { businessId: string }) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this pricing rule?')) return;
+    if (!(await askConfirm({ message: t('pricing.deleteRuleConfirm'), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     await pricingApi.deleteRule(id, businessId);
     setRules(rules.filter((r) => r.id !== id));
   };
 
   const columns = [
-    { key: 'name', header: 'Name' },
-    { key: 'rule_type', header: 'Type', render: (v: string) => <Badge variant="neutral">{TYPE_LABELS[v] || v}</Badge> },
-    { key: 'discount', header: 'Adjustment', render: (_: any, r: PricingRule) => {
+    { key: 'name', header: t('shared.name') },
+    { key: 'rule_type', header: t('shared.type'), render: (v: string) => <Badge variant="neutral">{t(`pricing.ruleType.${v}`, { defaultValue: v })}</Badge> },
+    { key: 'discount', header: t('pricing.adjustment'), render: (_: any, r: PricingRule) => {
       const isPremium = r.discount_type.startsWith('premium');
       const isPercent = r.discount_type.includes('percentage');
       const prefix = isPremium ? '+' : '-';
-      const value = isPercent ? `${r.discount_value}%` : formatCurrency(r.discount_value);
+      const value = isPercent ? formatPercent(r.discount_value) : formatCurrency(r.discount_value);
       return <span style={{ color: isPremium ? 'var(--color-error)' : 'var(--color-success)' }}>{prefix}{value}</span>;
     }},
-    { key: 'priority', header: 'Priority' },
-    { key: 'stacking_mode', header: 'Stacking', render: (v: string) => v.replace('_', ' ') },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'active' ? 'success' : 'neutral'}>{v}</Badge> },
+    { key: 'priority', header: t('pricing.priority') },
+    { key: 'stacking_mode', header: t('pricing.stacking'), render: (v: string) => t(`pricing.stacking.${v}`, { defaultValue: v.replace('_', ' ') }) },
+    { key: 'status', header: t('shared.status'), render: (v: string) => <Badge variant={v === 'active' ? 'success' : 'neutral'}>{t(`shared.status.${v}`, { defaultValue: v })}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, r: PricingRule) => (
         <div style={{ display: 'flex', gap: '4px' }}>
-          <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleToggle(r); }}>{r.status === 'active' ? 'Disable' : 'Enable'}</button>
-          <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}>Delete</button>
+          <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleToggle(r); }}>{r.status === 'active' ? t('pricing.disable') : t('pricing.enable')}</button>
+          <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}>{t('common:delete')}</button>
         </div>
       ),
     },
@@ -185,65 +185,65 @@ function RulesSection({ businessId }: { businessId: string }) {
   return (
     <div>
       <div style={{ marginBottom: '16px' }}>
-        <Button onClick={openCreate}>Create Rule</Button>
+        <Button onClick={openCreate}>{t('pricing.createRule')}</Button>
       </div>
 
       {showForm && (
         <div style={styles.formPanel}>
-          <h3 style={styles.formTitle}>{editingRule ? 'Edit Rule' : 'New Pricing Rule'}</h3>
+          <h3 style={styles.formTitle}>{editingRule ? t('pricing.editRule') : t('pricing.newRule')}</h3>
           {error && <p style={styles.error}>{error}</p>}
           <form onSubmit={handleSubmit} style={styles.formGrid}>
             <div style={styles.field}>
-              <label style={styles.label}>Name *</label>
-              <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="e.g. 10% Member Discount" />
+              <label style={styles.label}>{t('shared.nameRequired')}</label>
+              <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder={t('pricing.exampleName')} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Rule Type *</label>
+              <label style={styles.label}>{t('pricing.ruleTypeRequired')}</label>
               <select style={styles.input} value={form.rule_type} onChange={(e) => setForm({ ...form, rule_type: e.target.value })}>
-                <option value="promotion">Promotion</option>
-                <option value="membership">Membership</option>
-                <option value="first_time">First Time</option>
-                <option value="corporate">Corporate</option>
-                <option value="volume">Volume</option>
-                <option value="time_of_day">Time of Day</option>
-                <option value="day_of_week">Day of Week</option>
+                <option value="promotion">{t('pricing.ruleType.promotion')}</option>
+                <option value="membership">{t('pricing.ruleType.membership')}</option>
+                <option value="first_time">{t('pricing.ruleType.first_time')}</option>
+                <option value="corporate">{t('pricing.ruleType.corporate')}</option>
+                <option value="volume">{t('pricing.ruleType.volume')}</option>
+                <option value="time_of_day">{t('pricing.ruleType.time_of_day')}</option>
+                <option value="day_of_week">{t('pricing.ruleType.day_of_week')}</option>
               </select>
               <small style={styles.helper}>
-                {form.rule_type === 'promotion' && 'A promotional discount, optionally limited by date range.'}
-                {form.rule_type === 'membership' && 'Discount applied automatically to customers with active memberships.'}
-                {form.rule_type === 'first_time' && 'Discount for first-time customers only.'}
-                {form.rule_type === 'corporate' && 'Special rate for customers in a corporate account.'}
-                {form.rule_type === 'volume' && 'Discount triggered when purchase exceeds a minimum amount.'}
-                {form.rule_type === 'time_of_day' && 'Discount active only during specific hours (e.g., off-peak pricing).'}
-                {form.rule_type === 'day_of_week' && 'Discount active only on specific days of the week.'}
+                {form.rule_type === 'promotion' && t('pricing.help.promotion')}
+                {form.rule_type === 'membership' && t('pricing.help.membership')}
+                {form.rule_type === 'first_time' && t('pricing.help.first_time')}
+                {form.rule_type === 'corporate' && t('pricing.help.corporate')}
+                {form.rule_type === 'volume' && t('pricing.help.volume')}
+                {form.rule_type === 'time_of_day' && t('pricing.help.time_of_day')}
+                {form.rule_type === 'day_of_week' && t('pricing.help.day_of_week')}
               </small>
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Pricing Adjustment Type *</label>
+              <label style={styles.label}>{t('pricing.adjustmentTypeRequired')}</label>
               <select style={styles.input} value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value })}>
-                <option value="percentage">Discount — Percentage (%)</option>
-                <option value="fixed">Discount — Fixed Amount</option>
-                <option value="premium_percentage">Premium — Percentage (%)</option>
-                <option value="premium_fixed">Premium — Fixed Amount</option>
+                <option value="percentage">{t('pricing.discountPercentage')}</option>
+                <option value="fixed">{t('pricing.discountFixed')}</option>
+                <option value="premium_percentage">{t('pricing.premiumPercentage')}</option>
+                <option value="premium_fixed">{t('pricing.premiumFixed')}</option>
               </select>
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>{form.discount_type.startsWith('premium') ? 'Premium Value *' : 'Discount Value *'}</label>
+              <label style={styles.label}>{form.discount_type.startsWith('premium') ? t('pricing.premiumValue') : t('pricing.discountValue')}</label>
               <input style={styles.input} type="number" step={form.discount_type.includes('percentage') ? '1' : '0.01'} min="0"
                 value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: e.target.value })} required
-                placeholder={form.discount_type.includes('percentage') ? 'e.g. 10' : 'e.g. 5.00'} />
+                placeholder={form.discount_type.includes('percentage') ? t('pricing.exampleTen') : t('pricing.exampleFive')} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Priority</label>
+              <label style={styles.label}>{t('pricing.priority')}</label>
               <input style={styles.input} type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} />
-              <small style={styles.helper}>Lower number = higher priority</small>
+              <small style={styles.helper}>{t('pricing.lowerHigher')}</small>
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Stacking</label>
+              <label style={styles.label}>{t('pricing.stacking')}</label>
               <select style={styles.input} value={form.stacking_mode} onChange={(e) => setForm({ ...form, stacking_mode: e.target.value })}>
-                <option value="stackable">Stackable</option>
-                <option value="exclusive">Exclusive</option>
-                <option value="non_stackable">Non-stackable</option>
+                <option value="stackable">{t('pricing.stackable')}</option>
+                <option value="exclusive">{t('pricing.exclusive')}</option>
+                <option value="non_stackable">{t('pricing.nonStackable')}</option>
               </select>
             </div>
 
@@ -251,11 +251,11 @@ function RulesSection({ businessId }: { businessId: string }) {
             {form.rule_type === 'promotion' && (
               <>
                 <div style={styles.field}>
-                  <label style={styles.label}>Effective From</label>
+                  <label style={styles.label}>{t('pricing.effectiveFrom')}</label>
                   <input style={styles.input} type="date" value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} />
                 </div>
                 <div style={styles.field}>
-                  <label style={styles.label}>Effective To</label>
+                  <label style={styles.label}>{t('pricing.effectiveTo')}</label>
                   <input style={styles.input} type="date" value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} />
                 </div>
               </>
@@ -263,9 +263,9 @@ function RulesSection({ businessId }: { businessId: string }) {
 
             {form.rule_type === 'day_of_week' && (
               <div style={{ ...styles.field, gridColumn: '1 / -1' }}>
-                <label style={styles.label}>Days of Week *</label>
+                <label style={styles.label}>{t('pricing.daysOfWeekRequired')}</label>
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((name, idx) => (
+                  {[t('shared.day.sun'), t('shared.day.mon'), t('shared.day.tue'), t('shared.day.wed'), t('shared.day.thu'), t('shared.day.fri'), t('shared.day.sat')].map((name, idx) => (
                     <button key={idx} type="button"
                       onClick={() => setForm({ ...form, days_of_week: form.days_of_week.includes(idx) ? form.days_of_week.filter(d => d !== idx) : [...form.days_of_week, idx] })}
                       style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: form.days_of_week.includes(idx) ? 600 : 400, fontFamily: 'var(--font-family)' }}>
@@ -279,11 +279,11 @@ function RulesSection({ businessId }: { businessId: string }) {
             {form.rule_type === 'time_of_day' && (
               <>
                 <div style={styles.field}>
-                  <label style={styles.label}>From Time *</label>
+                  <label style={styles.label}>{t('pricing.fromTime')}</label>
                   <input style={styles.input} type="time" value={form.time_from} onChange={(e) => setForm({ ...form, time_from: e.target.value })} />
                 </div>
                 <div style={styles.field}>
-                  <label style={styles.label}>To Time *</label>
+                  <label style={styles.label}>{t('pricing.toTime')}</label>
                   <input style={styles.input} type="time" value={form.time_to} onChange={(e) => setForm({ ...form, time_to: e.target.value })} />
                 </div>
               </>
@@ -291,22 +291,22 @@ function RulesSection({ businessId }: { businessId: string }) {
 
             {form.rule_type === 'volume' && (
               <div style={styles.field}>
-                <label style={styles.label}>Minimum Purchase Amount</label>
-                <input style={styles.input} type="number" step="0.01" min="0" value={form.min_purchase_amount} onChange={(e) => setForm({ ...form, min_purchase_amount: e.target.value })} placeholder="e.g. 100.00" />
+                <label style={styles.label}>{t('pricing.minPurchase')}</label>
+                <input style={styles.input} type="number" step="0.01" min="0" value={form.min_purchase_amount} onChange={(e) => setForm({ ...form, min_purchase_amount: e.target.value })} placeholder={t('pricing.exampleHundred')} />
               </div>
             )}
 
             {form.rule_type === 'first_time' && (
               <div style={styles.field}>
-                <label style={styles.label}>Max Uses Per Customer</label>
-                <input style={styles.input} type="number" min="1" value={form.first_time_booking_limit} onChange={(e) => setForm({ ...form, first_time_booking_limit: e.target.value })} placeholder="Default: 1" />
+                <label style={styles.label}>{t('pricing.maxUses')}</label>
+                <input style={styles.input} type="number" min="1" value={form.first_time_booking_limit} onChange={(e) => setForm({ ...form, first_time_booking_limit: e.target.value })} placeholder={t('pricing.defaultOne')} />
               </div>
             )}
 
             {form.rule_type === 'membership' && (
               <div style={{ ...styles.field, gridColumn: '1 / -1' }}>
-                <label style={styles.label}>Applies to Plans (leave empty for all memberships)</label>
-                <small style={styles.helper}>Select specific plans this discount applies to, or leave empty to apply to any active membership.</small>
+                <label style={styles.label}>{t('pricing.appliesToPlans')}</label>
+                <small style={styles.helper}>{t('pricing.appliesToPlansHelp')}</small>
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
                   {membershipPlans.map((p: any) => (
                     <button key={p.id} type="button"
@@ -315,15 +315,15 @@ function RulesSection({ businessId }: { businessId: string }) {
                       {p.name}
                     </button>
                   ))}
-                  {membershipPlans.length === 0 && <span style={styles.helper}>No membership plans defined yet.</span>}
+                  {membershipPlans.length === 0 && <span style={styles.helper}>{t('pricing.noPlans')}</span>}
                 </div>
               </div>
             )}
 
             {form.rule_type === 'corporate' && (
               <div style={{ ...styles.field, gridColumn: '1 / -1' }}>
-                <label style={styles.label}>Corporate Account *</label>
-                <small style={styles.helper}>Select which corporate account this discount applies to.</small>
+                <label style={styles.label}>{t('pricing.corporateAccountRequired')}</label>
+                <small style={styles.helper}>{t('pricing.corporateAccountHelp')}</small>
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
                   {corporateAccounts.map((a: any) => (
                     <button key={a.id} type="button"
@@ -332,20 +332,20 @@ function RulesSection({ businessId }: { businessId: string }) {
                       {a.name}
                     </button>
                   ))}
-                  {corporateAccounts.length === 0 && <span style={styles.helper}>No corporate accounts defined yet. Create one in the Corporate tab first.</span>}
+                  {corporateAccounts.length === 0 && <span style={styles.helper}>{t('pricing.noAccountsYet')}</span>}
                 </div>
               </div>
             )}
 
             <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="secondary" type="button" onClick={() => { setShowForm(false); setEditingRule(null); }}>Cancel</Button>
-              <Button type="submit" loading={saving}>{editingRule ? 'Save Changes' : 'Create Rule'}</Button>
+              <Button variant="secondary" type="button" onClick={() => { setShowForm(false); setEditingRule(null); }}>{t('common:cancel')}</Button>
+              <Button type="submit" loading={saving}>{editingRule ? t('pricing.saveChanges') : t('pricing.createRule')}</Button>
             </div>
           </form>
         </div>
       )}
 
-      <Table columns={columns} data={rules} loading={loading} onRowClick={openEdit} emptyMessage="No pricing rules configured" />
+      <Table columns={columns} data={rules} loading={loading} onRowClick={openEdit} emptyMessage={t('pricing.noRules')} />
     </div>
   );
 }
@@ -355,6 +355,7 @@ function RulesSection({ businessId }: { businessId: string }) {
 // ============================================================
 
 function BundlesSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('offerings');
   const [bundles, setBundles] = useState<PricingBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -414,11 +415,11 @@ function BundlesSection({ businessId }: { businessId: string }) {
     if (!selectedVariant) return;
     const variant = variants.find((v: any) => v.id === selectedVariant);
     const service = services.find((s: any) => s.id === selectedService);
-    if (items.find(i => i.variant_id === selectedVariant)) { setError('Item already in bundle'); return; }
+    if (items.find(i => i.variant_id === selectedVariant)) { setError(t('pricing.itemAlready')); return; }
     setItems([...items, {
       variant_id: selectedVariant,
       quantity: parseInt(itemQuantity) || 1,
-      label: `${service?.name || ''} — ${variant?.name || ''} (${variant?.duration || '?'} min)`,
+      label: t('pricing.bundleItemLabel', { service: service?.name || '', variant: variant?.name || '', duration: variant?.duration || '?' }),
     }]);
     setSelectedVariant('');
     setItemQuantity('1');
@@ -431,7 +432,7 @@ function BundlesSection({ businessId }: { businessId: string }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (items.length === 0) { setError('Add at least one item to the bundle'); return; }
+    if (items.length === 0) { setError(t('pricing.addItem')); return; }
     setSaving(true);
     setError('');
     try {
@@ -456,124 +457,124 @@ function BundlesSection({ businessId }: { businessId: string }) {
       setShowForm(false);
       setEditingBundle(null);
       resetForm();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save bundle'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('pricing.saveBundleFailed')); }
     finally { setSaving(false); }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this bundle?')) return;
+    if (!(await askConfirm({ message: t('pricing.deleteBundleConfirm'), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     await pricingApi.deleteBundle(id);
     setBundles(bundles.filter((b) => b.id !== id));
   };
 
-  if (loading) return <p style={styles.empty}>Loading...</p>;
+  if (loading) return <p style={styles.empty}>{t('common:loading')}</p>;
 
   return (
     <div>
       <div style={{ marginBottom: '16px' }}>
-        <Button onClick={openCreate}>Create Bundle</Button>
+        <Button onClick={openCreate}>{t('pricing.createBundle')}</Button>
       </div>
 
       {showForm && (
         <div style={styles.formPanel}>
-          <h3 style={styles.formTitle}>{editingBundle ? 'Edit Bundle' : 'New Bundle'}</h3>
+          <h3 style={styles.formTitle}>{editingBundle ? t('pricing.editBundle') : t('pricing.newBundle')}</h3>
           {error && <p style={styles.error}>{error}</p>}
           <form onSubmit={handleSubmit} style={styles.formGrid}>
             <div style={styles.field}>
-              <label style={styles.label}>Name *</label>
-              <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="e.g. Recovery Package" />
+              <label style={styles.label}>{t('shared.nameRequired')}</label>
+              <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder={t('pricing.exampleBundle')} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Type *</label>
+              <label style={styles.label}>{t('pricing.typeRequired')}</label>
               <select style={styles.input} value={form.bundle_type} onChange={(e) => setForm({ ...form, bundle_type: e.target.value })}>
-                <option value="fixed_price">Fixed Price</option>
-                <option value="percentage_off">Percentage Off</option>
+                <option value="fixed_price">{t('pricing.fixedPrice')}</option>
+                <option value="percentage_off">{t('pricing.percentageOff')}</option>
               </select>
             </div>
             {form.bundle_type === 'fixed_price' && (
               <div style={styles.field}>
-                <label style={styles.label}>Bundle Price</label>
+                <label style={styles.label}>{t('pricing.bundlePrice')}</label>
                 <input style={styles.input} type="number" step="0.01" min="0" value={form.bundle_price} onChange={(e) => setForm({ ...form, bundle_price: e.target.value })} placeholder="e.g. 199.99" />
               </div>
             )}
             {form.bundle_type === 'percentage_off' && (
               <div style={styles.field}>
-                <label style={styles.label}>Discount %</label>
+                <label style={styles.label}>{t('pricing.discountPct')}</label>
                 <input style={styles.input} type="number" min="1" max="100" value={form.discount_percentage} onChange={(e) => setForm({ ...form, discount_percentage: e.target.value })} placeholder="e.g. 20" />
               </div>
             )}
             <div style={styles.field}>
-              <label style={styles.label}>Expiration (days)</label>
-              <input style={styles.input} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} placeholder="Optional" />
+              <label style={styles.label}>{t('pricing.expirationDays')}</label>
+              <input style={styles.input} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} placeholder={t('products.optional')} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Description</label>
-              <input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Brief description" />
+              <label style={styles.label}>{t('shared.description')}</label>
+              <input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('pricing.briefDescription')} />
             </div>
 
             {/* Bundle Items */}
             <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--color-border)', paddingTop: '12px', marginTop: '4px' }}>
-              <label style={{ ...styles.label, marginBottom: '8px', display: 'block' }}>Bundle Items *</label>
+              <label style={{ ...styles.label, marginBottom: '8px', display: 'block' }}>{t('pricing.bundleItemsRequired')}</label>
 
               {/* Item picker */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '12px' }}>
                 <div style={{ flex: 1, minWidth: '150px' }}>
-                  <small style={styles.helper}>Service</small>
+                  <small style={styles.helper}>{t('pricing.service')}</small>
                   <select style={styles.input} value={selectedService} onChange={(e) => setSelectedService(e.target.value)}>
-                    <option value="">Select service...</option>
+                    <option value="">{t('pricing.selectService')}</option>
                     {services.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div style={{ flex: 1, minWidth: '150px' }}>
-                  <small style={styles.helper}>Variant</small>
+                  <small style={styles.helper}>{t('pricing.variant')}</small>
                   <select style={styles.input} value={selectedVariant} onChange={(e) => setSelectedVariant(e.target.value)}>
-                    <option value="">Select variant...</option>
+                    <option value="">{t('pricing.selectVariant')}</option>
                     {variants.filter((v: any) => v.status === 'active').map((v: any) => (
-                      <option key={v.id} value={v.id}>{v.name} — {v.duration} min</option>
+                      <option key={v.id} value={v.id}>{t('pricing.variantOption', { name: v.name, duration: v.duration })}</option>
                     ))}
                   </select>
                 </div>
                 <div style={{ width: '70px' }}>
-                  <small style={styles.helper}>Qty</small>
+                  <small style={styles.helper}>{t('pricing.qty')}</small>
                   <input style={styles.input} type="number" min="1" value={itemQuantity} onChange={(e) => setItemQuantity(e.target.value)} />
                 </div>
-                <Button type="button" onClick={addItem} disabled={!selectedVariant}>Add</Button>
+                <Button type="button" onClick={addItem} disabled={!selectedVariant}>{t('pricing.add')}</Button>
               </div>
 
               {/* Items list */}
-              {items.length === 0 && <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>No items added yet</p>}
+              {items.length === 0 && <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{t('pricing.noItems')}</p>}
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '4px' }}>
                 {items.map((item) => (
                   <div key={item.variant_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
-                    <span>{item.quantity}x {item.label}</span>
-                    <button type="button" style={styles.actionBtn} onClick={() => removeItem(item.variant_id)}>Remove</button>
+                    <span>{t('pricing.bundleItemLine', { quantity: item.quantity, label: item.label })}</span>
+                    <button type="button" style={styles.actionBtn} onClick={() => removeItem(item.variant_id)}>{t('pricing.remove')}</button>
                   </div>
                 ))}
               </div>
             </div>
 
             <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="secondary" type="button" onClick={() => { setShowForm(false); setEditingBundle(null); }}>Cancel</Button>
-              <Button type="submit" loading={saving}>{editingBundle ? 'Save Changes' : 'Create Bundle'}</Button>
+              <Button variant="secondary" type="button" onClick={() => { setShowForm(false); setEditingBundle(null); }}>{t('common:cancel')}</Button>
+              <Button type="submit" loading={saving}>{editingBundle ? t('pricing.saveChanges') : t('pricing.createBundle')}</Button>
             </div>
           </form>
         </div>
       )}
 
       {bundles.length === 0 && !showForm ? (
-        <p style={styles.empty}>No bundles configured</p>
+        <p style={styles.empty}>{t('pricing.noBundles')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '8px' }}>
           {bundles.map((b) => (
             <div key={b.id} style={{ ...styles.card, cursor: 'pointer' }} onClick={() => openEdit(b)}>
               <div style={{ flex: 1 }}>
                 <span style={{ fontWeight: 500 }}>{b.name}</span>
-                <Badge variant="neutral">{b.bundle_type === 'fixed_price' ? 'Fixed' : '% Off'}</Badge>
+                <Badge variant="neutral">{b.bundle_type === 'fixed_price' ? t('pricing.fixed') : t('pricing.percentOffBadge')}</Badge>
                 {b.bundle_price && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{formatCurrency(b.bundle_price)}</span>}
-                {b.discount_percentage && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{b.discount_percentage}% off</span>}
-                <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{b.items?.length || 0} item{(b.items?.length || 0) !== 1 ? 's' : ''}</span>
+                {b.discount_percentage && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('pricing.percentOff', { value: formatPercent(b.discount_percentage) })}</span>}
+                <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('pricing.itemCount', { count: b.items?.length || 0 })}</span>
               </div>
-              <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDelete(b.id); }}>Delete</button>
+              <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDelete(b.id); }}>{t('common:delete')}</button>
             </div>
           ))}
         </div>
@@ -587,6 +588,7 @@ function BundlesSection({ businessId }: { businessId: string }) {
 // ============================================================
 
 function CorporateSection({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('offerings');
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -667,17 +669,17 @@ function CorporateSection({ businessId }: { businessId: string }) {
       setShowForm(false);
       setEditingAccount(null);
       resetForm();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save corporate account'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('pricing.saveAccountFailed')); }
     finally { setSaving(false); }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this corporate account? Members will be disassociated.')) return;
+    if (!(await askConfirm({ message: t('pricing.deleteAccountConfirm'), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     try {
       await pricingApi.deleteCorporateAccount(id);
       setAccounts(accounts.filter((a) => a.id !== id));
       if (selectedAccount?.id === id) { setSelectedAccount(null); setMembers([]); }
-    } catch { alert('Failed to delete'); }
+    } catch { void showMessage({ message: t('pricing.deleteFailed'), tone: 'error' }); }
   };
 
   const handleSelectAccount = async (account: any) => {
@@ -695,61 +697,61 @@ function CorporateSection({ businessId }: { businessId: string }) {
       setMembers([...members, { customer_id: customer.id, first_name: customer.first_name, last_name: customer.last_name, email: customer.email }]);
       setMemberSearch('');
       setShowMemberDropdown(false);
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to add member'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('pricing.addMemberFailed'), tone: 'error' }); }
   };
 
   const handleRemoveMember = async (customerId: string) => {
     if (!selectedAccount) return;
-    if (!confirm('Remove this member from the corporate account?')) return;
+    if (!(await askConfirm({ message: t('pricing.removeMemberConfirm'), confirmLabel: t('common:action.remove'), destructive: true }))) return;
     try {
       await pricingApi.removeCorporateMember(selectedAccount.id, customerId);
       setMembers(members.filter((m: any) => m.customer_id !== customerId));
-    } catch { alert('Failed to remove member'); }
+    } catch { void showMessage({ message: t('pricing.removeMemberFailed'), tone: 'error' }); }
   };
 
-  if (loading) return <p style={styles.empty}>Loading...</p>;
+  if (loading) return <p style={styles.empty}>{t('common:loading')}</p>;
 
   return (
     <div>
       <div style={{ marginBottom: '16px' }}>
-        <Button onClick={openCreate}>Create Account</Button>
+        <Button onClick={openCreate}>{t('pricing.createAccount')}</Button>
       </div>
 
       {showForm && (
         <div style={styles.formPanel}>
-          <h3 style={styles.formTitle}>{editingAccount ? 'Edit Corporate Account' : 'New Corporate Account'}</h3>
+          <h3 style={styles.formTitle}>{editingAccount ? t('pricing.editAccount') : t('pricing.newAccount')}</h3>
           {error && <p style={styles.error}>{error}</p>}
           <form onSubmit={handleSubmit} style={styles.formGrid}>
             <div style={styles.field}>
-              <label style={styles.label}>Company Name *</label>
-              <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="e.g. Acme Corp" />
+              <label style={styles.label}>{t('pricing.companyNameRequired')}</label>
+              <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder={t('pricing.exampleCompany')} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Status</label>
+              <label style={styles.label}>{t('shared.status')}</label>
               <select style={styles.input} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="active">{t('shared.option.active')}</option>
+                <option value="inactive">{t('pricing.inactive')}</option>
               </select>
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Agreement Start</label>
+              <label style={styles.label}>{t('pricing.agreementStart')}</label>
               <input style={styles.input} type="date" value={form.agreement_start} onChange={(e) => setForm({ ...form, agreement_start: e.target.value })} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Agreement End</label>
+              <label style={styles.label}>{t('pricing.agreementEnd')}</label>
               <input style={styles.input} type="date" value={form.agreement_end} onChange={(e) => setForm({ ...form, agreement_end: e.target.value })} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Contact Email</label>
-              <input style={styles.input} type="email" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} placeholder="contact@company.com" />
+              <label style={styles.label}>{t('pricing.contactEmail')}</label>
+              <input style={styles.input} type="email" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} placeholder={t('pricing.contactEmailPlaceholder')} />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Billing Email</label>
-              <input style={styles.input} type="email" value={form.billing_email} onChange={(e) => setForm({ ...form, billing_email: e.target.value })} placeholder="billing@company.com" />
+              <label style={styles.label}>{t('pricing.billingEmail')}</label>
+              <input style={styles.input} type="email" value={form.billing_email} onChange={(e) => setForm({ ...form, billing_email: e.target.value })} placeholder={t('pricing.billingEmailPlaceholder')} />
             </div>
             <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="secondary" type="button" onClick={() => { setShowForm(false); setEditingAccount(null); }}>Cancel</Button>
-              <Button type="submit" loading={saving}>{editingAccount ? 'Save Changes' : 'Create Account'}</Button>
+              <Button variant="secondary" type="button" onClick={() => { setShowForm(false); setEditingAccount(null); }}>{t('common:cancel')}</Button>
+              <Button type="submit" loading={saving}>{editingAccount ? t('pricing.saveChanges') : t('pricing.createAccount')}</Button>
             </div>
           </form>
         </div>
@@ -757,13 +759,13 @@ function CorporateSection({ businessId }: { businessId: string }) {
 
       {/* Account list + Member management side by side */}
       {accounts.length > 0 && !selectedAccount && (
-        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Select an account below to manage its members.</p>
+        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{t('pricing.selectAccount')}</p>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: accounts.length > 0 ? '1fr 1fr' : '1fr', gap: '24px' }}>
         {/* Account list */}
         <div>
           {accounts.length === 0 && !showForm ? (
-            <p style={styles.empty}>No corporate accounts</p>
+            <p style={styles.empty}>{t('pricing.noAccounts')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '8px' }}>
               {accounts.map((a: any) => (
@@ -772,13 +774,13 @@ function CorporateSection({ businessId }: { businessId: string }) {
                   onClick={() => handleSelectAccount(a)}>
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 500 }}>{a.name}</span>
-                    <Badge variant={a.status === 'active' ? 'success' : 'neutral'}>{a.status}</Badge>
-                    {a.agreement_end && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>expires {new Date(a.agreement_end).toLocaleDateString()}</span>}
+                    <Badge variant={a.status === 'active' ? 'success' : 'neutral'}>{t(`shared.status.${a.status}`, { defaultValue: a.status })}</Badge>
+                    {a.agreement_end && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('pricing.expires', { date: formatDate(a.agreement_end) })}</span>}
                     {a.contact_email && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{a.contact_email}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: '4px' }}>
-                    <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); openEdit(a); }}>Edit</button>
-                    <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDelete(a.id); }}>Delete</button>
+                    <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); openEdit(a); }}>{t('common:edit')}</button>
+                    <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDelete(a.id); }}>{t('common:delete')}</button>
                   </div>
                 </div>
               ))}
@@ -790,14 +792,14 @@ function CorporateSection({ businessId }: { businessId: string }) {
         {selectedAccount && (
           <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
             <h4 style={{ margin: '0 0 12px 0', fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text)' }}>
-              Members — {selectedAccount.name}
+              {t('pricing.membersOf', { name: selectedAccount.name })}
             </h4>
 
             {/* Add member search */}
             <div style={{ position: 'relative' as const, marginBottom: '12px' }}>
               <input style={styles.input} type="text" value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}
-                placeholder="Search customer to add..."
+                placeholder={t('pricing.searchCustomer')}
                 autoComplete="off"
                 onFocus={() => { if (memberResults.length > 0) setShowMemberDropdown(true); }}
                 onBlur={() => setTimeout(() => setShowMemberDropdown(false), 200)} />
@@ -813,18 +815,18 @@ function CorporateSection({ businessId }: { businessId: string }) {
                   ))}
                 </div>
               )}
-              {memberSearching && <small style={styles.helper}>Searching...</small>}
+              {memberSearching && <small style={styles.helper}>{t('pricing.searching')}</small>}
             </div>
 
             {/* Members list */}
             {members.length === 0 ? (
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>No members yet. Search and add customers above.</p>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{t('pricing.noMembers')}</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '4px' }}>
                 {members.map((m: any) => (
                   <div key={m.customer_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
                     <span>{m.first_name} {m.last_name} {m.email && <span style={{ color: 'var(--color-text-secondary)' }}>({m.email})</span>}</span>
-                    <button style={styles.actionBtn} onClick={() => handleRemoveMember(m.customer_id)}>Remove</button>
+                    <button style={styles.actionBtn} onClick={() => handleRemoveMember(m.customer_id)}>{t('pricing.remove')}</button>
                   </div>
                 ))}
               </div>

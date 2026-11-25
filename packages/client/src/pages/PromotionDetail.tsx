@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
@@ -8,23 +9,17 @@ import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard
 import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
+import { formatPercent } from '../utils/format';
+import { useTranslation } from 'react-i18next';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', paused: 'warning', expired: 'error', archived: 'neutral',
 };
 
-const PROMO_TYPE_LABELS: Record<string, string> = {
-  discount_percentage: 'Percentage Discount',
-  discount_fixed: 'Fixed Amount Discount',
-  price_override: 'Price Override',
-  premium_percentage: 'Percentage Premium',
-  premium_fixed: 'Fixed Amount Premium',
-};
-
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_NAMES = ['shared.day.sun', 'shared.day.mon', 'shared.day.tue', 'shared.day.wed', 'shared.day.thu', 'shared.day.fri', 'shared.day.sat']; // translation keys
 
 // One Save for the promotion (David, 2026-11-02, as in Settings, Events and People): details and
-// the "Applies to" scope wait for Save changes; Pause, Activate and Archive act straight away.
+// the t('promotionDetail.appliesToDraft') scope wait for Save changes; Pause, Activate and Archive act straight away.
 export function PromotionDetail() {
   return (
     <DraftSectionsProvider>
@@ -34,6 +29,7 @@ export function PromotionDetail() {
 }
 
 function PromotionDetailPage() {
+  const { t } = useTranslation('offerings');
   const { id } = useParams<{ id: string }>();
   const navigate = useGuardedNavigate();
   const [promo, setPromo] = useState<any>(null);
@@ -51,30 +47,30 @@ function PromotionDetailPage() {
       .finally(() => setLoading(false));
   }, [id, businessId]);
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
-  if (!promo) return <div style={styles.loading}>Promotion not found</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
+  if (!promo) return <div style={styles.loading}>{t('promotionDetail.notFound')}</div>;
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
-        <button style={styles.back} onClick={() => navigate('/offers?tab=promotions')}>← Back to Offerings</button>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=promotions')}>{t('serviceCreate.backToOfferings')}</button>
 
         {/* Header */}
         <div style={styles.headerCard}>
           <div style={styles.headerInfo}>
             <h1 style={styles.name}>{promo.name}</h1>
-            {promo.promo_code && <span style={styles.code}>Code: {promo.promo_code}</span>}
+            {promo.promo_code && <span style={styles.code}>{t('promotionDetail.code', { code: promo.promo_code })}</span>}
           </div>
           <div style={styles.headerRight}>
             <div style={styles.saveRow}><SaveChanges /></div>
             <div style={styles.saveRow}>
-              <Badge variant={STATUS_VARIANTS[promo.status] || 'neutral'}>{promo.status}</Badge>
+              <Badge variant={STATUS_VARIANTS[promo.status] || 'neutral'}>{t(`shared.status.${promo.status}`, { defaultValue: promo.status })}</Badge>
               <span style={styles.value}>
-                {promo.type.includes('percentage') ? `${promo.value}%` : formatCurrency(promo.value)}
+                {promo.type.includes('percentage') ? formatPercent(promo.value) : formatCurrency(promo.value)}
               </span>
             </div>
-            <span style={styles.typeLabel}>{PROMO_TYPE_LABELS[promo.type]}</span>
+            <span style={styles.typeLabel}>{t(`promotionDetail.typeLabel.${promo.type}`, { defaultValue: promo.type })}</span>
           </div>
         </div>
       </StickyPageTop>
@@ -85,6 +81,7 @@ function PromotionDetailPage() {
 }
 
 function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId: string; onUpdate: (p: any) => void }) {
+  const { t } = useTranslation('offerings');
   const [statusChanging, setStatusChanging] = useState(false);
   const fromPromo = (p: any) => ({
     name: p.name,
@@ -103,8 +100,8 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
     priority: p.priority || 0,
     stackable: p.stackable || false,
   });
-  const draft = useDraft('promotion-details', 'Promotion details', fromPromo(promo), async (form) => {
-    // applies_to follows the scope ("Applies to"), which is saved on its own.
+  const draft = useDraft('promotion-details', t('promotionDetail.draftName'), fromPromo(promo), async (form) => {
+    // applies_to follows the scope (t('promotionDetail.appliesToDraft')), which is saved on its own.
     const { applies_to: _scope, ...rest } = form;
     const data: any = { ...rest };
     data.max_redemptions = form.max_redemptions ? parseInt(form.max_redemptions) : null;
@@ -123,7 +120,7 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
       await apiClient.put(`/v1/promotions/${promo.id}/${action}?business_id=${businessId}`);
       const res = await apiClient.get(`/v1/promotions/${promo.id}?business_id=${businessId}`);
       onUpdate(res.data.data);
-    } catch { alert(`Failed to ${action}`); }
+    } catch { void showMessage({ message: t(`promotionDetail.failedTo.${action}`, { defaultValue: `Failed to ${action}` }), tone: 'error' }); }
     finally { setStatusChanging(false); }
   };
 
@@ -135,54 +132,54 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
     <>
       {/* Actions */}
       <div style={styles.actionsBar}>
-        {promo.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>Pause</Button>}
-        {(promo.status === 'paused' || promo.status === 'expired') && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>Activate</Button>}
-        {promo.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>Archive</Button>}
+        {promo.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>{t('shared.pause')}</Button>}
+        {(promo.status === 'paused' || promo.status === 'expired') && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>{t('shared.activate')}</Button>}
+        {promo.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>{t('shared.archive')}</Button>}
       </div>
 
       {/* Details Card */}
       <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
-        <h3 style={styles.cardTitle}>Promotion Details<UnsavedTag dirty={draft.dirty} /></h3>
+        <h3 style={styles.cardTitle}>{t('promotionDetail.details')}<UnsavedTag dirty={draft.dirty} /></h3>
         <div style={styles.formGrid}>
-          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('shared.nameRequired')}</label><input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Type *</label>
+            <label style={styles.label}>{t('promotionDetail.typeRequired')}</label>
             <select style={{ ...styles.input, ...mark('type') }} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-              <option value="discount_percentage">Percentage Discount</option>
-              <option value="discount_fixed">Fixed Amount Discount</option>
-              <option value="price_override">Price Override</option>
-              <option value="premium_percentage">Percentage Premium</option>
-              <option value="premium_fixed">Fixed Amount Premium</option>
+              <option value="discount_percentage">{t('promotionDetail.typeLabel.discount_percentage')}</option>
+              <option value="discount_fixed">{t('promotionDetail.typeLabel.discount_fixed')}</option>
+              <option value="price_override">{t('promotionDetail.typeLabel.price_override')}</option>
+              <option value="premium_percentage">{t('promotionDetail.typeLabel.premium_percentage')}</option>
+              <option value="premium_fixed">{t('promotionDetail.typeLabel.premium_fixed')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>{form.type.includes('percentage') ? 'Percentage' : 'Amount (cents)'}</label>
+            <label style={styles.label}>{form.type.includes('percentage') ? t('promotionDetail.percentage') : t('promotionDetail.amountCents')}</label>
             <input style={{ ...styles.input, ...mark('value') }} type="number" min="0" value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} />
           </div>
-          <div style={styles.formGroup}><label style={styles.label}>Promo Code</label><input style={{ ...styles.input, ...mark('promo_code') }} value={form.promo_code} onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })} placeholder="Auto-applies if empty" /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Start Date</label><input style={{ ...styles.input, ...mark('date_from') }} type="date" value={form.date_from} onChange={(e) => setForm({ ...form, date_from: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>End Date</label><input style={{ ...styles.input, ...mark('date_to') }} type="date" value={form.date_to} onChange={(e) => setForm({ ...form, date_to: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Time From</label><input style={{ ...styles.input, ...mark('time_from') }} type="time" value={form.time_from} onChange={(e) => setForm({ ...form, time_from: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Time To</label><input style={{ ...styles.input, ...mark('time_to') }} type="time" value={form.time_to} onChange={(e) => setForm({ ...form, time_to: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.promoCode')}</label><input style={{ ...styles.input, ...mark('promo_code') }} value={form.promo_code} onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })} placeholder={t('promotionDetail.autoApplies')} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.startDate')}</label><input style={{ ...styles.input, ...mark('date_from') }} type="date" value={form.date_from} onChange={(e) => setForm({ ...form, date_from: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.endDate')}</label><input style={{ ...styles.input, ...mark('date_to') }} type="date" value={form.date_to} onChange={(e) => setForm({ ...form, date_to: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotionDetail.timeFrom')}</label><input style={{ ...styles.input, ...mark('time_from') }} type="time" value={form.time_from} onChange={(e) => setForm({ ...form, time_from: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotionDetail.timeTo')}</label><input style={{ ...styles.input, ...mark('time_to') }} type="time" value={form.time_to} onChange={(e) => setForm({ ...form, time_to: e.target.value })} /></div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Days of Week</label>
+            <label style={styles.label}>{t('serviceDetail.daysOfWeek')}</label>
             <div style={{ display: 'flex', gap: '4px', borderRadius: 'var(--radius-md)', alignSelf: 'flex-start', ...mark('days_of_week') }}>
               {DAY_NAMES.map((name, idx) => (
                 <button key={idx} type="button" onClick={() => toggleDay(idx)}
                   style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>
-                  {name}
+                  {t(name)}
                 </button>
               ))}
             </div>
           </div>
-          <div style={styles.formGroup}><label style={styles.label}>Priority</label><input style={{ ...styles.input, ...mark('priority') }} type="number" min="0" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Max Redemptions</label><input style={{ ...styles.input, ...mark('max_redemptions') }} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder="Unlimited" /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Max per Customer</label><input style={{ ...styles.input, ...mark('max_per_customer') }} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder="Unlimited" /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('pricing.priority')}</label><input style={{ ...styles.input, ...mark('priority') }} type="number" min="0" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.maxRedemptions')}</label><input style={{ ...styles.input, ...mark('max_redemptions') }} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder={t('promotions.unlimited')} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>{t('promotions.maxPerCustomer')}</label><input style={{ ...styles.input, ...mark('max_per_customer') }} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder={t('promotions.unlimited')} /></div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', gridColumn: '1 / -1' }}>
             <input type="checkbox" checked={form.stackable} onChange={(e) => setForm({ ...form, stackable: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.stackable)) }} />
-            Stackable (can combine with other promotions)
+            {t('promotions.stackable')}
           </label>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>{t('shared.description')}</label><textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
         </div>
       </div>
 
@@ -191,9 +188,9 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
 
       {/* Usage stats */}
       <div style={styles.card}>
-        <h3 style={styles.cardTitle}>Usage</h3>
+        <h3 style={styles.cardTitle}>{t('promotionDetail.usage')}</h3>
         <div style={{ display: 'flex', gap: 'var(--space-lg)' }}>
-          <div><span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Redemptions</span><br /><strong>{promo.redemption_count || 0}</strong>{promo.max_redemptions ? ` / ${promo.max_redemptions}` : ''}</div>
+          <div><span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('promotionDetail.redemptions')}</span><br /><strong>{promo.redemption_count || 0}</strong>{promo.max_redemptions ? ` / ${promo.max_redemptions}` : ''}</div>
         </div>
       </div>
     </>
@@ -209,8 +206,9 @@ const scopeOf = (p: any): Scope => ({
 });
 
 function AppliesToCard({ promo, businessId, onUpdate }: { promo: any; businessId: string; onUpdate: (p: any) => void }) {
+  const { t } = useTranslation('offerings');
   const [showPicker, setShowPicker] = useState(false);
-  const draft = useDraft<Scope>('promotion-scope', 'Applies to', scopeOf(promo), async (s) => {
+  const draft = useDraft<Scope>('promotion-scope', t('promotionDetail.appliesToDraft'), scopeOf(promo), async (s) => {
     const data: any = {
       ...s,
       applies_to: (s.service_ids.length > 0 || s.merchandise_ids.length > 0 || s.category_ids.length > 0) ? 'specific' : 'all',
@@ -231,21 +229,21 @@ function AppliesToCard({ promo, businessId, onUpdate }: { promo: any; businessId
   return (
     <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Applies To<UnsavedTag dirty={draft.dirty} /></h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('promotionDetail.appliesTo')}<UnsavedTag dirty={draft.dirty} /></h3>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {draft.dirty && <Button size="sm" variant="ghost" onClick={() => draft.setValue(draft.saved)}>Undo</Button>}
-          <Button size="sm" variant="secondary" onClick={() => setShowPicker(true)}>Configure</Button>
+          {draft.dirty && <Button size="sm" variant="ghost" onClick={() => draft.setValue(draft.saved)}>{t('serviceDetail.undo')}</Button>}
+          <Button size="sm" variant="secondary" onClick={() => setShowPicker(true)}>{t('promotionDetail.configure')}</Button>
         </div>
       </div>
 
       {totalSelections === 0 ? (
-        <p style={{ fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', margin: 0 }}>All services, products, and locations (no restrictions)</p>
+        <p style={{ fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', margin: 0 }}>{t('promotionDetail.noRestrictions')}</p>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {serviceCount > 0 && <span style={scopeBadgeStyle}>{serviceCount} service{serviceCount > 1 ? 's' : ''}{variantCount > 0 ? ` (${variantCount} variant${variantCount > 1 ? 's' : ''})` : ''}</span>}
-          {productCount > 0 && <span style={scopeBadgeStyle}>{productCount} product{productCount > 1 ? 's' : ''}</span>}
-          {categoryCount > 0 && <span style={scopeBadgeStyle}>{categoryCount} categor{categoryCount > 1 ? 'ies' : 'y'}</span>}
-          {locationCount > 0 && <span style={scopeBadgeStyle}>{locationCount} location{locationCount > 1 ? 's' : ''}</span>}
+          {serviceCount > 0 && <span style={scopeBadgeStyle}>{t('promotionDetail.serviceCount', { count: serviceCount })}{variantCount > 0 ? ` ${t('promotionDetail.variantCount', { count: variantCount })}` : ''}</span>}
+          {productCount > 0 && <span style={scopeBadgeStyle}>{t('promotionDetail.productCount', { count: productCount })}</span>}
+          {categoryCount > 0 && <span style={scopeBadgeStyle}>{t('promotionDetail.categoryCount', { count: categoryCount })}</span>}
+          {locationCount > 0 && <span style={scopeBadgeStyle}>{t('promotionDetail.locationCount', { count: locationCount })}</span>}
         </div>
       )}
 
@@ -261,6 +259,7 @@ const scopeBadgeStyle: React.CSSProperties = { fontSize: 'var(--font-size-sm)', 
 // --- Applies To Picker Modal ---
 
 function AppliesToPickerModal({ scope, businessId, onClose, onDone }: { scope: Scope; businessId: string; onClose: () => void; onDone: (s: Scope) => void }) {
+  const { t } = useTranslation('offerings');
   const [services, setServices] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -333,16 +332,16 @@ function AppliesToPickerModal({ scope, businessId, onClose, onDone }: { scope: S
     <div style={styles.overlay}>
       <div style={pickerStyles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>Configure Scope</h3>
+          <h3 style={styles.modalTitle}>{t('promotionDetail.configureScope')}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
-        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>Select items and locations. Leave all empty to apply to everything. Saved with the page's Save changes.</p>
+        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>{t('promotionDetail.scopeHelp')}</p>
 
         <div style={pickerStyles.columns}>
           {/* Services */}
           <div style={pickerStyles.column}>
-            <div style={pickerStyles.columnHeader}>Services ({selectedServiceIds.length})</div>
-            <input style={pickerStyles.searchInput} placeholder="Search..." value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} />
+            <div style={pickerStyles.columnHeader}>{t('promotionDetail.servicesColumn', { number: selectedServiceIds.length })}</div>
+            <input style={pickerStyles.searchInput} placeholder={t('promotionDetail.search')} value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} />
             <div style={pickerStyles.columnList}>
               {filteredServices.map((s: any) => (
                 <div key={s.id}>
@@ -350,20 +349,20 @@ function AppliesToPickerModal({ scope, businessId, onClose, onDone }: { scope: S
                   {selectedServiceIds.includes(s.id) && serviceVariants[s.id] && serviceVariants[s.id].length > 0 && (
                     <div style={pickerStyles.variantList}>
                       {serviceVariants[s.id].map((v: any) => (
-                        <label key={v.id} style={pickerStyles.variantItem}><input type="checkbox" checked={selectedVariantIds.includes(v.id)} onChange={() => toggleItem(v.id, selectedVariantIds, setSelectedVariantIds)} style={{ width: '12px', height: '12px' }} /><span>{v.name}{v.duration ? ` ${v.duration}m` : ''}</span></label>
+                        <label key={v.id} style={pickerStyles.variantItem}><input type="checkbox" checked={selectedVariantIds.includes(v.id)} onChange={() => toggleItem(v.id, selectedVariantIds, setSelectedVariantIds)} style={{ width: '12px', height: '12px' }} /><span>{v.name}{v.duration ? ` ${t('promotionDetail.durationShort', { value: v.duration })}` : ''}</span></label>
                       ))}
                     </div>
                   )}
                 </div>
               ))}
-              {filteredServices.length === 0 && <span style={pickerStyles.empty}>No services</span>}
+              {filteredServices.length === 0 && <span style={pickerStyles.empty}>{t('promotionDetail.noServices')}</span>}
             </div>
           </div>
 
           {/* Products */}
           <div style={pickerStyles.column}>
-            <div style={pickerStyles.columnHeader}>Products ({selectedMerchandiseIds.length})</div>
-            <input style={pickerStyles.searchInput} placeholder="Search..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
+            <div style={pickerStyles.columnHeader}>{t('promotionDetail.productsColumn', { number: selectedMerchandiseIds.length })}</div>
+            <input style={pickerStyles.searchInput} placeholder={t('promotionDetail.search')} value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
             <div style={pickerStyles.columnList}>
               {filteredProducts.map((p: any) => (
                 <div key={p.id}>
@@ -377,36 +376,36 @@ function AppliesToPickerModal({ scope, businessId, onClose, onDone }: { scope: S
                   )}
                 </div>
               ))}
-              {filteredProducts.length === 0 && <span style={pickerStyles.empty}>No products</span>}
+              {filteredProducts.length === 0 && <span style={pickerStyles.empty}>{t('promotionDetail.noProducts')}</span>}
             </div>
           </div>
 
           {/* Categories */}
           <div style={pickerStyles.column}>
-            <div style={pickerStyles.columnHeader}>Categories ({selectedCategoryIds.length})</div>
+            <div style={pickerStyles.columnHeader}>{t('promotionDetail.categoriesColumn', { number: selectedCategoryIds.length })}</div>
             <div style={pickerStyles.columnList}>
               {categories.map((c: any) => (
                 <label key={c.id} style={pickerStyles.item}><input type="checkbox" checked={selectedCategoryIds.includes(c.id)} onChange={() => toggleItem(c.id, selectedCategoryIds, setSelectedCategoryIds)} style={{ width: '14px', height: '14px' }} /><span>{c.name}</span></label>
               ))}
-              {categories.length === 0 && <span style={pickerStyles.empty}>None defined</span>}
+              {categories.length === 0 && <span style={pickerStyles.empty}>{t('promotionDetail.noneDefined')}</span>}
             </div>
           </div>
 
           {/* Locations */}
           <div style={pickerStyles.column}>
-            <div style={pickerStyles.columnHeader}>Locations ({selectedLocationIds.length})</div>
+            <div style={pickerStyles.columnHeader}>{t('promotionDetail.locationsColumn', { number: selectedLocationIds.length })}</div>
             <div style={pickerStyles.columnList}>
               {locations.map((l: any) => (
                 <label key={l.id} style={pickerStyles.item}><input type="checkbox" checked={selectedLocationIds.includes(l.id)} onChange={() => toggleItem(l.id, selectedLocationIds, setSelectedLocationIds)} style={{ width: '14px', height: '14px' }} /><span>{l.name}</span></label>
               ))}
-              {locations.length === 0 && <span style={pickerStyles.empty}>None defined</span>}
+              {locations.length === 0 && <span style={pickerStyles.empty}>{t('promotionDetail.noneDefined')}</span>}
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleDone}>Done</Button>
+          <Button variant="secondary" onClick={onClose}>{t('common:cancel')}</Button>
+          <Button onClick={handleDone}>{t('serviceDetail.done')}</Button>
         </div>
       </div>
     </div>

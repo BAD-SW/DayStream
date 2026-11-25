@@ -1,0 +1,19 @@
+{
+  "unsaved.leave_title": "¿Salir sin guardar?",
+  "unsaved.leave_message": "Tienes cambios sin guardar en esta página. Si sales ahora, se perderán.",
+  "unsaved.leave": "Dejar",
+  "unsaved.stay": "Permanecer",
+  "unsaved.you_have_changes": "Tienes cambios sin guardar.",
+  "unsaved.all_saved": "Todos los cambios guardados.",
+  "unsaved.save_changes": "Guardar cambios",
+  "unsaved.not_saved": "No guardado: {{items}}",
+  "unsaved.not_saved_default": "No se guardó",
+  "unsaved.tag": "Cambios no guardados",
+  "error_boundary.title": "Algo salió mal",
+  "error_boundary.fallback_message": "Se ha producido un error inesperado.",
+  "error_boundary.reload": "Recargar página",
+  "topbar.profile_settings": "Configuración del perfil",
+  "topbar.sign_out": "desconectar",
+  "topbar.profile_title": "Perfil",
+  "topbar.close": "Cerca"
+}

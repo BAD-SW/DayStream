@@ -231,7 +231,9 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a business in a non-English market, I want DayStream and everything it sends in my customers' languages, so that I can sell to them.
 
-**Current state**: Scaffolding only. Multiple languages were expected from the start: the top bar already has a language selector, the i18n library is installed and a few Spanish strings exist, but almost nothing is translated yet. Finished in **Phase 44**; tracked here.
+**Current state**: ✅ Complete, closed with the owner (25 Nov 2026) when Phase 44 closed; the description below is what was there before. Scaffolding only. Multiple languages were expected from the start: the top bar already has a language selector, the i18n library is installed and a few Spanish strings exist, but almost nothing is translated yet. Finished in **Phase 44**; tracked here. Confirmed in the code (24 Nov 2026): no screen uses the translation files, the supported list holds English only, the user account has no language, and the server translates 11 of about 600 messages; the full state is in Phase 44's requirements.
+
+**Agreed with the owner (24 Nov 2026)**: Spanish (Spain) first; tenant, business and customer screens, public pages and customer messages translated, the System persona's screens in English; the user's saved language, else the device's, else English, changed from the menu bar; customer emails in the customer's account language, else the English template; translations from Google's translation service using the platform's Google API key; text entered by businesses and customers is not translated; the mobile app adds language support when it is built.
 
 ##### Acceptance Criteria
 

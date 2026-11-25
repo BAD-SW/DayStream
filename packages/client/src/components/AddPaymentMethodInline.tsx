@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { StripeCardCapture } from './StripeCardCapture';
 import { StripeBankCapture } from './StripeBankCapture';
@@ -26,9 +27,7 @@ interface Props {
   onCancel: () => void;
 }
 
-const METHOD_LABEL: Record<MethodType, string> = {
-  card: 'Card', bank_draw: 'Direct debit', google_pay: 'Google Pay', apple_pay: 'Apple Pay',
-};
+// Shown through checkout:addMethod.type.<value>.
 
 /** Card-with-plus glyph, matching the common ecommerce "Add new card" affordance. */
 export function AddCardIcon() {
@@ -66,11 +65,12 @@ const addMethodBtnStyle: React.CSSProperties = {
 };
 
 export function AddPaymentMethodInline({ owner, allowedTypes, onAdded, onCancel }: Props) {
+  const { t } = useTranslation('checkout');
   const types = allowedTypes ?? (['card'] as MethodType[]);
   const [newType, setNewType] = useState<MethodType>(types[0]);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [session, setSession] = useState<{ clientSecret: string; publishableKey: string; methodType: MethodType; debitScheme?: BankDebitSchemeId } | null>(null);
+  const [session, setSession] = useState<{ clientSecret: string; publishableKey: string; methodType: MethodType; debitScheme?: BankDebitSchemeId; creditorName?: string | null } | null>(null);
 
   // With only one kind of method there is nothing to choose: open the entry form straight away.
   const single = types.length === 1;
@@ -86,7 +86,7 @@ export function AddPaymentMethodInline({ owner, allowedTypes, onAdded, onCancel 
       const s = await payApi.beginCaptureSession(owner, newType);
       const needsHosted = newType === 'card' || newType === 'bank_draw' || newType === 'google_pay' || newType === 'apple_pay';
       if (needsHosted && s.clientSecret && s.publishableKey) {
-        setSession({ clientSecret: s.clientSecret, publishableKey: s.publishableKey, methodType: newType, debitScheme: s.debitScheme });
+        setSession({ clientSecret: s.clientSecret, publishableKey: s.publishableKey, methodType: newType, debitScheme: s.debitScheme, creditorName: s.creditorName });
         return;
       }
       // Mock / non-hosted fallback: store directly.
@@ -103,17 +103,17 @@ export function AddPaymentMethodInline({ owner, allowedTypes, onAdded, onCancel 
       const stored = await payApi.storePaymentMethod(owner, session?.methodType ?? newType, { paymentMethodId });
       onAdded(stored);
     } catch {
-      setErrorMsg('The method was captured but could not be saved.');
+      setErrorMsg(t('addMethod.saveFailed'));
     } finally { setBusy(false); }
   }
 
   function mapError(err: any): string {
     const code = err?.response?.data?.code;
-    if (code === 'NO_CONNECTION') return 'No payment processor is connected for this business yet.';
+    if (code === 'NO_CONNECTION') return t('addMethod.noConnection');
     if (code === 'SCHEME_UNSUPPORTED' || code === 'SCHEME_NOT_IMPLEMENTED') {
-      return err?.response?.data?.error || 'Direct debit is not available for this account’s currency.';
+      return err?.response?.data?.error || t('addMethod.schemeUnsupported');
     }
-    return 'Could not start capture for the new method.';
+    return t('addMethod.captureFailed');
   }
 
   function cancel() { setSession(null); setErrorMsg(null); onCancel(); }
@@ -122,16 +122,16 @@ export function AddPaymentMethodInline({ owner, allowedTypes, onAdded, onCancel 
     <div style={styles.wrap}>
       {errorMsg && <p style={styles.error}>{errorMsg}</p>}
 
-      {!session && single && busy && <p style={styles.loading} role="status">Opening the card form…</p>}
+      {!session && single && busy && <p style={styles.loading} role="status">{t('addMethod.opening')}</p>}
       {!session && (!single || (!busy && errorMsg)) && (
         <div style={styles.row}>
           {types.length > 1 && (
             <select style={styles.select} value={newType} onChange={(e) => setNewType(e.target.value as MethodType)}>
-              {types.map((t) => <option key={t} value={t}>{METHOD_LABEL[t]}</option>)}
+              {types.map((ty) => <option key={ty} value={ty}>{t(`addMethod.type.${ty}`)}</option>)}
             </select>
           )}
-          <Button size="sm" variant="primary" loading={busy} onClick={begin}>{single ? 'Try again' : 'Continue'}</Button>
-          <button type="button" style={styles.linkBtn} onClick={cancel}>Cancel</button>
+          <Button size="sm" variant="primary" loading={busy} onClick={begin}>{single ? t('addMethod.tryAgain') : t('addMethod.continue')}</Button>
+          <button type="button" style={styles.linkBtn} onClick={cancel}>{t('common:cancel')}</button>
         </div>
       )}
 
@@ -139,10 +139,10 @@ export function AddPaymentMethodInline({ owner, allowedTypes, onAdded, onCancel 
         <StripeCardCapture clientSecret={session.clientSecret} publishableKey={session.publishableKey} onCaptured={onCaptured} onCancel={cancel} />
       )}
       {session && session.methodType === 'bank_draw' && session.debitScheme === 'ach' && (
-        <StripeAchCapture clientSecret={session.clientSecret} publishableKey={session.publishableKey} onCaptured={onCaptured} onCancel={cancel} />
+        <StripeAchCapture clientSecret={session.clientSecret} publishableKey={session.publishableKey} creditorName={session.creditorName ?? undefined} onCaptured={onCaptured} onCancel={cancel} />
       )}
       {session && session.methodType === 'bank_draw' && session.debitScheme !== 'ach' && (
-        <StripeBankCapture clientSecret={session.clientSecret} publishableKey={session.publishableKey} onCaptured={onCaptured} onCancel={cancel} />
+        <StripeBankCapture clientSecret={session.clientSecret} publishableKey={session.publishableKey} creditorName={session.creditorName ?? undefined} onCaptured={onCaptured} onCancel={cancel} />
       )}
       {session && (session.methodType === 'google_pay' || session.methodType === 'apple_pay') && (
         <StripeWalletCapture clientSecret={session.clientSecret} publishableKey={session.publishableKey} onCaptured={onCaptured} onCancel={cancel} />

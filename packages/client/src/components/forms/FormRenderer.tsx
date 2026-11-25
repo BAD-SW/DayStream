@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { entriesByColumn, MAX_FORM_COLUMNS } from '@daystream/shared';
 import type { FormDefinition, FormItem, FormAnswer } from '@daystream/shared';
 
@@ -38,6 +39,7 @@ export function FormRenderer({
   definition, answers, onChange, errors = {}, disabled, renderSignature, idPrefix = 'form',
 }: FormRendererProps) {
   const narrow = useNarrowScreen();
+  const { t } = useTranslation('forms');
   return (
     <div style={s.wrap}>
       {definition.items.map((item) => {
@@ -74,7 +76,7 @@ export function FormRenderer({
                   <label key={v} style={s.option}>
                     <input type="radio" name={id} disabled={disabled} checked={answers[item.id] === v}
                       onChange={() => onChange(item.id, v)} />
-                    <span>{v === 'yes' ? 'Yes' : 'No'}</span>
+                    <span>{v === 'yes' ? t('renderer.yes') : t('renderer.no')}</span>
                   </label>
                 ))}
               </Choice>
@@ -128,7 +130,7 @@ export function FormRenderer({
             return (
               <div key={item.id} style={s.field}>
                 <span style={s.label}>{item.label}<span style={s.req} aria-hidden="true">*</span></span>
-                {renderSignature ? renderSignature(item) : <div style={s.signatureLine} aria-label="Signature line" />}
+                {renderSignature ? renderSignature(item) : <div style={s.signatureLine} aria-label={t('renderer.signatureLine')} />}
                 {err && <span id={errId} role="alert" style={s.error}>{err}</span>}
               </div>
             );

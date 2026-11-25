@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
+import { formatDateTime } from '../../utils/format';
 
 // ============================================================
 // An appointment's history (spec 51, gap 18): everything that happened to it, newest first, in
@@ -13,9 +15,10 @@ interface Entry {
   text: string; lines: string[]; reason: string | null; early: boolean;
 }
 
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const when = (iso: string) => formatDateTime(iso, undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 export function BookingHistory({ bookingId, businessId, refreshKey }: { bookingId: string; businessId: string; refreshKey?: unknown }) {
+  const { t } = useTranslation('calendar');
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -34,22 +37,22 @@ export function BookingHistory({ bookingId, businessId, refreshKey }: { bookingI
   return (
     <div className="q-sec">
       <div className="q-sec-h" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>History</span>
-        <button type="button" className="btn sec" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'}</button>
+        <span>{t('history.title')}</span>
+        <button type="button" className="btn sec" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? t('history.hide') : t('history.show')}</button>
       </div>
       {open && (
         <div className="q-sec-b">
-          {failed ? <p className="mk-warn">The history could not be loaded.</p>
-            : !entries ? <p className="mk-hint">Loading…</p>
-            : entries.length === 0 ? <p className="mk-hint">Nothing recorded yet.</p>
+          {failed ? <p className="mk-warn">{t('history.loadFailed')}</p>
+            : !entries ? <p className="mk-hint">{t('history.loading')}</p>
+            : entries.length === 0 ? <p className="mk-hint">{t('history.empty')}</p>
             : (
               <table style={s.table}>
                 <thead>
                   <tr>
-                    <th style={{ ...s.th, width: '170px' }}>When</th>
-                    <th style={{ ...s.th, width: '220px' }}>Who</th>
-                    <th style={s.th}>What</th>
-                    <th style={s.th}>Details</th>
+                    <th style={{ ...s.th, width: '170px' }}>{t('history.when')}</th>
+                    <th style={{ ...s.th, width: '220px' }}>{t('history.who')}</th>
+                    <th style={s.th}>{t('history.what')}</th>
+                    <th style={s.th}>{t('history.details')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -71,7 +74,7 @@ export function BookingHistory({ bookingId, businessId, refreshKey }: { bookingI
                 </tbody>
               </table>
             )}
-          {hasEarly && <p className="mk-hint">Entries before 23 Nov 2026 show status changes and moves only: other changes were not recorded then.</p>}
+          {hasEarly && <p className="mk-hint">{t('history.earlyEntries')}</p>}
         </div>
       )}
     </div>

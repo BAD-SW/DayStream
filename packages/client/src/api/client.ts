@@ -1,3 +1,4 @@
+import { currentLanguage } from '../i18n';
 import axios from 'axios';
 import { ActiveContext } from '@daystream/shared';
 
@@ -73,6 +74,8 @@ apiClient.interceptors.request.use(async (config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // The language being shown, so the server answers in it (Phase 44, design section 6.1).
+  config.headers['Accept-Language'] = currentLanguage();
 
   const ctx = contextRef.current;
   if (ctx) {

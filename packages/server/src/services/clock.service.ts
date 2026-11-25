@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Clock in/out time tracking — an append-only event log (clk_events) of punches:
@@ -66,7 +67,7 @@ function clearPinFailures(key: string): void {
 
 /** Set (or reset) a staff member's 4-digit clock PIN. Stored bcrypt-hashed. */
 export async function setClockPin(staffProfileId: string, businessId: string, pin: string): Promise<boolean> {
-  if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly 4 digits');
+  if (!/^\d{4}$/.test(pin)) throw new Error(msg('errors:clock.pinMustBeExactly4Digits'));
   const hash = await bcrypt.hash(pin, SALT_ROUNDS);
   const { rowCount } = await adminPool.query(
     `UPDATE stf_profiles sp SET clock_pin_hash = $1, updated_at = NOW()
@@ -83,7 +84,7 @@ export async function setClockPin(staffProfileId: string, businessId: string, pi
  * client input — so a staff member can only ever change their own PIN.
  */
 export async function setOwnClockPin(userId: string, pin: string): Promise<boolean> {
-  if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly 4 digits');
+  if (!/^\d{4}$/.test(pin)) throw new Error(msg('errors:clock.pinMustBeExactly4Digits'));
   const hash = await bcrypt.hash(pin, SALT_ROUNDS);
   const { rowCount } = await adminPool.query(
     `UPDATE stf_profiles SET clock_pin_hash = $1, updated_at = NOW() WHERE user_id = $2`,
@@ -130,7 +131,7 @@ export async function verifyClockPin(
 ): Promise<ResolvedStaff | null> {
   const key = pinLockKey(businessId, email);
   if (isPinLocked(key)) {
-    const err: any = new Error('Too many failed attempts. Try again shortly.');
+    const err: any = new Error(msg('errors:clock.tooManyFailedAttemptsTryAgain'));
     err.code = 'LOCKED';
     throw err;
   }
@@ -202,7 +203,7 @@ export async function punch(
 ): Promise<{ event: any; state: ClockState }> {
   const { state } = await getCurrentState(userId, businessId);
   if (!ALLOWED_NEXT[state].includes(eventType)) {
-    const err: any = new Error(`Cannot ${eventType.replace('_', ' ')} while ${state.replace('_', ' ')}`);
+    const err: any = new Error(msg('errors:clock.cannotWhile', { eventType: eventType.replace('_', ' '), state: state.replace('_', ' ') }));
     err.code = 'INVALID_TRANSITION';
     throw err;
   }

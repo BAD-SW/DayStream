@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import * as customersApi from '../api/customers';
 import type { Customer } from '../api/customers';
@@ -21,6 +22,7 @@ export function MissingDetailsPrompt({ customerId, businessId, person: given, on
   person?: Customer | null;
   onCompleted?: (person: Customer) => void;
 }) {
+  const { t } = useTranslation('checkout');
   const [person, setPerson] = useState<Customer | null>(given || null);
   const [form, setForm] = useState({ first_name: '', last_name: '', email: '' });
   const [saving, setSaving] = useState(false);
@@ -58,7 +60,7 @@ export function MissingDetailsPrompt({ customerId, businessId, person: given, on
       setPerson(updated);
       onCompleted?.(updated);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'These details could not be saved');
+      setError(err.response?.data?.error || t('missingDetails.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -76,14 +78,14 @@ export function MissingDetailsPrompt({ customerId, businessId, person: given, on
   );
 
   return (
-    <div style={styles.box} role="group" aria-label="Missing details">
-      <strong style={styles.title}>A few details are missing</strong>
-      <span style={styles.hint}>Bookings and invoices need a name and an email. Please complete them now.</span>
+    <div style={styles.box} role="group" aria-label={t('missingDetails.groupLabel')}>
+      <strong style={styles.title}>{t('missingDetails.title')}</strong>
+      <span style={styles.hint}>{t('missingDetails.hint')}</span>
       <div style={styles.row}>
-        {field('first_name', 'First name')}
-        {field('last_name', 'Last name')}
-        {field('email', 'Email', 'email')}
-        <Button type="button" size="sm" disabled={!ready} loading={saving} onClick={save}>Save details</Button>
+        {field('first_name', t('missingDetails.firstName'))}
+        {field('last_name', t('missingDetails.lastName'))}
+        {field('email', t('missingDetails.email'), 'email')}
+        <Button type="button" size="sm" disabled={!ready} loading={saving} onClick={save}>{t('missingDetails.save')}</Button>
       </div>
       {error && <span style={styles.error} role="alert">{error}</span>}
     </div>

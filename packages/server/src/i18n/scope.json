@@ -1,0 +1,9 @@
+{
+  "englishOnly": [
+    "routes/query-editor.ts",
+    "routes/system-config.ts",
+    "services/system-document-templates.service.ts",
+    "services/system-forms.service.ts"
+  ],
+  "notConvertedYet": []
+}

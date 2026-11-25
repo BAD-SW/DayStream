@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { adminPool } from '../db/pool';
 import { AuthenticatedRequest } from '../auth/middleware';
+import { msg } from '../i18n';
 
 /**
  * Middleware that checks the tenant's status before allowing the request to proceed.
@@ -20,7 +21,7 @@ export async function enforceTenantStatus(req: Request, res: Response, next: Nex
     const { rows } = await adminPool.query('SELECT status FROM sys_tenants WHERE id = $1', [tenantId]);
 
     if (rows.length === 0) {
-      res.status(404).json({ error: 'Not found', code: 'TENANT_NOT_FOUND' });
+      res.status(404).json({ error: msg('errors:tenantStatus.notFound'), code: 'TENANT_NOT_FOUND' });
       return;
     }
 
@@ -28,14 +29,14 @@ export async function enforceTenantStatus(req: Request, res: Response, next: Nex
 
     if (status === 'suspended') {
       res.status(403).json({
-        error: 'This account has been suspended. Please contact support.',
+        error: msg('errors:tenantStatus.thisAccountHasBeenSuspendedPlease'),
         code: 'TENANT_SUSPENDED',
       });
       return;
     }
 
     if (status === 'archived') {
-      res.status(404).json({ error: 'Not found', code: 'TENANT_NOT_FOUND' });
+      res.status(404).json({ error: msg('errors:tenantStatus.notFound'), code: 'TENANT_NOT_FOUND' });
       return;
     }
 

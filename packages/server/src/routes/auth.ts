@@ -5,6 +5,7 @@ import * as authService from '../services/auth.service';
 import { sendPasswordResetEmail } from '../services/email.service';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { logAudit } from '../services/audit.service';
+import { msg, isMessage } from '../i18n';
 
 /** Sign-ins, lock-outs and password resets are security events: keep them in the audit log (spec 02 R9). */
 function auditAuth(action: string, user: { id?: string; tenant_id?: string } | null, req: Request, details: Record<string, any> = {}): void {
@@ -86,11 +87,11 @@ authRouter.post('/register', validate(registerSchema), async (req: Request, res:
       },
     });
   } catch (err: any) {
-    if (err.message === 'A user with this email already exists') {
+    if (isMessage(err.message, 'errors:admin.aUserWithThisEmailAlready2', 'errors:auth.aUserWithThisEmailAlready', 'errors:staff.aUserWithThisEmailAlready')) {
       res.status(409).json({ error: err.message, code: 'EMAIL_EXISTS' });
     } else {
       console.error('Registration error:', err.message);
-      res.status(500).json({ error: 'Registration failed', code: 'INTERNAL_ERROR' });
+      res.status(500).json({ error: msg('errors:auth.registrationFailed'), code: 'INTERNAL_ERROR' });
     }
   }
 });
@@ -131,22 +132,23 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
           last_name: result.user.last_name,
           role: result.user.role,
           business_id: result.user.business_id,
+          preferred_language: result.user.preferred_language ?? null,
         },
       },
     });
   } catch (err: any) {
-    if (err.message === 'Account is locked. Please try again later.') {
+    if (isMessage(err.message, 'errors:account_locked', 'errors:auth.accountIsLockedPleaseTryAgain')) {
       authService.findActiveUserByEmailAnyTenant(req.body?.email, req.body?.tenant_id)
         .then((u: any) => auditAuth('auth.login_refused_locked', u, req))
         .catch(() => undefined);
       res.status(423).json({ error: err.message, code: 'ACCOUNT_LOCKED' });
     } else if (err.code === 'TENANT_SUSPENDED' || err.code === 'BUSINESS_ARCHIVED') {
       res.status(403).json({ error: err.message, code: err.code });
-    } else if (err.message === 'Invalid credentials') {
+    } else if (isMessage(err.message, 'errors:auth.invalidCredentials')) {
       res.status(401).json({ error: err.message, code: 'INVALID_CREDENTIALS' });
     } else {
       console.error('Login error:', err);
-      res.status(500).json({ error: 'Login failed', code: 'INTERNAL_ERROR' });
+      res.status(500).json({ error: msg('errors:auth.loginFailed'), code: 'INTERNAL_ERROR' });
     }
   }
 });
@@ -157,7 +159,7 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
     // Accept refresh token from cookie OR body
     const refreshTokenValue = req.cookies?.refresh_token || req.body?.refresh_token;
     if (!refreshTokenValue) {
-      res.status(401).json({ error: 'Refresh token required', code: 'INVALID_REFRESH_TOKEN' });
+      res.status(401).json({ error: msg('errors:auth.refreshTokenRequired'), code: 'INVALID_REFRESH_TOKEN' });
       return;
     }
 
@@ -201,7 +203,7 @@ authRouter.post('/logout', authenticate, async (req: Request, res: Response) => 
 
     res.status(200).json({ data: { message: 'Logged out successfully' } });
   } catch (err: any) {
-    res.status(500).json({ error: 'Logout failed', code: 'INTERNAL_ERROR' });
+    res.status(500).json({ error: msg('errors:auth.logoutFailed'), code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -213,7 +215,7 @@ authRouter.post('/logout-all', authenticate, async (req: Request, res: Response)
     auditAuth('auth.logout_all', { id: authReq.user.sub, tenant_id: authReq.user.tid }, req);
     res.status(200).json({ data: { message: 'All sessions revoked' } });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to revoke sessions', code: 'INTERNAL_ERROR' });
+    res.status(500).json({ error: msg('errors:auth.failedToRevokeSessions'), code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -252,12 +254,12 @@ authRouter.post('/reset-password', validate(resetPasswordSchema), async (req: Re
     const ok = !!user;
     if (user) auditAuth('auth.password_reset', user, req);
     if (!ok) {
-      res.status(400).json({ error: 'This reset link is invalid or has expired. Please request a new one.', code: 'INVALID_RESET_TOKEN' });
+      res.status(400).json({ error: msg('errors:auth.thisResetLinkIsInvalidOr'), code: 'INVALID_RESET_TOKEN' });
       return;
     }
     res.status(200).json({ data: { message: 'Password has been reset. You can now sign in.' } });
   } catch (err: any) {
     console.error('Reset password error:', err.message);
-    res.status(500).json({ error: 'Failed to reset password', code: 'INTERNAL_ERROR' });
+    res.status(500).json({ error: msg('errors:auth.failedToResetPassword'), code: 'INTERNAL_ERROR' });
   }
 });

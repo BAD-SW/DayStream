@@ -1,12 +1,22 @@
 import { apiClient } from './client';
 import type { BookingsView } from './bookingsView';
+import i18n from '../i18n';
 
 /** The roles a staff login can have, in the order they are offered. The value is what the server stores. */
+/** A role option whose label and hint are translated each time they are read (the language can change while the screen is open). */
+function roleOption(value: string): { value: string; label: string; hint: string } {
+  return {
+    value,
+    get label() { return i18n.t(`staff:role.${value}.label`); },
+    get hint() { return i18n.t(`staff:role.${value}.hint`); },
+  };
+}
+
 export const STAFF_ROLE_OPTIONS: { value: string; label: string; hint: string }[] = [
-  { value: 'business_owner', label: 'Owner', hint: 'Full access to the business.' },
-  { value: 'business_manager', label: 'Manager', hint: 'Runs the business day to day, including charts.' },
-  { value: 'reception', label: 'Reception', hint: 'Front desk: bookings, customers and check-in. No treatment charts.' },
-  { value: 'technician', label: 'Technician', hint: 'Hands-on service provider (therapist, trainer, mechanic, detailer). As staff, plus service charts.' },
+  roleOption('business_owner'),
+  roleOption('business_manager'),
+  roleOption('reception'),
+  roleOption('technician'),
 ];
 
 /** Older records use shorter names (manager, staff); map them to the option values. */

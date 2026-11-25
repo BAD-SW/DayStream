@@ -1,4 +1,6 @@
+import { askConfirm } from '../design-system/components/feedback/dialogs';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Card } from '../design-system/components/data/Card';
 import { Stat } from '../design-system/components/data/Stat';
@@ -13,11 +15,7 @@ import { formatDateOnly } from '../utils/date';
 // The tip pool (spec 51, gap 14): tips on orders with no staff member on them wait here until the
 // owner or a manager shares them out, by hand or among the staff clocked in on the day of each tip.
 
-const MODES: Array<{ value: TipPoolMode; label: string; hint: string }> = [
-  { value: 'hand', label: 'By hand', hint: 'Enter the amount each staff member gets. The amounts must add up to the tips in the pool for these dates.' },
-  { value: 'hours', label: 'By hours clocked in', hint: 'Each tip is shared among the staff clocked in on the day it was given, by the hours they worked that day.' },
-  { value: 'even', label: 'Evenly among staff clocked in', hint: 'Each tip is shared evenly among the staff clocked in on the day it was given.' },
-];
+const MODES: TipPoolMode[] = ['hand', 'hours', 'even'];
 
 const today = () => new Date().toLocaleDateString('sv-SE');
 const errText = (e: unknown, fallback: string) =>
@@ -26,6 +24,7 @@ const errText = (e: unknown, fallback: string) =>
 interface StaffRow { user_id: string; name: string; hours: number | null; amount_cents: number }
 
 export function TipPoolPanel({ businessId }: { businessId: string }) {
+  const { t } = useTranslation('staff');
   const [summary, setSummary] = useState<TipPoolSummary | null>(null);
   const [loadError, setLoadError] = useState('');
   const [mode, setMode] = useState<TipPoolMode>('hand');
@@ -44,7 +43,7 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
       setSummary(s);
       // Start on the first day with a tip waiting, so the dates cover the whole pool.
       setStart((cur) => cur || s.first_day || '');
-    } catch (e) { setLoadError(errText(e, 'Failed to load the tip pool')); }
+    } catch (e) { setLoadError(errText(e, t('tipPool.errLoad'))); }
   };
   useEffect(() => { if (businessId) load(); }, [businessId]);
 
@@ -57,32 +56,32 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
   useEffect(() => {
     if (!businessId || !summary || summary.waiting_cents === 0 || !end) { setPlan(null); return; }
     let live = true;
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try { const p = await checkoutApi.planTipPool(businessId, request()); if (live) { setPlan(p); setPlanError(''); } }
-      catch (e) { if (live) { setPlan(null); setPlanError(errText(e, 'Failed to work out the shares')); } }
+      catch (e) { if (live) { setPlan(null); setPlanError(errText(e, t('tipPool.errPlan'))); } }
     }, 300);
-    return () => { live = false; clearTimeout(t); };
+    return () => { live = false; clearTimeout(timer); };
   }, [businessId, summary, mode, start, end, amounts]);
 
   const share = async () => {
     if (!plan) return;
     const giving = plan.total_cents - plan.left_cents;
-    if (!confirm(`Share ${formatCurrency(giving)} from the tip pool? Card and electronic tips go into the next pay run; cash tips are handed over from the till now.`)) return;
+    if (!(await askConfirm({ message: t('tipPool.confirmShare', { amount: formatCurrency(giving) }), confirmLabel: t('common:action.continue') }))) return;
     setSharing(true); setDone('');
     try {
       const r = await checkoutApi.shareTipPool(businessId, request());
-      setDone(`${formatCurrency(r.shared_cents)} shared.${r.left_cents > 0 ? ` ${formatCurrency(r.left_cents)} stays in the pool.` : ''}`);
+      setDone(r.left_cents > 0 ? t('tipPool.sharedLeft', { amount: formatCurrency(r.shared_cents), left: formatCurrency(r.left_cents) }) : t('tipPool.shared', { amount: formatCurrency(r.shared_cents) }));
       setAmounts({}); setStart('');
       await load();
-    } catch (e) { setPlanError(errText(e, 'Failed to share the tip pool')); }
+    } catch (e) { setPlanError(errText(e, t('tipPool.errShare'))); }
     finally { setSharing(false); }
   };
 
   if (loadError) return <Alert variant="error">{loadError}</Alert>;
-  if (!summary) return <p style={s.muted}>Loading...</p>;
+  if (!summary) return <p style={s.muted}>{t('common:loading')}</p>;
 
   const byHand = mode === 'hand';
-  const hint = MODES.find((m) => m.value === mode)?.hint;
+  const hint = t(`tipPool.mode.${mode}.hint`);
   const canShare = !!plan && plan.unassigned_cents === 0 && plan.total_cents - plan.left_cents > 0;
   const right = 'right' as const;
 
@@ -90,16 +89,16 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
   const rows: StaffRow[] = byHand
     ? summary.staff.map((m) => ({ user_id: m.user_id, name: m.name, hours: null, amount_cents: amounts[m.user_id] ?? 0 }))
     : (plan?.staff || []).map((m) => ({ user_id: m.user_id, name: m.name, hours: m.hours, amount_cents: m.amount_cents }));
-  const givenOut = rows.reduce((t, r) => t + r.amount_cents, 0);
+  const givenOut = rows.reduce((sum, r) => sum + r.amount_cents, 0);
 
   const footer = plan ? [
-    { strong: true, cells: [{ content: 'Total shared' }, ...(byHand ? [] : [{ content: '' }]), { content: formatCurrency(givenOut), align: right }] },
-    { cells: [{ content: 'Tips in the pool for these dates' }, ...(byHand ? [] : [{ content: '' }]), { content: formatCurrency(plan.total_cents), align: right }] },
+    { strong: true, cells: [{ content: t('tipPool.totalShared') }, ...(byHand ? [] : [{ content: '' }]), { content: formatCurrency(givenOut), align: right }] },
+    { cells: [{ content: t('tipPool.tipsInPool') }, ...(byHand ? [] : [{ content: '' }]), { content: formatCurrency(plan.total_cents), align: right }] },
     ...(byHand && plan.unassigned_cents !== 0
-      ? [{ cells: [{ content: 'Still to share' }, { content: <span style={{ color: 'var(--color-error)' }}>{formatCurrency(plan.unassigned_cents)}</span>, align: right }] }]
+      ? [{ cells: [{ content: t('tipPool.stillToShare') }, { content: <span style={{ color: 'var(--color-error)' }}>{formatCurrency(plan.unassigned_cents)}</span>, align: right }] }]
       : []),
     ...(!byHand && plan.left_cents > 0
-      ? [{ cells: [{ content: 'Stays in the pool' }, { content: '' }, { content: formatCurrency(plan.left_cents), align: right }] }]
+      ? [{ cells: [{ content: t('tipPool.staysInPool') }, { content: '' }, { content: formatCurrency(plan.left_cents), align: right }] }]
       : []),
   ] : undefined;
 
@@ -107,12 +106,12 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
     <div style={s.wrap}>
       <Card padding="lg">
         <div style={s.stats}>
-          <Stat label="Waiting to be shared" value={formatCurrency(summary.waiting_cents)} />
-          <Stat label="Card and electronic" value={formatCurrency(summary.electronic_cents)} />
-          <Stat label="Cash in the till" value={formatCurrency(summary.cash_cents)} />
-          <Stat label="Tips" value={summary.tips} />
+          <Stat label={t('tipPool.waiting')} value={formatCurrency(summary.waiting_cents)} />
+          <Stat label={t('tipPool.electronic')} value={formatCurrency(summary.electronic_cents)} />
+          <Stat label={t('tipPool.cash')} value={formatCurrency(summary.cash_cents)} />
+          <Stat label={t('tipPool.tips')} value={summary.tips} />
           {summary.first_day && (
-            <Stat label="Tipped" value={summary.first_day === summary.last_day
+            <Stat label={t('tipPool.tipped')} value={summary.first_day === summary.last_day
               ? formatDateOnly(summary.first_day)
               : `${formatDateOnly(summary.first_day)} – ${formatDateOnly(summary.last_day || summary.first_day)}`} />
           )}
@@ -122,22 +121,22 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
       {done && <Alert variant="success">{done}</Alert>}
 
       {summary.waiting_cents === 0 ? (
-        <p style={s.empty}>No tips are waiting. Tips on orders with no staff member on them come here to be shared.</p>
+        <p style={s.empty}>{t('tipPool.noTips')}</p>
       ) : (
-        <Card title="Share the pool" padding="lg">
+        <Card title={t('tipPool.shareThePool')} padding="lg">
           <div style={s.toolbar}>
             <div>
-              <label style={s.fieldLabel} htmlFor="tip-pool-mode">Share method</label>
+              <label style={s.fieldLabel} htmlFor="tip-pool-mode">{t('tipPool.method')}</label>
               <select id="tip-pool-mode" style={{ ...s.input, minWidth: '240px' }} value={mode} onChange={(e) => setMode(e.target.value as TipPoolMode)}>
-                {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                {MODES.map((m) => <option key={m} value={m}>{t(`tipPool.mode.${m}.label`)}</option>)}
               </select>
             </div>
             <div>
-              <label style={s.fieldLabel} htmlFor="tip-pool-start">Tips from</label>
+              <label style={s.fieldLabel} htmlFor="tip-pool-start">{t('tipPool.tipsFrom')}</label>
               <input id="tip-pool-start" type="date" style={s.input} value={start} max={end} onChange={(e) => setStart(e.target.value)} />
             </div>
             <div>
-              <label style={s.fieldLabel} htmlFor="tip-pool-end">To</label>
+              <label style={s.fieldLabel} htmlFor="tip-pool-end">{t('tipPool.to')}</label>
               <input id="tip-pool-end" type="date" style={s.input} value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} />
             </div>
           </div>
@@ -148,7 +147,7 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
           {!byHand && plan && plan.left_cents > 0 && (
             <div style={s.block}>
               <Alert variant="warning">
-                Nobody was clocked in on {plan.days_without_staff.map((d) => formatDateOnly(d)).join(', ')}, so {formatCurrency(plan.left_cents)} stays in the pool. Share it by hand if needed.
+                {t('tipPool.nobodyClocked', { days: plan.days_without_staff.map((d) => formatDateOnly(d)).join(', '), amount: formatCurrency(plan.left_cents) })}
               </Alert>
             </div>
           )}
@@ -157,12 +156,12 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
             <Table<StaffRow>
               data={rows}
               rowId={(r) => r.user_id}
-              emptyMessage={byHand ? 'No staff found.' : 'Nobody was clocked in on these dates.'}
+              emptyMessage={byHand ? t('tipPool.noStaff') : t('tipPool.nobodyOnDates')}
               columns={[
-                { key: 'name', header: 'Staff' },
-                ...(byHand ? [] : [{ key: 'hours', header: 'Hours', align: right, render: (v: number | null) => <div style={{ textAlign: right }}>{v ?? '—'}</div> }]),
+                { key: 'name', header: t('tipPool.staff') },
+                ...(byHand ? [] : [{ key: 'hours', header: t('tipPool.hours'), align: right, render: (v: number | null) => <div style={{ textAlign: right }}>{v ?? '—'}</div> }]),
                 {
-                  key: 'amount_cents', header: 'Amount', align: right, width: '160px',
+                  key: 'amount_cents', header: t('tipPool.amount'), align: right, width: '160px',
                   render: (v: number, r: StaffRow) => byHand ? (
                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                       <CurrencyInput value={v} onChange={(c) => setAmounts({ ...amounts, [r.user_id]: Math.max(0, c) })}
@@ -176,7 +175,7 @@ export function TipPoolPanel({ businessId }: { businessId: string }) {
           </div>
 
           <div style={s.actions}>
-            <Button onClick={share} loading={sharing} disabled={!canShare}>Share tips</Button>
+            <Button onClick={share} loading={sharing} disabled={!canShare}>{t('tipPool.shareTips')}</Button>
           </div>
         </Card>
       )}

@@ -1,11 +1,12 @@
+import { useTranslation } from 'react-i18next';
 import { CURATED_FONTS, fontStackFor } from '../../themes/ThemeProvider';
 import { meetsWcagAA } from '../../utils/contrast';
 
 const FONT_SIZES = [14, 15, 16, 17] as const;
 const BASE_THEMES = [
-  { value: 'classic', label: 'Classic' },
-  { value: 'bold-business', label: 'Bold Business' },
-  { value: 'navy', label: 'Navy' },
+  { value: 'classic', labelKey: 'themeEditor.classic' },
+  { value: 'bold-business', labelKey: 'themeEditor.boldBusiness' },
+  { value: 'navy', labelKey: 'themeEditor.navy' },
 ] as const;
 
 export interface ThemeValues {
@@ -58,6 +59,7 @@ const DEFAULTS: ResolvedTheme = {
  * sits above them in the inheritance chain.
  */
 export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel }: ThemeEditorFieldsProps) {
+  const { t } = useTranslation('common');
   const resolved: ResolvedTheme = {
     baseTheme: values.baseTheme ?? inherited?.baseTheme ?? DEFAULTS.baseTheme,
     primaryColor: values.primaryColor ?? inherited?.primaryColor ?? DEFAULTS.primaryColor,
@@ -77,13 +79,13 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
     if (isCustomized) {
       return (
         <button type="button" style={styles.inheritLink} onClick={() => onChange(field, null)}>
-          Reset to inherited
+          {t('themeEditor.resetToInherited')}
         </button>
       );
     }
     return (
       <button type="button" style={styles.inheritLink} onClick={() => onChange(field, resolved[field] as any)}>
-        Customize (inherited from {inheritedLabel})
+        {t('themeEditor.customize', { label: inheritedLabel })}
       </button>
     );
   }
@@ -93,25 +95,25 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
       <div>
         <div style={styles.card}>
           <div style={styles.labelRow}>
-            <h3 style={styles.cardTitle}>Base Theme</h3>
+            <h3 style={styles.cardTitle}>{t('themeEditor.baseTheme')}</h3>
             <InheritToggle field="baseTheme" />
           </div>
           <div style={styles.segmented}>
-            {BASE_THEMES.map(({ value, label }) => (
+            {BASE_THEMES.map(({ value, labelKey }) => (
               <button key={value} type="button"
                 disabled={!!inherited && values.baseTheme === null}
                 style={{ ...styles.segmentBtn, ...(resolved.baseTheme === value ? styles.segmentBtnActive : {}) }}
                 onClick={() => onChange('baseTheme', value)}
-              >{label}</button>
+              >{t(labelKey)}</button>
             ))}
           </div>
         </div>
 
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Typography</h3>
+          <h3 style={styles.cardTitle}>{t('themeEditor.typography')}</h3>
           <div style={{ marginBottom: 'var(--space-lg)' }}>
             <div style={styles.labelRow}>
-              <label style={styles.label}>Font family</label>
+              <label style={styles.label}>{t('themeEditor.fontFamily')}</label>
               <InheritToggle field="fontFamily" />
             </div>
             <select
@@ -125,7 +127,7 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
           </div>
           <div>
             <div style={styles.labelRow}>
-              <label style={styles.label}>Base font size</label>
+              <label style={styles.label}>{t('themeEditor.baseFontSize')}</label>
               <InheritToggle field="baseFontSize" />
             </div>
             <div style={styles.segmented}>
@@ -141,10 +143,10 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
         </div>
 
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Colors</h3>
+          <h3 style={styles.cardTitle}>{t('themeEditor.colors')}</h3>
           <div style={{ marginBottom: 'var(--space-lg)' }}>
             <div style={styles.labelRow}>
-              <label style={styles.label}>Primary color</label>
+              <label style={styles.label}>{t('themeEditor.primaryColor')}</label>
               <InheritToggle field="primaryColor" />
             </div>
             <div style={styles.colorRow}>
@@ -154,12 +156,12 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
                 onChange={(e) => onChange('primaryColor', e.target.value)} style={styles.colorHex} />
             </div>
             <div style={{ ...styles.contrastNote, color: primaryContrast ? 'var(--color-success)' : 'var(--color-warning)' }}>
-              {primaryContrast ? '✓ Passes contrast with white text' : '⚠ Low contrast with white text — consider a darker shade'}
+              {primaryContrast ? t('themeEditor.contrastPass') : t('themeEditor.contrastLow')}
             </div>
           </div>
           <div>
             <div style={styles.labelRow}>
-              <label style={styles.label}>Secondary color</label>
+              <label style={styles.label}>{t('themeEditor.secondaryColor')}</label>
               <InheritToggle field="secondaryColor" />
             </div>
             <div style={styles.colorRow}>
@@ -169,12 +171,12 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
                 onChange={(e) => onChange('secondaryColor', e.target.value)} style={styles.colorHex} />
             </div>
             <div style={{ ...styles.contrastNote, color: secondaryContrast ? 'var(--color-success)' : 'var(--color-warning)' }}>
-              {secondaryContrast ? '✓ Passes contrast with white text' : '⚠ Low contrast with white text — consider a darker shade'}
+              {secondaryContrast ? t('themeEditor.contrastPass') : t('themeEditor.contrastLow')}
             </div>
           </div>
           <div style={{ marginTop: 'var(--space-lg)' }}>
             <div style={styles.labelRow}>
-              <label style={styles.label}>Title / heading color</label>
+              <label style={styles.label}>{t('themeEditor.titleColor')}</label>
               <InheritToggle field="titleColor" />
             </div>
             <div style={styles.colorRow}>
@@ -187,30 +189,30 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
         </div>
 
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Favicon</h3>
+          <h3 style={styles.cardTitle}>{t('themeEditor.favicon')}</h3>
           <div style={styles.labelRow}>
-            <label style={styles.label}>Favicon URL</label>
+            <label style={styles.label}>{t('themeEditor.faviconUrl')}</label>
             <InheritToggle field="faviconUrl" />
           </div>
-          <input type="text" placeholder="https://…/favicon.png" value={resolved.faviconUrl}
+          <input type="text" placeholder={t('themeEditor.faviconPlaceholder')} value={resolved.faviconUrl}
             disabled={!!inherited && values.faviconUrl === null}
             onChange={(e) => onChange('faviconUrl', e.target.value)} style={{ ...styles.select, marginTop: '7px' }} />
         </div>
       </div>
 
       <div style={styles.previewPanel} data-base-theme={resolved.baseTheme === 'bold-business' || resolved.baseTheme === 'navy' ? resolved.baseTheme : undefined}>
-        <div style={styles.previewLabel}>LIVE PREVIEW</div>
-        <p style={styles.previewNote}>Updates as you edit — not saved until you click Save.</p>
+        <div style={styles.previewLabel}>{t('themeEditor.livePreview')}</div>
+        <p style={styles.previewNote}>{t('themeEditor.previewNote')}</p>
         <div style={styles.previewFrame}>
           <div style={{ fontFamily: fontStack, fontSize: `${resolved.baseFontSize + 5}px`, fontWeight: 700, color: resolved.titleColor, marginBottom: '12px' }}>
-            Book an appointment
+            {t('themeEditor.previewHeading')}
           </div>
           <div style={{ fontFamily: fontStack, fontSize: `${resolved.baseFontSize}px`, color: 'var(--color-text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
-            This is how headings and body text will look with the selected font and size.
+            {t('themeEditor.previewBody')}
           </div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <div style={{ background: resolved.primaryColor, color: '#fff', padding: '10px 18px', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-base)', fontWeight: 600 }}>Primary Action</div>
-            <span style={{ background: `${resolved.secondaryColor}22`, color: resolved.secondaryColor, padding: '5px 13px', borderRadius: 'var(--radius-full)', fontSize: 'var(--font-size-sm)', fontWeight: 700 }}>Sample Pill</span>
+            <div style={{ background: resolved.primaryColor, color: '#fff', padding: '10px 18px', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-base)', fontWeight: 600 }}>{t('themeEditor.primaryAction')}</div>
+            <span style={{ background: `${resolved.secondaryColor}22`, color: resolved.secondaryColor, padding: '5px 13px', borderRadius: 'var(--radius-full)', fontSize: 'var(--font-size-sm)', fontWeight: 700 }}>{t('themeEditor.samplePill')}</span>
           </div>
         </div>
       </div>

@@ -5,7 +5,8 @@ export type DashboardGroupId = 'front-desk' | 'back-office' | 'growth' | 'admin'
 
 export interface DashboardGroupConfig {
   id: DashboardGroupId;
-  label: string;
+  /** Key in the nav translation file. */
+  labelKey: string;
   accentColor: string;      // light-mode hex
   accentColorDark: string;  // dark-mode hex
   icon: ComponentType<SVGProps<SVGSVGElement>>;
@@ -20,7 +21,7 @@ export interface DashboardGroupConfig {
 export const DASHBOARD_GROUPS: DashboardGroupConfig[] = [
   {
     id: 'front-desk',
-    label: 'Front Desk',
+    labelKey: 'dashboard.group.front_desk',
     accentColor: '#4A7FB5',
     accentColorDark: '#6FA0D8',
     icon: DeskIcon,
@@ -28,7 +29,7 @@ export const DASHBOARD_GROUPS: DashboardGroupConfig[] = [
   },
   {
     id: 'back-office',
-    label: 'Back Office',
+    labelKey: 'dashboard.group.back_office',
     accentColor: '#6B8F63',
     accentColorDark: '#8FBF86',
     icon: ChartIcon,
@@ -36,7 +37,7 @@ export const DASHBOARD_GROUPS: DashboardGroupConfig[] = [
   },
   {
     id: 'growth',
-    label: 'Growth',
+    labelKey: 'dashboard.group.growth',
     accentColor: '#C77B3E',
     accentColorDark: '#E0A468',
     icon: TagIcon,
@@ -46,7 +47,7 @@ export const DASHBOARD_GROUPS: DashboardGroupConfig[] = [
   },
   {
     id: 'admin',
-    label: 'Admin',
+    labelKey: 'dashboard.group.admin',
     accentColor: '#8064B0',
     accentColorDark: '#A98AD1',
     icon: BriefcaseIcon,

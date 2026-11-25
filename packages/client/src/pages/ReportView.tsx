@@ -1,19 +1,23 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Table } from '../design-system/components/data/Table';
 import * as reportsApi from '../api/reports';
 
-const REPORT_CONFIG: Record<string, { title: string; fetcher: (params?: any) => Promise<any> }> = {
-  revenue: { title: 'Revenue Report', fetcher: reportsApi.getRevenueReport },
-  bookings: { title: 'Bookings Report', fetcher: reportsApi.getBookingsReport },
-  memberships: { title: 'Memberships Report', fetcher: reportsApi.getMembershipsReport },
-  staff: { title: 'Staff Report', fetcher: reportsApi.getStaffReport },
-  customers: { title: 'Customers Report', fetcher: reportsApi.getCustomersReport },
-  financial: { title: 'Financial Report', fetcher: reportsApi.getFinancialReport },
+// Each report's title is reports:view.title.<type>.
+const REPORT_CONFIG: Record<string, { fetcher: (params?: any) => Promise<any> }> = {
+  revenue: { fetcher: reportsApi.getRevenueReport },
+  bookings: { fetcher: reportsApi.getBookingsReport },
+  memberships: { fetcher: reportsApi.getMembershipsReport },
+  staff: { fetcher: reportsApi.getStaffReport },
+  customers: { fetcher: reportsApi.getCustomersReport },
+  financial: { fetcher: reportsApi.getFinancialReport },
 };
 
 export function ReportView() {
+  const { t } = useTranslation('reports');
   const location = useLocation();
   const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
@@ -27,40 +31,40 @@ export function ReportView() {
   const config = REPORT_CONFIG[reportType];
 
   useEffect(() => {
-    if (!config) { setLoading(false); setError('Unknown report type.'); return; }
+    if (!config) { setLoading(false); setError(t('view.unknownType')); return; }
     setLoading(true);
     setError('');
     config.fetcher({ business_id: businessId })
       .then(setData)
-      .catch(() => setError('Failed to load report data.'))
+      .catch(() => setError(t('view.loadFailed')))
       .finally(() => setLoading(false));
   }, [reportType, businessId]);
 
   const handleExport = async () => {
     try {
       await reportsApi.exportReport(reportType, { business_id: businessId });
-      alert('Export initiated');
-    } catch { alert('Export failed'); }
+      void showMessage({ message: t('view.exportStarted'), tone: 'success' });
+    } catch { void showMessage({ message: t('view.exportFailed'), tone: 'error' }); }
   };
 
   if (!config) {
     return (
       <div style={styles.page}>
-        <p>Unknown report type: {reportType}</p>
-        <Button onClick={() => navigate('/reports')}>Back to Reports</Button>
+        <p>{t('view.unknownTypeNamed', { type: reportType })}</p>
+        <Button onClick={() => navigate('/reports')}>{t('view.backToReports')}</Button>
       </div>
     );
   }
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/reports')}>← Back to Reports</button>
+      <button style={styles.back} onClick={() => navigate('/reports')}>{t('view.backArrow')}</button>
       <div style={styles.header}>
-        <h1 style={styles.title}>{config.title}</h1>
-        <Button onClick={handleExport}>Export</Button>
+        <h1 style={styles.title}>{t(`view.title.${reportType}`)}</h1>
+        <Button onClick={handleExport}>{t('view.export')}</Button>
       </div>
 
-      {loading && <p style={styles.loading}>Loading report data...</p>}
+      {loading && <p style={styles.loading}>{t('view.loading')}</p>}
       {error && <p style={styles.error}>{error}</p>}
 
       {data && !loading && (
@@ -73,7 +77,7 @@ export function ReportView() {
               </div>
             ))
           ) : Array.isArray(data) ? (
-            data.length === 0 ? <p style={styles.loading}>No data for this period.</p> : (
+            data.length === 0 ? <p style={styles.loading}>{t('view.noData')}</p> : (
               // Every row on the shared table: column filters, scrolls instead of the old first-50 cut (David, 2026-11-02).
               <Table
                 rowId={(row: any) => String(data.indexOf(row))}

@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { useContextManager } from '../context/ContextManager';
 import * as clockApi from '../api/clock';
-import type { ClockState, ClockEventType } from '../api/clock';
+import type { ClockEventType } from '../api/clock';
+import { useTranslation, Trans } from 'react-i18next';
+import { formatTime } from '../utils/format';
 
 /**
  * Clock — a shared time-clock screen. Any staff member walks up, enters their
@@ -11,19 +13,6 @@ import type { ClockState, ClockEventType } from '../api/clock';
  * Break; on break → End Break). After a punch it confirms and resets for the
  * next person. The PIN is the per-employee authorization for the punch.
  */
-
-const EVENT_LABEL: Record<ClockEventType, string> = {
-  clock_in: 'Clock In',
-  break_start: 'Start Break',
-  break_end: 'End Break',
-  clock_out: 'Clock Out',
-};
-
-const STATE_LABEL: Record<ClockState, string> = {
-  clocked_out: 'Clocked out',
-  working: 'Working',
-  on_break: 'On break',
-};
 
 const EVENT_VARIANT: Record<ClockEventType, 'primary' | 'outline'> = {
   clock_in: 'primary',
@@ -35,6 +24,7 @@ const EVENT_VARIANT: Record<ClockEventType, 'primary' | 'outline'> = {
 type Phase = 'identify' | 'actions' | 'done';
 
 export function Clock() {
+  const { t } = useTranslation('staff');
   // Use the active context, not localStorage: the stored business_id can be
   // empty or stale and point at a different business than the one on screen.
   const businessId = useContextManager().activeContext.businessId || '';
@@ -63,7 +53,7 @@ export function Clock() {
 
   async function handleIdentify(e: React.FormEvent) {
     e.preventDefault();
-    if (!/^\d{4}$/.test(pin)) { setErrorMsg('Enter your 4-digit PIN.'); return; }
+    if (!/^\d{4}$/.test(pin)) { setErrorMsg(t('clock.errPin')); return; }
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -75,9 +65,9 @@ export function Clock() {
     } catch (err: any) {
       const code = err?.response?.data?.code;
       setErrorMsg(
-        code === 'LOCKED' ? 'Too many attempts. Please wait a few minutes.'
-          : code === 'INVALID_CREDENTIALS' ? 'Email or PIN not recognized.'
-            : 'Could not verify. Please try again.',
+        code === 'LOCKED' ? t('clock.errLocked')
+          : code === 'INVALID_CREDENTIALS' ? t('clock.errCredentials')
+            : t('clock.errVerify'),
       );
     } finally { setLoading(false); }
   }
@@ -88,14 +78,14 @@ export function Clock() {
     try {
       const result = await clockApi.punch(businessId, email.trim(), pin, eventType);
       const name = `${result.staff.first_name} ${result.staff.last_name}`.trim();
-      setDoneMessage(`${EVENT_LABEL[eventType]} recorded for ${name} at ${new Date(result.event.event_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
+      setDoneMessage(t('clock.recorded', { event: t(`clock.event.${eventType}`), name, time: formatTime(result.event.event_at, undefined, { hour: '2-digit' }) }));
       setPhase('done');
     } catch (err: any) {
       const code = err?.response?.data?.code;
       setErrorMsg(
-        code === 'INVALID_TRANSITION' ? (err.response.data.error || 'That action is not available right now.')
-          : code === 'LOCKED' ? 'Too many attempts. Please wait a few minutes.'
-            : 'Could not record the punch. Please try again.',
+        code === 'INVALID_TRANSITION' ? (err.response.data.error || t('clock.errTransition'))
+          : code === 'LOCKED' ? t('clock.errLocked')
+            : t('clock.errPunch'),
       );
     } finally { setLoading(false); }
   }
@@ -103,13 +93,13 @@ export function Clock() {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Time Clock</h1>
+        <h1 style={styles.title}>{t('clock.title')}</h1>
 
         {phase === 'identify' && (
           <form onSubmit={handleIdentify} style={styles.form}>
-            <p style={styles.subtitle}>Enter your email and PIN.</p>
+            <p style={styles.subtitle}>{t('clock.identify')}</p>
             <div style={styles.field}>
-              <label htmlFor="clock-email" style={styles.label}>Email</label>
+              <label htmlFor="clock-email" style={styles.label}>{t('clock.email')}</label>
               <input
                 id="clock-email"
                 value={email}
@@ -118,11 +108,11 @@ export function Clock() {
                 type="email"
                 autoComplete="email"
                 style={styles.input}
-                placeholder="you@example.com"
+                placeholder={t('clock.emailPlaceholder')}
               />
             </div>
             <div style={styles.field}>
-              <label htmlFor="clock-pin" style={styles.label}>PIN</label>
+              <label htmlFor="clock-pin" style={styles.label}>{t('clock.pin')}</label>
               <input
                 id="clock-pin"
                 value={pin}
@@ -131,12 +121,12 @@ export function Clock() {
                 type="password"
                 autoComplete="off"
                 style={styles.input}
-                placeholder="4 digits"
+                placeholder={t('clock.pinPlaceholder')}
               />
             </div>
             {errorMsg && <p style={styles.error}>{errorMsg}</p>}
             <Button type="submit" variant="primary" loading={loading} disabled={!businessId || !email.trim() || pin.length !== 4}>
-              Continue
+              {t('clock.continue')}
             </Button>
           </form>
         )}
@@ -144,24 +134,24 @@ export function Clock() {
         {phase === 'actions' && state && (
           <div style={styles.form}>
             <p style={styles.subtitle}>
-              Hi {staffName} — you are currently <strong>{STATE_LABEL[state].toLowerCase()}</strong>.
+              <Trans i18nKey="clock.currently" ns="staff" values={{ name: staffName, state: t(`clock.state.${state}`).toLowerCase() }} components={{ strong: <strong /> }} />
             </p>
             <div style={styles.actions}>
               {allowed.map((ev) => (
                 <Button key={ev} variant={EVENT_VARIANT[ev]} loading={loading} onClick={() => handlePunch(ev)}>
-                  {EVENT_LABEL[ev]}
+                  {t(`clock.event.${ev}`)}
                 </Button>
               ))}
             </div>
             {errorMsg && <p style={styles.error}>{errorMsg}</p>}
-            <button type="button" style={styles.linkBtn} onClick={reset}>Cancel</button>
+            <button type="button" style={styles.linkBtn} onClick={reset}>{t('common:cancel')}</button>
           </div>
         )}
 
         {phase === 'done' && (
           <div style={styles.form}>
             <p style={styles.done}>✓ {doneMessage}</p>
-            <Button variant="primary" onClick={reset}>Done</Button>
+            <Button variant="primary" onClick={reset}>{t('clock.done')}</Button>
           </div>
         )}
       </div>

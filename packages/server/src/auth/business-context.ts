@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './middleware';
+import { msg } from '../i18n';
 
 /**
  * Middleware that enforces business_id is present on all business-scoped requests.
@@ -17,7 +18,7 @@ export function businessContext(req: Request, res: Response, next: NextFunction)
 
   if (!businessId) {
     res.status(400).json({
-      error: 'Business ID is required for this operation',
+      error: msg('errors:businessContext.businessIdIsRequiredForThis'),
       code: 'MISSING_BUSINESS_ID',
     });
     return;

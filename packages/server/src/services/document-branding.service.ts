@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { isKnownArtifactType, getArtifactType, DOCUMENT_ARTIFACT_TYPES } from '@daystream/shared';
+import { msg } from '../i18n';
 
 /**
  * Section C — Document branding templates (spec 10-payment-platform, task 6.3 /
@@ -152,13 +153,13 @@ export interface CreateTemplateInput extends DocumentBrandingInput {
 export async function createTemplate(input: CreateTemplateInput): Promise<DocumentBrandingTemplate> {
   if (!isKnownArtifactType(input.artifactType)) {
     throw new DocumentBrandingError(
-      `Unknown artifact type: ${input.artifactType}`,
+      msg('errors:documentBranding.unknownArtifactType', { artifactType: input.artifactType }),
       'UNKNOWN_ARTIFACT_TYPE',
     );
   }
   const name = (input.name ?? 'Default').trim();
   if (!name) {
-    throw new DocumentBrandingError('Template name is required', 'INVALID_NAME');
+    throw new DocumentBrandingError(msg('errors:documentBranding.templateNameIsRequired'), 'INVALID_NAME');
   }
 
   const { rows } = await adminPool.query(
@@ -212,7 +213,7 @@ export async function updateTemplate(
 ): Promise<DocumentBrandingTemplate> {
   const existing = await getTemplate(businessId, id);
   if (!existing) {
-    throw new DocumentBrandingError('Template not found', 'NOT_FOUND');
+    throw new DocumentBrandingError(msg('errors:documentBranding.templateNotFound'), 'NOT_FOUND');
   }
 
   const sets: string[] = [];
@@ -224,7 +225,7 @@ export async function updateTemplate(
 
   if (input.name !== undefined) {
     const name = input.name.trim();
-    if (!name) throw new DocumentBrandingError('Template name is required', 'INVALID_NAME');
+    if (!name) throw new DocumentBrandingError(msg('errors:documentBranding.templateNameIsRequired'), 'INVALID_NAME');
     set('name', name);
   }
   if (input.language !== undefined) set('language', input.language);
@@ -277,7 +278,7 @@ export async function deleteTemplate(
     [id, businessId],
   );
   if (!rowCount) {
-    throw new DocumentBrandingError('Template not found', 'NOT_FOUND');
+    throw new DocumentBrandingError(msg('errors:documentBranding.templateNotFound'), 'NOT_FOUND');
   }
   await logAudit({
     tenantId,

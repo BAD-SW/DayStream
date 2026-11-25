@@ -3,6 +3,7 @@ import * as checkout from './checkout.service';
 import { getCustomerCreditBalance } from './account-credit.service';
 import { optionFor, setBookingBenefit, bookingBenefit, BenefitError, benefitOptions } from './benefits.service';
 import type { BenefitRef, BenefitOption } from './benefits.service';
+import { msg } from '../i18n';
 
 /**
  * Payment step of New Appointment (PAY-1 = A, David 11 Nov 2026; DayStream Hub → Designs → Payment step).
@@ -126,7 +127,7 @@ export async function quote(c: PayChoices) {
        FROM svc_variants v JOIN svc_services s ON s.id = v.service_id WHERE v.id = $1 AND s.id = $2 AND s.business_id = $3`,
     [c.variantId, c.serviceId, c.businessId],
   );
-  if (!v[0]) throw Object.assign(new Error('Service or option not found'), { code: 'NOT_FOUND' });
+  if (!v[0]) throw Object.assign(new Error(msg('errors:bookingPayment.serviceOrOptionNotFound')), { code: 'NOT_FOUND' });
   const qty = (v[0].booking_type === 'shared' || v[0].booking_type === 'group') ? Math.max(1, c.participants || 1) : 1;
   // a scratch order with its own reference, so no order number is used up (numbers stay without gaps)
   const { rows: scratch } = await adminPool.query(
@@ -203,7 +204,7 @@ export async function payBooking(p: PayInput) {
   // gift cards and other methods are taken at Checkout, and "pay later" is what a service whose
   // Reservation Payment Rule needs no payment already does.
   if (!['onfile', 'card', 'bank', 'covered'].includes(p.method)) {
-    throw Object.assign(new Error('When booking, payment is by card or bank account. Other methods are taken at Checkout.'), { code: 'METHOD_NOT_ALLOWED' });
+    throw Object.assign(new Error(msg('errors:bookingPayment.whenBookingPaymentIsByCard')), { code: 'METHOD_NOT_ALLOWED' });
   }
   const b = await benefits(p.businessId, p.customerId);
   // The membership or package chosen is held for the booking (normally already, when it was made);

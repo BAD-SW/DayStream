@@ -7,6 +7,7 @@ import { storagePaths, pathFromReference } from '../utils/storage-paths';
 import { renderFormPdf } from './forms-pdf';
 import { validateFormAnswers } from '@daystream/shared';
 import type { FormDefinition, FormAnswer } from '@daystream/shared';
+import { msg } from '../i18n';
 
 /**
  * Treatment charting (spec 51, gap 2).
@@ -123,16 +124,16 @@ async function audit(actor: ChartActor, action: string, chartId: string | null, 
 
 function parseAnswers(raw: unknown, definition: FormDefinition): Answers {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new ChartError('Answers must be an object.', 'INVALID_ANSWERS');
+    throw new ChartError(msg('errors:chart.answersMustBeAnObject'), 'INVALID_ANSWERS');
   }
-  if (JSON.stringify(raw).length > MAX_ANSWERS_BYTES) throw new ChartError('The chart is too long.', 'INVALID_ANSWERS');
+  if (JSON.stringify(raw).length > MAX_ANSWERS_BYTES) throw new ChartError(msg('errors:chart.theChartIsTooLong'), 'INVALID_ANSWERS');
   const ids = new Set(definition.items.map((i) => i.id));
   const out: Answers = {};
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (!ids.has(k)) continue; // answers to items the template doesn't have are dropped
     if (typeof v === 'string' || typeof v === 'boolean') out[k] = v;
     else if (Array.isArray(v) && v.every((x) => typeof x === 'string')) out[k] = v as string[];
-    else throw new ChartError('An answer has the wrong type.', 'INVALID_ANSWERS');
+    else throw new ChartError(msg('errors:chart.anAnswerHasTheWrongType'), 'INVALID_ANSWERS');
   }
   return out;
 }
@@ -148,7 +149,7 @@ async function loadRow(businessId: string, id: string): Promise<ChartRow> {
   const { rows } = await adminPool.query<ChartRow>(
     'SELECT * FROM chr_charts WHERE id = $1 AND business_id = $2', [id, businessId],
   );
-  if (!rows[0]) throw new ChartError('Chart not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ChartError(msg('errors:chart.chartNotFound'), 'NOT_FOUND');
   return rows[0];
 }
 
@@ -175,7 +176,7 @@ async function loadAmendments(chartId: string): Promise<Amendment[]> {
 
 async function ownCustomer(businessId: string, customerId: string): Promise<void> {
   const { rows } = await adminPool.query('SELECT 1 FROM cus_customers WHERE id = $1 AND business_id = $2', [customerId, businessId]);
-  if (!rows[0]) throw new ChartError('Customer not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ChartError(msg('errors:chart.customerNotFound'), 'NOT_FOUND');
 }
 
 // ---------------------------------------------------------------------------
@@ -230,13 +231,13 @@ export async function createChart(
       WHERE id = $1 AND business_id = $2 AND kind = 'chart' AND status = 'active'`,
     [input.formId, businessId],
   );
-  if (!forms[0]) throw new ChartError('Chart template not found', 'NOT_FOUND');
+  if (!forms[0]) throw new ChartError(msg('errors:chart.chartTemplateNotFound'), 'NOT_FOUND');
   if (input.bookingId) {
     const { rows } = await adminPool.query(
       'SELECT 1 FROM apt_bookings WHERE id = $1 AND business_id = $2 AND customer_id = $3',
       [input.bookingId, businessId, input.customerId],
     );
-    if (!rows[0]) throw new ChartError('Booking not found for this customer', 'NOT_FOUND');
+    if (!rows[0]) throw new ChartError(msg('errors:chart.bookingNotFoundForThisCustomer'), 'NOT_FOUND');
   }
 
   const id = randomUUID();
@@ -262,7 +263,7 @@ async function getChartNoAudit(businessId: string, id: string): Promise<Chart> {
 /** Saves a draft's answers. A signed chart can never be changed this way. */
 export async function updateChart(businessId: string, id: string, rawAnswers: unknown, actor: ChartActor): Promise<Chart> {
   const row = await loadRow(businessId, id);
-  if (row.status !== 'draft') throw new ChartError('A signed chart is locked. Add an amendment instead.', 'LOCKED');
+  if (row.status !== 'draft') throw new ChartError(msg('errors:chart.aSignedChartIsLockedAdd'), 'LOCKED');
   const answers = parseAnswers(rawAnswers, readDefinition(row));
 
   // Saving happens as the practitioner types; one audit entry per editing session, not per save.
@@ -278,16 +279,16 @@ export async function updateChart(businessId: string, id: string, rawAnswers: un
       WHERE id = $2 AND business_id = $3 AND status = 'draft'`,
     [encrypt(JSON.stringify(answers)), id, businessId],
   );
-  if (!rowCount) throw new ChartError('A signed chart is locked. Add an amendment instead.', 'LOCKED');
+  if (!rowCount) throw new ChartError(msg('errors:chart.aSignedChartIsLockedAdd'), 'LOCKED');
   return getChartNoAudit(businessId, id);
 }
 
 /** Drafts only; the author, or an owner or manager, may delete one. */
 export async function deleteDraft(businessId: string, id: string, actor: ChartActor): Promise<void> {
   const row = await loadRow(businessId, id);
-  if (row.status !== 'draft') throw new ChartError('A signed chart cannot be deleted.', 'LOCKED');
+  if (row.status !== 'draft') throw new ChartError(msg('errors:chart.aSignedChartCannotBeDeleted'), 'LOCKED');
   if (row.created_by !== actor.userId && !actor.isManager) {
-    throw new ChartError('Only the author or a manager can delete this draft.', 'FORBIDDEN');
+    throw new ChartError(msg('errors:chart.onlyTheAuthorOrAManager'), 'FORBIDDEN');
   }
   await audit(actor, 'chart.deleted', id, { customerId: row.customer_id, businessId });
   await adminPool.query(`DELETE FROM chr_charts WHERE id = $1 AND business_id = $2 AND status = 'draft'`, [id, businessId]);
@@ -300,7 +301,7 @@ async function pdfContext(businessId: string, customerId: string) {
       WHERE c.id = $1 AND c.business_id = $2`,
     [customerId, businessId],
   );
-  if (!rows[0]) throw new ChartError('Customer not found', 'NOT_FOUND');
+  if (!rows[0]) throw new ChartError(msg('errors:chart.customerNotFound'), 'NOT_FOUND');
   let logo: Buffer | null = null;
   const p = pathFromReference(rows[0].logo_url);
   if (p) { try { logo = await storage.read(p); } catch { logo = null; } }
@@ -350,9 +351,9 @@ async function drawPdf(row: ChartRow, signedAt: Date, practitioner: string, amen
 /** One action: checks the answers, draws and stores the PDF, records who and when, and locks. */
 export async function signOff(businessId: string, id: string, actor: ChartActor): Promise<Chart> {
   const row = await loadRow(businessId, id);
-  if (row.status !== 'draft') throw new ChartError('This chart is already signed off.', 'LOCKED');
+  if (row.status !== 'draft') throw new ChartError(msg('errors:chart.thisChartIsAlreadySignedOff'), 'LOCKED');
   const issues = validateFormAnswers(readDefinition(row), readAnswers(row));
-  if (issues.length > 0) throw new ChartError('Some answers need attention before sign-off.', 'INVALID_ANSWERS', issues);
+  if (issues.length > 0) throw new ChartError(msg('errors:chart.someAnswersNeedAttentionBeforeSign'), 'INVALID_ANSWERS', issues);
 
   await audit(actor, 'chart.signed', id, { customerId: row.customer_id, businessId });
 
@@ -363,7 +364,7 @@ export async function signOff(businessId: string, id: string, actor: ChartActor)
   try {
     await storage.save(path, pdf);
   } catch (e) {
-    throw new ChartError('The chart could not be saved. Please try again.', 'STORAGE_FAILED', (e as Error).message);
+    throw new ChartError(msg('errors:chart.theChartCouldNotBeSaved'), 'STORAGE_FAILED', (e as Error).message);
   }
   try {
     const { rowCount } = await adminPool.query(
@@ -371,7 +372,7 @@ export async function signOff(businessId: string, id: string, actor: ChartActor)
         WHERE id = $5 AND business_id = $6 AND status = 'draft'`,
       [actor.userId, signedAt, path, sha256, id, businessId],
     );
-    if (!rowCount) { await storage.delete(path).catch(() => undefined); throw new ChartError('This chart is already signed off.', 'LOCKED'); }
+    if (!rowCount) { await storage.delete(path).catch(() => undefined); throw new ChartError(msg('errors:chart.thisChartIsAlreadySignedOff'), 'LOCKED'); }
   } catch (e) {
     if (!(e instanceof ChartError)) await storage.delete(path).catch(() => undefined);
     throw e;
@@ -382,10 +383,10 @@ export async function signOff(businessId: string, id: string, actor: ChartActor)
 /** A dated note on a signed chart. The original answers are never touched. */
 export async function addAmendment(businessId: string, id: string, content: unknown, actor: ChartActor): Promise<Chart> {
   const row = await loadRow(businessId, id);
-  if (row.status !== 'signed') throw new ChartError('Only a signed chart takes amendments. Edit the draft instead.', 'NOT_SIGNED');
+  if (row.status !== 'signed') throw new ChartError(msg('errors:chart.onlyASignedChartTakesAmendments'), 'NOT_SIGNED');
   const text = typeof content === 'string' ? content.trim() : '';
-  if (!text) throw new ChartError('Write the amendment first.', 'INVALID_AMENDMENT');
-  if (text.length > MAX_AMENDMENT) throw new ChartError('The amendment is too long.', 'INVALID_AMENDMENT');
+  if (!text) throw new ChartError(msg('errors:chart.writeTheAmendmentFirst'), 'INVALID_AMENDMENT');
+  if (text.length > MAX_AMENDMENT) throw new ChartError(msg('errors:chart.theAmendmentIsTooLong'), 'INVALID_AMENDMENT');
   const amendmentId = randomUUID();
   await audit(actor, 'chart.amended', id, { customerId: row.customer_id, businessId, amendmentId });
   await adminPool.query(
@@ -402,12 +403,12 @@ export async function addAmendment(businessId: string, id: string, content: unkn
  */
 export async function getPdf(businessId: string, id: string, actor: ChartActor): Promise<{ data: Buffer; filename: string }> {
   const row = await loadRow(businessId, id);
-  if (row.status !== 'signed' || !row.pdf_path || !row.signed_at) throw new ChartError('Only a signed chart has a PDF.', 'NOT_SIGNED');
+  if (row.status !== 'signed' || !row.pdf_path || !row.signed_at) throw new ChartError(msg('errors:chart.onlyASignedChartHasA'), 'NOT_SIGNED');
   await audit(actor, 'chart.pdf_downloaded', id, { customerId: row.customer_id, businessId });
   const amendments = await loadAmendments(id);
   let data: Buffer | null;
   if (amendments.length === 0) data = await storage.read(row.pdf_path);
   else data = await drawPdf(row, row.signed_at, await userName(row.signed_by), amendments);
-  if (!data) throw new ChartError('The chart file is missing.', 'NOT_FOUND');
+  if (!data) throw new ChartError(msg('errors:chart.theChartFileIsMissing'), 'NOT_FOUND');
   return { data, filename: `${row.form_name.replace(/[^\w.-]+/g, '_')}.pdf` };
 }

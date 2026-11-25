@@ -4,6 +4,7 @@ import { filterAudience, summarise } from './contactability.service';
 import { logAudit } from './audit.service';
 import { getEmailAdapter, getSmsAdapter } from './marketing-adapters.service';
 import { createActivity } from './customer-activity.service';
+import { msg } from '../i18n';
 
 /** A campaign, segment or person of one business used from another (Phase 46 R14). */
 export class CrossBusinessError extends Error {
@@ -84,8 +85,8 @@ export async function createCampaign(
       `SELECT s.business_id FROM cus_segments s JOIN sys_businesses b ON b.id = s.business_id WHERE s.id = $1 AND b.tenant_id = $2`,
       [input.segmentId, tenantId],
     );
-    if (!seg[0]) throw new CrossBusinessError('The audience of this campaign was not found');
-    if (businessId && seg[0].business_id !== businessId) throw new CrossBusinessError('The audience belongs to another business');
+    if (!seg[0]) throw new CrossBusinessError(msg('errors:marketingCampaigns.theAudienceOfThisCampaignWas'));
+    if (businessId && seg[0].business_id !== businessId) throw new CrossBusinessError(msg('errors:marketingCampaigns.theAudienceBelongsToAnotherBusiness'));
     businessId = businessId || seg[0].business_id;
   }
 
@@ -156,7 +157,7 @@ export async function updateCampaign(id: string, tenantId: string, updates: Reco
         WHERE c.id = $1 AND c.tenant_id = $3 AND (c.business_id IS NULL OR c.business_id = s.business_id)`,
       [id, updates.segmentId, tenantId],
     );
-    if (!ok[0]) throw new CrossBusinessError('The audience belongs to another business');
+    if (!ok[0]) throw new CrossBusinessError(msg('errors:marketingCampaigns.theAudienceBelongsToAnotherBusiness'));
   }
 
   fields.push(`updated_at = NOW()`);
@@ -197,25 +198,25 @@ export async function scheduleCampaign(id: string, tenantId: string, scheduledAt
  */
 export async function sendCampaign(id: string, tenantId: string) {
   const campaign = await getCampaignById(id, tenantId);
-  if (!campaign) throw new Error('Campaign not found');
+  if (!campaign) throw new Error(msg('errors:marketingCampaigns.campaignNotFound'));
   if (campaign.status !== 'draft' && campaign.status !== 'scheduled') {
-    throw new Error('Campaign must be in draft or scheduled status to send');
+    throw new Error(msg('errors:marketingCampaigns.campaignMustBeInDraftOr'));
   }
 
   // Phase 46: the audience is the campaign's segment, evaluated now, and only the people who may
   // be contacted on this channel for marketing. Until this change every active person of the
   // whole tenant was made a recipient, whatever the segment or their consent.
-  if (!campaign.segment_id) throw new Error('Choose an audience (a segment) before sending');
+  if (!campaign.segment_id) throw new Error(msg('errors:marketingCampaigns.chooseAnAudienceASegmentBefore'));
   const { rows: segmentRows } = await adminPool.query(
     `SELECT s.id, s.business_id FROM cus_segments s
        JOIN sys_businesses b ON b.id = s.business_id
       WHERE s.id = $1 AND b.tenant_id = $2`,
     [campaign.segment_id, tenantId],
   );
-  if (!segmentRows[0]) throw new Error('The audience of this campaign no longer exists');
+  if (!segmentRows[0]) throw new Error(msg('errors:marketingCampaigns.theAudienceOfThisCampaignNo'));
   const audienceBusinessId: string = segmentRows[0].business_id;
   if (campaign.business_id && campaign.business_id !== audienceBusinessId) {
-    throw new CrossBusinessError('The audience of this campaign belongs to another business');
+    throw new CrossBusinessError(msg('errors:marketingCampaigns.theAudienceOfThisCampaignBelongs'));
   }
 
   const memberIds = (await getMemberIds(campaign.segment_id, audienceBusinessId)) || [];
@@ -317,7 +318,7 @@ export async function deliverCampaign(campaign: any) {
  */
 export async function sendTestEmail(id: string, tenantId: string, toEmail: string) {
   const campaign = await getCampaignById(id, tenantId);
-  if (!campaign) throw new Error('Campaign not found');
+  if (!campaign) throw new Error(msg('errors:marketingCampaigns.campaignNotFound'));
 
   const sample = { first_name: 'Alex', last_name: 'Sample', business_name: '' };
   const result = await getEmailAdapter(tenantId).sendEmail(

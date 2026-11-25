@@ -1,9 +1,12 @@
+import { askConfirm } from '../../design-system/components/feedback/dialogs';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { Badge } from '../../design-system/components/data/Badge';
 import { Card } from '../../design-system/components/data/Card';
 import * as selfApi from '../../api/selfCheckIn';
 import { getLocations } from '../../api/locations';
+import { formatDateTime } from '../../utils/format';
 
 /**
  * Settings > Check-In Kiosk (spec 51, design 1.11a): set up the front-desk tablet where customers
@@ -11,6 +14,7 @@ import { getLocations } from '../../api/locations';
  * the tablet, and switch the tablet off here if it is lost. Acts straight away, like Processes.
  */
 export function KioskSettings() {
+  const { t } = useTranslation('settings');
   const businessId = localStorage.getItem('business_id') || '';
   const [kioskName, setKioskName] = useState('');
   const [locationId, setLocationId] = useState('');
@@ -38,7 +42,7 @@ export function KioskSettings() {
   }, [businessId, load]);
 
   const handleRegister = async () => {
-    if (!kioskName.trim() || !locationId) { setMessage({ ok: false, text: 'Give the kiosk a name and choose its location.' }); return; }
+    if (!kioskName.trim() || !locationId) { setMessage({ ok: false, text: t('kiosk.nameAndLocation') }); return; }
     setBusy(true); setMessage(null); setSetupLink(null); setShownFor(null);
     try {
       const kiosk = await selfApi.registerKioskDevice(businessId, kioskName.trim(), locationId);
@@ -46,7 +50,7 @@ export function KioskSettings() {
       setKioskName('');
       load();
     } catch (err: unknown) {
-      setMessage({ ok: false, text: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'The kiosk could not be registered.' });
+      setMessage({ ok: false, text: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('kiosk.registerFailed') });
     } finally { setBusy(false); }
   };
 
@@ -54,49 +58,47 @@ export function KioskSettings() {
     setMessage({ ok: false, text: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback });
 
   const handleOff = async (d: selfApi.KioskDevice) => {
-    if (!confirm(`Switch off "${d.device_name}"? The tablet stops working until you switch it back on.`)) return;
+    if (!(await askConfirm({ message: t('kiosk.confirmOff', { name: d.device_name }), confirmLabel: t('common:action.deactivate'), destructive: true }))) return;
     setMessage(null);
     try { await selfApi.switchOffKiosk(businessId, d.id); load(); }
-    catch (err) { fail(err, 'The kiosk could not be switched off.'); }
+    catch (err) { fail(err, t('kiosk.offFailed')); }
   };
 
   const handleOn = async (d: selfApi.KioskDevice) => {
     setMessage(null);
-    try { await selfApi.switchOnKiosk(businessId, d.id); load(); setMessage({ ok: true, text: `"${d.device_name}" is on again.` }); }
-    catch (err) { fail(err, 'The kiosk could not be switched on.'); }
+    try { await selfApi.switchOnKiosk(businessId, d.id); load(); setMessage({ ok: true, text: t('kiosk.isOn', { name: d.device_name }) }); }
+    catch (err) { fail(err, t('kiosk.onFailed')); }
   };
 
   const handleDelete = async (d: selfApi.KioskDevice) => {
-    if (!confirm(`Delete "${d.device_name}"? Its link stops working for good, and the tablet has to be registered again to be used. Past check-ins are kept.`)) return;
+    if (!(await askConfirm({ message: t('kiosk.confirmDelete', { name: d.device_name }), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     setMessage(null);
     try {
       await selfApi.deleteKioskDevice(businessId, d.id);
       if (shownFor === d.id) { setShownFor(null); setSetupLink(null); }
       load();
-    } catch (err) { fail(err, 'The kiosk could not be deleted.'); }
+    } catch (err) { fail(err, t('kiosk.deleteFailed')); }
   };
 
   // Show the link of a registered kiosk again (the tablet's address).
   const handleShowLink = async (d: selfApi.KioskDevice) => {
     setMessage(null);
     try { setSetupLink(await selfApi.getKioskLink(businessId, d.id)); setShownFor(d.id); }
-    catch (err) { fail(err, 'The kiosk link could not be shown.'); }
+    catch (err) { fail(err, t('kiosk.linkFailed')); }
   };
 
   const copy = async (text: string) => {
-    try { await navigator.clipboard.writeText(text); setMessage({ ok: true, text: 'Link copied.' }); }
-    catch { setMessage({ ok: false, text: 'Copy did not work. Select the link and copy it by hand.' }); }
+    try { await navigator.clipboard.writeText(text); setMessage({ ok: true, text: t('kiosk.linkCopied') }); }
+    catch { setMessage({ ok: false, text: t('kiosk.copyFailed') }); }
   };
 
-  if (!businessId) return <p style={s.muted}>Select a business to set up a kiosk.</p>;
+  if (!businessId) return <p style={s.muted}>{t('kiosk.selectBusiness')}</p>;
 
   return (
     <div style={s.section}>
-      <h2 style={s.title}>Check-In Kiosk</h2>
+      <h2 style={s.title}>{t('kiosk.title')}</h2>
       <p style={s.description}>
-        A kiosk is a tablet at the front desk where customers check themselves in with the phone number or email
-        address on their booking, then complete any forms they still owe. Register the tablet here, then open the
-        link on it once. Customers can also check in from their own phone using the link in their reminder email.
+        {t('kiosk.intro')}
       </p>
       {message && (
         <p role={message.ok ? 'status' : 'alert'} style={{ color: message.ok ? 'var(--color-success)' : 'var(--color-error)', margin: '0 0 var(--space-md) 0' }}>
@@ -104,14 +106,14 @@ export function KioskSettings() {
         </p>
       )}
 
-      <Card variant="outlined" padding="lg" title="Register a kiosk">
+      <Card variant="outlined" padding="lg" title={t('kiosk.registerTitle')}>
         <div style={s.row}>
-          <input style={s.input} aria-label="Kiosk name" placeholder="Kiosk name, e.g. Front desk tablet" value={kioskName} onChange={(e) => setKioskName(e.target.value)} />
-          <select style={s.input} aria-label="Location" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-            <option value="">Choose a location…</option>
+          <input style={s.input} aria-label={t('kiosk.kioskName')} placeholder={t('kiosk.kioskNamePlaceholder')} value={kioskName} onChange={(e) => setKioskName(e.target.value)} />
+          <select style={s.input} aria-label={t('kiosk.location')} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+            <option value="">{t('kiosk.chooseLocation')}</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
-          <Button size="sm" onClick={handleRegister} loading={busy}>Register</Button>
+          <Button size="sm" onClick={handleRegister} loading={busy}>{t('kiosk.register')}</Button>
         </div>
       </Card>
 
@@ -119,35 +121,35 @@ export function KioskSettings() {
         <div role="status" style={s.linkBox}>
           <strong>
             {shownFor
-              ? `Open this link on the tablet (${devices.find((d) => d.id === shownFor)?.device_name ?? 'kiosk'}).`
-              : 'Open this link on the tablet now.'}
+              ? t('kiosk.openLinkNamed', { name: devices.find((d) => d.id === shownFor)?.device_name ?? t('kiosk.kioskFallback') })
+              : t('kiosk.openLinkNow')}
           </strong>{' '}
-          It is the tablet's password, so share it only with the tablet. You can show it again from the list below.
-          <input style={{ ...s.input, width: '100%', marginTop: 'var(--space-xs)' }} readOnly aria-label="Kiosk link" value={setupLink} onFocus={(e) => e.currentTarget.select()} />
+          {t('kiosk.linkWarning')}
+          <input style={{ ...s.input, width: '100%', marginTop: 'var(--space-xs)' }} readOnly aria-label={t('kiosk.kioskLink')} value={setupLink} onFocus={(e) => e.currentTarget.select()} />
           <div style={{ marginTop: 'var(--space-xs)', display: 'flex', gap: 'var(--space-sm)' }}>
-            <Button size="sm" variant="secondary" onClick={() => copy(setupLink)}>Copy link</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setSetupLink(null); setShownFor(null); }}>Hide link</Button>
+            <Button size="sm" variant="secondary" onClick={() => copy(setupLink)}>{t('kiosk.copyLink')}</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setSetupLink(null); setShownFor(null); }}>{t('kiosk.hideLink')}</Button>
           </div>
         </div>
       )}
 
       <div style={{ height: 'var(--space-md)' }} />
 
-      <Card variant="outlined" padding="lg" title="Registered kiosks">
-        {devices.length === 0 && <p style={s.muted}>No kiosks yet.</p>}
+      <Card variant="outlined" padding="lg" title={t('kiosk.registeredTitle')}>
+        {devices.length === 0 && <p style={s.muted}>{t('kiosk.none')}</p>}
         {devices.map((d) => (
           <div key={d.id} style={s.device}>
             <span>
               {d.device_name} <span style={s.muted}>· {d.location_name}</span>
-              {d.last_activity_at && <span style={s.muted}> · last seen {new Date(d.last_activity_at).toLocaleString()}</span>}
+              {d.last_activity_at && <span style={s.muted}> · {t('kiosk.lastSeen', { when: formatDateTime(d.last_activity_at) })}</span>}
             </span>
             <span style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
-              <Badge variant={d.is_active ? 'success' : 'neutral'}>{d.is_active ? 'On' : 'Off'}</Badge>
-              {d.is_active && <Button size="sm" variant="secondary" onClick={() => handleShowLink(d)}>Show link</Button>}
+              <Badge variant={d.is_active ? 'success' : 'neutral'}>{d.is_active ? t('kiosk.on') : t('kiosk.off')}</Badge>
+              {d.is_active && <Button size="sm" variant="secondary" onClick={() => handleShowLink(d)}>{t('kiosk.showLink')}</Button>}
               {d.is_active
-                ? <Button size="sm" variant="secondary" onClick={() => handleOff(d)}>Switch off</Button>
-                : <Button size="sm" variant="secondary" onClick={() => handleOn(d)}>Switch on</Button>}
-              <Button size="sm" variant="ghost" onClick={() => handleDelete(d)}>Delete</Button>
+                ? <Button size="sm" variant="secondary" onClick={() => handleOff(d)}>{t('kiosk.switchOff')}</Button>
+                : <Button size="sm" variant="secondary" onClick={() => handleOn(d)}>{t('kiosk.switchOn')}</Button>}
+              <Button size="sm" variant="ghost" onClick={() => handleDelete(d)}>{t('common:delete')}</Button>
             </span>
           </div>
         ))}

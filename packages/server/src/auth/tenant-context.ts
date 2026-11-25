@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './middleware';
 import { adminPool } from '../db/pool';
 import { accountBlockReason } from '../services/auth.service';
+import { msg } from '../i18n';
 
 const CONTEXT_TENANT_HEADER = 'x-context-tenant-id';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -85,7 +86,7 @@ export function tenantContext(req: Request, res: Response, next: NextFunction): 
   const authReq = req as AuthenticatedRequest;
 
   if (!authReq.user || !authReq.user.tid) {
-    res.status(401).json({ error: 'Tenant context required', code: 'MISSING_TENANT' });
+    res.status(401).json({ error: msg('errors:tenantContext.tenantContextRequired'), code: 'MISSING_TENANT' });
     return;
   }
 
@@ -116,7 +117,7 @@ export function tenantContext(req: Request, res: Response, next: NextFunction): 
         const ownTenant = tenantId !== null && tenantId === authReq.user.tid;
         const ownBusiness = scope?.level !== 'business' || !scope.businessId || scope.businessId === businessId;
         if (!ownTenant || !ownBusiness) {
-          res.status(403).json({ error: 'You do not have access to this business', code: 'BUSINESS_FORBIDDEN' });
+          res.status(403).json({ error: msg('errors:tenantContext.youDoNotHaveAccessTo'), code: 'BUSINESS_FORBIDDEN' });
           return;
         }
       }
@@ -150,7 +151,7 @@ export function recordScope(businessOf: (id: string) => Promise<string | null | 
     (async () => {
       const businessId = UUID_RE.test(id || '') ? await businessOf(id) : null;
       if (!businessId || !(await canReachBusiness(req, businessId))) {
-        res.status(404).json({ error: `${what} not found`, code: 'NOT_FOUND' });
+        res.status(404).json({ error: msg('errors:tenantContext.notFound', { what }), code: 'NOT_FOUND' });
         return;
       }
       (req as any).recordBusinessId = businessId;

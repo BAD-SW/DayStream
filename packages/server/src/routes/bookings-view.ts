@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import { BOOKINGS_VIEWS, resolveView, setBusinessView } from '../services/bookings-view.service';
+import { msg } from '../i18n';
 
 /**
  * Which screen Bookings opens on for staff (spec 51, gap 3). Anyone of the business may read what
@@ -29,12 +30,12 @@ bookingsViewRouter.get('/', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await businessOfTenant(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!businessId || !UUID_RE.test(businessId)) { error(res, msg('errors:bookingsView.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await businessOfTenant(req, businessId))) { error(res, msg('errors:bookingsView.businessNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await resolveView(businessId, authReq.user.sub, authReq.tenantId));
   } catch (err) {
     console.error('Failed to read the Bookings view', (err as Error).message);
-    error(res, 'Failed to read the Bookings view', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookingsView.failedToReadTheBookingsView'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -47,10 +48,10 @@ const putSchema = Joi.object({
 bookingsViewRouter.put('/', requirePermission('settings:*'), validate(putSchema), async (req: Request, res: Response) => {
   try {
     const { business_id: businessId, view } = req.body;
-    if (!(await businessOfTenant(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await businessOfTenant(req, businessId))) { error(res, msg('errors:bookingsView.businessNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { business: await setBusinessView(businessId, view) });
   } catch (err) {
     console.error('Failed to save the Bookings view', (err as Error).message);
-    error(res, 'Failed to save the Bookings view', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:bookingsView.failedToSaveTheBookingsView'), 'INTERNAL_ERROR', 500);
   }
 });

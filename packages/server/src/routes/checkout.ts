@@ -8,6 +8,7 @@ import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as checkoutService from '../services/checkout.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 export const checkoutRouter = Router();
 
@@ -31,11 +32,11 @@ checkoutRouter.use(async (req: Request, res: Response, next) => {
       const own = await ownCustomerIds(req);
       const { rows } = await adminPool.query('SELECT customer_id FROM fin_orders WHERE id = $1', [m[1]]);
       if (rows[0]?.customer_id && own.includes(rows[0].customer_id)) { next(); return; }
-      error(res, 'Order not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:checkout.orderNotFound'), 'NOT_FOUND', 404);
       return;
     }
-    error(res, 'Insufficient permissions', 'FORBIDDEN', 403);
-  } catch (err: any) { console.error('Checkout scope failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+    error(res, msg('errors:checkout.insufficientPermissions'), 'FORBIDDEN', 403);
+  } catch (err: any) { console.error('Checkout scope failed', err?.message || err); error(res, msg('errors:checkout.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -62,7 +63,7 @@ checkoutRouter.post('/orders', requirePermission('bookings:*'), validate(createO
       notes: req.body.notes,
     });
     success(res, order, undefined, 201);
-  } catch (err: any) { console.error('Failed to create order', err?.message || err); error(res, 'Failed to create order', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create order', err?.message || err); error(res, msg('errors:checkout.failedToCreateOrder'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/checkout/orders/from-booking — Create order pre-populated from a booking
@@ -71,14 +72,14 @@ checkoutRouter.post('/orders/from-booking', requirePermission('bookings:*'), asy
     const authReq = req as AuthenticatedRequest;
     const businessId = req.body.business_id || req.query.business_id as string;
     const bookingId = req.body.booking_id;
-    if (!businessId || !bookingId) { error(res, 'business_id and booking_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId || !bookingId) { error(res, msg('errors:checkout.businessIdAndBookingIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const order = await checkoutService.createOrderFromBooking(bookingId, businessId, authReq.user.sub);
     success(res, order, undefined, 201);
   } catch (err: any) {
     if (err?.code === 'ALREADY_CHECKED_OUT') { error(res, err.message, 'ALREADY_CHECKED_OUT', 409); return; }
-    if (err.message.includes('not found')) { error(res, err.message, 'NOT_FOUND', 404); }
-    else { error(res, 'Failed to create order from booking', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'not found')) { error(res, err.message, 'NOT_FOUND', 404); }
+    else { error(res, msg('errors:checkout.failedToCreateOrderFromBooking'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -87,15 +88,15 @@ checkoutRouter.post('/orders/from-booking', requirePermission('bookings:*'), asy
 checkoutRouter.get('/orders/column-values', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await checkoutService.getOrderColumnValues(businessId, String(req.query.column || ''), parseColumnFilters(req.query.cf), req.query.product as string));
-  } catch (err: any) { console.error('Failed to list column values', err?.message || err); error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list column values', err?.message || err); error(res, msg('errors:checkout.failedToListColumnValues'), 'INTERNAL_ERROR', 500); }
 });
 
 checkoutRouter.get('/orders', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await checkoutService.getOrders(businessId, {
       status: req.query.status as string,
       customerId: req.query.customer_id as string,
@@ -108,16 +109,16 @@ checkoutRouter.get('/orders', requirePermission('bookings:read'), async (req: Re
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
     success(res, result.orders, result.meta);
-  } catch (err: any) { console.error('Failed to list orders', err?.message || err); error(res, 'Failed to list orders', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list orders', err?.message || err); error(res, msg('errors:checkout.failedToListOrders'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/checkout/orders/:id — Get single order with items
 checkoutRouter.get('/orders/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const order = await checkoutService.getOrder(req.params.id);
-    if (!order) { error(res, 'Order not found', 'NOT_FOUND', 404); return; }
+    if (!order) { error(res, msg('errors:checkout.orderNotFound'), 'NOT_FOUND', 404); return; }
     success(res, order);
-  } catch (err: any) { console.error('Failed to get order', err?.message || err); error(res, 'Failed to get order', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get order', err?.message || err); error(res, msg('errors:checkout.failedToGetOrder'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -174,8 +175,8 @@ checkoutRouter.post('/orders/:id/items', requirePermission('bookings:*'), valida
     success(res, { ...order, stock_limited: (item as any)?.stock_limited ?? null }, undefined, 201);
   } catch (err: any) {
     if (err?.name === 'StockError') { error(res, err.message, err.code || 'OUT_OF_STOCK', 409); return; }
-    if (err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
-    else { console.error('Failed to add item', err?.message || err); error(res, 'Failed to add item', 'INTERNAL_ERROR', 500); }
+    if ((isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open'))) { error(res, err.message, 'CONFLICT', 409); }
+    else { console.error('Failed to add item', err?.message || err); error(res, msg('errors:checkout.failedToAddItem'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -202,8 +203,8 @@ checkoutRouter.put('/orders/:id/items/:itemId', requirePermission('bookings:*'),
     const order = await checkoutService.getOrder(req.params.id);
     success(res, { ...order, stock_limited: (updated as any)?.stock_limited ?? null });
   } catch (err: any) {
-    if (err.message.includes('not open') || err.message.includes('not found')) { error(res, err.message, 'CONFLICT', 409); }
-    else { console.error('Failed to update item', err?.message || err); error(res, 'Failed to update item', 'INTERNAL_ERROR', 500); }
+    if ((isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open')) || messageHas(err.message, 'not found')) { error(res, err.message, 'CONFLICT', 409); }
+    else { console.error('Failed to update item', err?.message || err); error(res, msg('errors:checkout.failedToUpdateItem'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -215,8 +216,8 @@ checkoutRouter.delete('/orders/:id/items/:itemId', requirePermission('bookings:*
     success(res, order);
   } catch (err: any) {
     if (err?.code === 'BOOKING_SERVICE') { error(res, err.message, 'BOOKING_SERVICE', 409); return; }
-    if (err.message.includes('not open') || err.message.includes('not found')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to remove item', 'INTERNAL_ERROR', 500); }
+    if ((isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open')) || messageHas(err.message, 'not found')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:checkout.failedToRemoveItem'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -242,17 +243,17 @@ const completeSchema = Joi.object({
 checkoutRouter.put('/orders/:id/promo', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const code = req.body.promo_code;
-    if (!code) { error(res, 'promo_code required', 'VALIDATION_ERROR', 400); return; }
+    if (!code) { error(res, msg('errors:checkout.promoCodeRequired'), 'VALIDATION_ERROR', 400); return; }
     const order = await checkoutService.applyPromoCode(req.params.id, businessId, code);
     success(res, order);
   } catch (err: any) {
-    if (/^(Code |You have |Minimum purchase)/.test(err.message) || err.message.includes('Invalid') || err.message.includes('expired') || err.message.includes('not started') || err.message.includes('maximum') || err.message.includes('cannot be applied') || err.message.includes('does not apply')) {
+    if (/^(Code |You have |Minimum purchase)/.test(err.message) || (isMessage(err.message, 'errors:invalid_credentials', 'errors:middleware.invalidToken', 'errors:widgetCors.invalidOrMissingBusinessId', 'errors:clock.invalidEmailOrPin', 'errors:paymentPlatform.invalidWebhookSignature', 'errors:users.invalidPaginationParams', 'errors:auth.invalidCredentials', 'errors:auth.invalidOrExpiredRefreshToken', 'errors:integrationOauth.invalidOrExpiredOauthState', 'errors:merchandiseImages.invalidFormatAcceptedJpegPngWebp', 'errors:mockAdapter.invalidWebhookSignature', 'errors:voucher.invalidDiscountType') || err.message.includes('Invalid')) || (isMessage(err.message, 'errors:token_expired', 'errors:middleware.tokenExpired', 'errors:auth.thisResetLinkIsInvalidOr', 'errors:auth.invalidOrExpiredRefreshToken', 'errors:checkout.promotionHasExpired', 'errors:customerPayment.giftCardHasExpired', 'errors:customerProfile.thisLinkHasExpiredOrIs', 'errors:eventWaitlist.waitlistEntryNotFoundNotOffered', 'errors:integrationOauth.invalidOrExpiredOauthState', 'errors:package.packageHasExpired', 'errors:widgetBooking.slotHoldExpiredOrDoesNot') || err.message.includes('expired')) || (isMessage(err.message, 'errors:checkout.promotionHasNotStartedYet') || err.message.includes('not started')) || (isMessage(err.message, 'errors:booking.bookingsCanBeMadeAtMost', 'errors:checkout.promotionHasReachedItsMaximumRedemptions') || err.message.includes('maximum')) || (isMessage(err.message, 'errors:checkout.priceOverridePromotionsCannotBeApplied') || err.message.includes('cannot be applied')) || (isMessage(err.message, 'errors:checkout.promotionCodeDoesNotApplyTo') || err.message.includes('does not apply'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
-    } else if (err.message.includes('not found') || err.message.includes('not open')) {
+    } else if (messageHas(err.message, 'not found') || (isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open'))) {
       error(res, err.message, 'CONFLICT', 409);
-    } else { error(res, 'Failed to apply promo code', 'INTERNAL_ERROR', 500); }
+    } else { error(res, msg('errors:checkout.failedToApplyPromoCode'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -260,12 +261,12 @@ checkoutRouter.put('/orders/:id/promo', requirePermission('bookings:*'), async (
 checkoutRouter.delete('/orders/:id/promo', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const order = await checkoutService.removePromoCode(req.params.id, businessId);
     success(res, order);
   } catch (err: any) {
-    if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to remove promo code', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'not found') || (isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open'))) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:checkout.failedToRemovePromoCode'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -273,12 +274,12 @@ checkoutRouter.delete('/orders/:id/promo', requirePermission('bookings:*'), asyn
 checkoutRouter.put('/orders/:id/credited-to', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const order = await checkoutService.updateOrderCreditedTo(req.params.id, businessId, req.body.credited_to || null);
     success(res, order);
   } catch (err: any) {
-    if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to update credit', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'not found') || (isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open'))) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:checkout.failedToUpdateCredit'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -286,12 +287,12 @@ checkoutRouter.put('/orders/:id/credited-to', requirePermission('bookings:*'), a
 checkoutRouter.put('/orders/:id/customer', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const order = await checkoutService.updateOrderCustomer(req.params.id, businessId, req.body.customer_id || null);
     success(res, order);
   } catch (err: any) {
-    if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to update customer', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'not found') || (isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open'))) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:checkout.failedToUpdateCustomer'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -312,7 +313,7 @@ checkoutRouter.post('/orders/:id/refund', requirePermission('bookings:*'), valid
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { refundOrderLines } = await import('../services/order-refund.service');
     const result = await refundOrderLines({
       businessId,
@@ -332,7 +333,7 @@ checkoutRouter.post('/orders/:id/refund', requirePermission('bookings:*'), valid
     };
     if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
     console.error('Failed to refund order', err?.message || err);
-    error(res, 'Failed to refund order', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:checkout.failedToRefundOrder'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -341,7 +342,7 @@ checkoutRouter.post('/orders/:id/refund', requirePermission('bookings:*'), valid
 checkoutRouter.post('/orders/:id/one-time-charge', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     // The card is charged in the browser before completion, so check stock first (spec 51, gap 7).
     const { checkOrderFits } = await import('../services/inventory.service');
     await checkOrderFits(req.params.id);
@@ -354,7 +355,7 @@ checkoutRouter.post('/orders/:id/one-time-charge', requirePermission('bookings:*
     };
     if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
     console.error('Failed to begin one-time charge', err?.message || err);
-    error(res, 'Failed to begin one-time charge', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:checkout.failedToBeginOneTimeCharge'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -363,7 +364,7 @@ checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), vali
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const order = await checkoutService.completeOrder(req.params.id, businessId, {
       paymentMethod: req.body.payment_method || 'cash',
@@ -387,8 +388,8 @@ checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), vali
     if (err?.code && PAYMENT_STATUS[err.code]) { error(res, err.message, err.code, PAYMENT_STATUS[err.code]); return; }
     // A tracked product no longer in stock (sold elsewhere since it was added): nothing was charged.
     if (err?.code === 'OUT_OF_STOCK' || err?.code === 'NOT_ENOUGH_STOCK') { error(res, err.message, err.code, 409); return; }
-    if (err.message.includes('not open') || err.message.includes('empty') || err.message === 'Order not found') { error(res, err.message, 'CONFLICT', 409); }
-    else { console.error('Failed to complete order', err?.message || err); error(res, 'Failed to complete order', 'INTERNAL_ERROR', 500); }
+    if ((isMessage(err.message, 'errors:checkout.orderNotFoundOrNotOpen', 'errors:checkout.orderIsNotOpen', 'errors:customerEvents.thisEventIsNotOpenFor', 'errors:eventRegistration.eventNotFoundOrNotOpen', 'errors:payroll.payPeriodNotFoundOrNot', 'errors:walkinPayment.orderIsNotOpen') || err.message.includes('not open')) || messageHas(err.message, 'empty') || isMessage(err.message, 'errors:checkout.orderNotFound', 'errors:inventory.orderNotFound', 'errors:orderJournal.orderNotFound', 'errors:tips.orderNotFound', 'errors:walkinPayment.orderNotFound')) { error(res, err.message, 'CONFLICT', 409); }
+    else { console.error('Failed to complete order', err?.message || err); error(res, msg('errors:checkout.failedToCompleteOrder'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -410,35 +411,35 @@ const tipSettingsOut = (s: { enabled: boolean; defaultPercent: number; maxPercen
 checkoutRouter.get('/tip-settings', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { getTipSettings } = await import('../services/tips.service');
     success(res, tipSettingsOut(await getTipSettings(businessId)));
-  } catch (err: any) { console.error('Failed to load tip settings', err?.message || err); error(res, 'Failed to load tip settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to load tip settings', err?.message || err); error(res, msg('errors:checkout.failedToLoadTipSettings'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/checkout/tip-settings?business_id=
 checkoutRouter.put('/tip-settings', requirePermission('settings:*'), validate(tipSettingsSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { setTipSettings } = await import('../services/tips.service');
     const b = req.body;
     success(res, tipSettingsOut(await setTipSettings(businessId, (req as AuthenticatedRequest).user.sub,
       { enabled: b.enabled, defaultPercent: b.default_percent, maxPercent: b.max_percent, onManual: b.on_manual, split: b.split, base: b.base })));
-  } catch (err: any) { console.error('Failed to save tip settings', err?.message || err); error(res, 'Failed to save tip settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save tip settings', err?.message || err); error(res, msg('errors:checkout.failedToSaveTipSettings'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/checkout/orders/:id/tip?business_id= — the tip, who gets it, and the staff who can
 checkoutRouter.get('/orders/:id/tip', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query('SELECT tip_amount FROM fin_orders WHERE id = $1 AND business_id = $2', [req.params.id, businessId]);
-    if (!rows[0]) { error(res, 'Order not found', 'NOT_FOUND', 404); return; }
+    if (!rows[0]) { error(res, msg('errors:checkout.orderNotFound'), 'NOT_FOUND', 404); return; }
     const { sharesFor } = await import('../services/tips.service');
     const out = await sharesFor(req.params.id);
     success(res, { tip_cents: rows[0].tip_amount, by_hand: out.byHand, shares: out.shares, staff: out.staff });
-  } catch (err: any) { console.error('Failed to load the tip', err?.message || err); error(res, 'Failed to load the tip', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to load the tip', err?.message || err); error(res, msg('errors:checkout.failedToLoadTheTip'), 'INTERNAL_ERROR', 500); }
 });
 
 const orderTipSchema = Joi.object({
@@ -455,13 +456,13 @@ const orderTipSchema = Joi.object({
 checkoutRouter.put('/orders/:id/tip', requirePermission('bookings:*'), validate(orderTipSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { setOrderTip } = await import('../services/tips.service');
     await setOrderTip({ businessId, orderId: req.params.id, tipCents: req.body.tip_cents, percent: req.body.percent ?? null, split: req.body.split ?? null });
     success(res, await checkoutService.getOrder(req.params.id));
   } catch (err: any) {
     if (err?.name === 'TipError') { error(res, err.message, err.code, err.code === 'NOT_FOUND' ? 404 : err.code === 'CONFLICT' ? 409 : 400); return; }
-    console.error('Failed to set the tip', err?.message || err); error(res, 'Failed to set the tip', 'INTERNAL_ERROR', 500);
+    console.error('Failed to set the tip', err?.message || err); error(res, msg('errors:checkout.failedToSetTheTip'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -479,11 +480,11 @@ const lineOfOrder = async (orderId: string, itemId: string, businessId: string) 
 checkoutRouter.get('/orders/:id/items/:itemId/benefits', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await lineOfOrder(req.params.id, req.params.itemId, businessId))) { error(res, 'Line not found', 'NOT_FOUND', 404); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await lineOfOrder(req.params.id, req.params.itemId, businessId))) { error(res, msg('errors:checkout.lineNotFound'), 'NOT_FOUND', 404); return; }
     const { lineOptions } = await import('../services/benefits.service');
     success(res, (await lineOptions(req.params.itemId)) || { options: [], use: null });
-  } catch (err: any) { console.error('Failed to load memberships and packages', err?.message || err); error(res, 'Failed to load memberships and packages', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to load memberships and packages', err?.message || err); error(res, msg('errors:checkout.failedToLoadMembershipsAndPackages'), 'INTERNAL_ERROR', 500); }
 });
 
 const lineBenefitSchema = Joi.object({
@@ -499,16 +500,16 @@ const lineBenefitSchema = Joi.object({
 checkoutRouter.put('/orders/:id/items/:itemId/benefit', requirePermission('bookings:*'), validate(lineBenefitSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const line = await lineOfOrder(req.params.id, req.params.itemId, businessId);
-    if (!line) { error(res, 'Line not found', 'NOT_FOUND', 404); return; }
-    if (line.status !== 'open') { error(res, 'The order is already paid.', 'CONFLICT', 409); return; }
+    if (!line) { error(res, msg('errors:checkout.lineNotFound'), 'NOT_FOUND', 404); return; }
+    if (line.status !== 'open') { error(res, msg('errors:checkout.theOrderIsAlreadyPaid'), 'CONFLICT', 409); return; }
     const { setLineBenefit } = await import('../services/benefits.service');
     await setLineBenefit(req.params.itemId, req.body.benefit, (req as AuthenticatedRequest).user.sub);
     success(res, await checkoutService.getOrder(req.params.id));
   } catch (err: any) {
     if (err?.name === 'BenefitError') { error(res, err.message, err.code, err.code === 'NOT_FOUND' ? 404 : err.code === 'NOT_COVERED' ? 409 : 400); return; }
-    console.error('Failed to set the membership or package', err?.message || err); error(res, 'Failed to set the membership or package', 'INTERNAL_ERROR', 500);
+    console.error('Failed to set the membership or package', err?.message || err); error(res, msg('errors:checkout.failedToSetTheMembershipOr'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -531,24 +532,24 @@ const tipErrorStatus = (code: string) => (code === 'NOT_FOUND' ? 404 : code === 
 checkoutRouter.get('/tip-pool', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { poolSummary, poolStaff } = await import('../services/tips.service');
     success(res, { ...(await poolSummary(businessId)), staff: await poolStaff(businessId) });
-  } catch (err: any) { console.error('Failed to load the tip pool', err?.message || err); error(res, 'Failed to load the tip pool', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to load the tip pool', err?.message || err); error(res, msg('errors:checkout.failedToLoadTheTipPool'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/checkout/tip-pool/plan?business_id= — how the pool would be shared (nothing changes)
 checkoutRouter.post('/tip-pool/plan', requirePermission('settings:*'), validate(tipPoolSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { planPool } = await import('../services/tips.service');
     const b = req.body;
     const plan = await planPool({ businessId, start: b.start, end: b.end, mode: b.mode, amounts: b.amounts });
     success(res, { total_cents: plan.total_cents, left_cents: plan.left_cents, unassigned_cents: plan.unassigned_cents, days_without_staff: plan.days_without_staff, staff: plan.staff });
   } catch (err: any) {
     if (err?.name === 'TipError') { error(res, err.message, err.code, tipErrorStatus(err.code)); return; }
-    console.error('Failed to plan the tip pool', err?.message || err); error(res, 'Failed to plan the tip pool', 'INTERNAL_ERROR', 500);
+    console.error('Failed to plan the tip pool', err?.message || err); error(res, msg('errors:checkout.failedToPlanTheTipPool'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -556,13 +557,13 @@ checkoutRouter.post('/tip-pool/plan', requirePermission('settings:*'), validate(
 checkoutRouter.post('/tip-pool/share', requirePermission('settings:*'), validate(tipPoolSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { sharePool } = await import('../services/tips.service');
     const b = req.body;
     success(res, await sharePool({ businessId, start: b.start, end: b.end, mode: b.mode, amounts: b.amounts, userId: (req as AuthenticatedRequest).user.sub }));
   } catch (err: any) {
     if (err?.name === 'TipError') { error(res, err.message, err.code, tipErrorStatus(err.code)); return; }
-    console.error('Failed to share the tip pool', err?.message || err); error(res, 'Failed to share the tip pool', 'INTERNAL_ERROR', 500);
+    console.error('Failed to share the tip pool', err?.message || err); error(res, msg('errors:checkout.failedToShareTheTipPool'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -571,25 +572,25 @@ checkoutRouter.put('/orders/:id/location', requirePermission('bookings:*'), asyn
   try {
     const businessId = req.query.business_id as string;
     const locationId = req.body?.location_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!/^[0-9a-f-]{36}$/i.test(locationId || '')) { error(res, 'Choose a location of this business.', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!/^[0-9a-f-]{36}$/i.test(locationId || '')) { error(res, msg('errors:checkout.chooseALocationOfThisBusiness'), 'VALIDATION_ERROR', 400); return; }
     const { rows: loc } = await adminPool.query('SELECT 1 FROM sys_locations WHERE id = $1 AND business_id = $2', [locationId, businessId]);
-    if (!loc[0]) { error(res, 'Choose a location of this business.', 'VALIDATION_ERROR', 400); return; }
+    if (!loc[0]) { error(res, msg('errors:checkout.chooseALocationOfThisBusiness'), 'VALIDATION_ERROR', 400); return; }
     const { rowCount } = await adminPool.query(
       "UPDATE fin_orders SET location_id = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3 AND status = 'open'", [locationId, req.params.id, businessId]);
-    if (!rowCount) { error(res, 'Order not found or not open', 'CONFLICT', 409); return; }
+    if (!rowCount) { error(res, msg('errors:checkout.orderNotFoundOrNotOpen'), 'CONFLICT', 409); return; }
     success(res, await checkoutService.getOrder(req.params.id));
-  } catch (err: any) { console.error('Failed to set order location', err?.message || err); error(res, 'Failed to set the location', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to set order location', err?.message || err); error(res, msg('errors:checkout.failedToSetTheLocation'), 'INTERNAL_ERROR', 500); }
 });
 // PUT /api/v1/checkout/orders/:id/void — Void an open order
 checkoutRouter.put('/orders/:id/void', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:checkout.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const order = await checkoutService.voidOrder(req.params.id, businessId);
     success(res, order);
   } catch (err: any) {
-    if (err.message.includes('not found') || err.message.includes('cannot be voided')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to void order', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'not found') || (isMessage(err.message, 'errors:paymentPlatform.invoiceNotFoundOrCannotBe', 'errors:checkout.orderNotFoundOrCannotBe') || err.message.includes('cannot be voided'))) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:checkout.failedToVoidOrder'), 'INTERNAL_ERROR', 500); }
   }
 });

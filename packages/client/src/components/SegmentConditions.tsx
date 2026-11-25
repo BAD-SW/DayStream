@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { lifecycleStageLabel, LIFECYCLE_STAGES, PERSON_SOURCE_LABELS } from '@daystream/shared';
 import { Button } from '../design-system/components/actions/Button';
 import { getTags } from '../api/customers';
@@ -8,11 +10,15 @@ import { getLocations } from '../api/locations';
 import { getResources } from '../api/resources';
 import { getEventTypes, getEvents } from '../api/events';
 import { getPlans } from '../api/memberships';
+import { formatDay } from '../utils/format';
 
 /**
  * The segment builder (THE-18, David 2026-11-04, Inbox Proposals part 3): one line per condition,
  * "match all" or "match any", and groups ("any of" inside "all of"). Used for People segments and
  * so for the Inbox, which uses the same segments.
+ *
+ * The words shown come from the customers translation file: cond.field.<id> (what a condition is
+ * about), cond.group.<group>, and cond.* for the controls.
  */
 
 export type Rule = { field: string; operator: string; value?: any };
@@ -20,41 +26,54 @@ export type Rules = { logic: 'AND' | 'OR'; rules: Rule[] };
 
 type Option = { value: string; label: string };
 type Kind = 'choice' | 'text' | 'date' | 'yesno' | 'count' | 'complex';
-interface FieldDef { id: string; label: string; group: string; kind: Kind; options?: Option[]; neverAllowed?: boolean }
+type Group = 'person' | 'visits' | 'membership' | 'contact';
+/** `options` are the stored values of a choice; their words come from optionLabel. */
+interface FieldDef { id: string; group: Group; kind: Kind; options?: string[]; neverAllowed?: boolean }
 
 export const FIELDS: FieldDef[] = [
-  { id: 'lifecycle_stage', label: 'Stage', group: 'Person', kind: 'choice', options: LIFECYCLE_STAGES.map((s) => ({ value: s, label: lifecycleStageLabel(s) })) },
-  { id: 'source', label: 'Source', group: 'Person', kind: 'choice', options: Object.entries(PERSON_SOURCE_LABELS).map(([value, label]) => ({ value, label })) },
-  { id: 'gender', label: 'Gender', group: 'Person', kind: 'choice', options: [{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }] },
-  { id: 'created_at', label: 'Joined', group: 'Person', kind: 'complex' },
-  { id: 'birthday', label: 'Birthday', group: 'Person', kind: 'complex' },
-  { id: 'age', label: 'Age', group: 'Person', kind: 'complex' },
-  { id: 'tags', label: 'Tags', group: 'Person', kind: 'complex' },
-  { id: 'address', label: 'Address', group: 'Person', kind: 'complex' },
-  { id: 'country', label: 'Country', group: 'Person', kind: 'text' },
-  { id: 'email', label: 'Email', group: 'Person', kind: 'text' },
-  { id: 'incomplete', label: 'Details incomplete', group: 'Person', kind: 'yesno' },
-  { id: 'has_account', label: 'Has a login account', group: 'Person', kind: 'yesno' },
-  { id: 'has_owner', label: 'Has an owner', group: 'Person', kind: 'yesno' },
-  { id: 'visits', label: 'Visits', group: 'Visits & bookings', kind: 'complex' },
-  { id: 'future_bookings', label: 'Future bookings', group: 'Visits & bookings', kind: 'complex' },
-  { id: 'upcoming_event', label: 'Has an upcoming class or event booking', group: 'Visits & bookings', kind: 'yesno' },
-  { id: 'service', label: 'Service booked', group: 'Visits & bookings', kind: 'complex' },
-  { id: 'location', label: 'Location (of the business)', group: 'Visits & bookings', kind: 'complex' },
-  { id: 'resource', label: 'Resource (room, equipment)', group: 'Visits & bookings', kind: 'complex' },
-  { id: 'last_visit_at', label: 'Last visit', group: 'Visits & bookings', kind: 'date', neverAllowed: true },
-  { id: 'membership', label: 'Membership', group: 'Membership', kind: 'complex' },
-  { id: 'last_contacted', label: 'Last contacted', group: 'Contact', kind: 'complex' },
-  { id: 'last_activity_at', label: 'Last activity', group: 'Contact', kind: 'date', neverAllowed: true },
-  { id: 'last_login_at', label: 'Last login', group: 'Contact', kind: 'date', neverAllowed: true },
-  { id: 'consent.email', label: 'Agreed to email marketing', group: 'Contact', kind: 'yesno' },
-  { id: 'consent.sms', label: 'Agreed to SMS marketing', group: 'Contact', kind: 'yesno' },
-  { id: 'consent.whatsapp', label: 'Agreed to WhatsApp marketing', group: 'Contact', kind: 'yesno' },
+  { id: 'lifecycle_stage', group: 'person', kind: 'choice', options: [...LIFECYCLE_STAGES] },
+  { id: 'source', group: 'person', kind: 'choice', options: Object.keys(PERSON_SOURCE_LABELS) },
+  { id: 'gender', group: 'person', kind: 'choice', options: ['male', 'female', 'other'] },
+  { id: 'created_at', group: 'person', kind: 'complex' },
+  { id: 'birthday', group: 'person', kind: 'complex' },
+  { id: 'age', group: 'person', kind: 'complex' },
+  { id: 'tags', group: 'person', kind: 'complex' },
+  { id: 'address', group: 'person', kind: 'complex' },
+  { id: 'country', group: 'person', kind: 'text' },
+  { id: 'email', group: 'person', kind: 'text' },
+  { id: 'incomplete', group: 'person', kind: 'yesno' },
+  { id: 'has_account', group: 'person', kind: 'yesno' },
+  { id: 'has_owner', group: 'person', kind: 'yesno' },
+  { id: 'visits', group: 'visits', kind: 'complex' },
+  { id: 'future_bookings', group: 'visits', kind: 'complex' },
+  { id: 'upcoming_event', group: 'visits', kind: 'yesno' },
+  { id: 'service', group: 'visits', kind: 'complex' },
+  { id: 'location', group: 'visits', kind: 'complex' },
+  { id: 'resource', group: 'visits', kind: 'complex' },
+  { id: 'last_visit_at', group: 'visits', kind: 'date', neverAllowed: true },
+  { id: 'membership', group: 'membership', kind: 'complex' },
+  { id: 'last_contacted', group: 'contact', kind: 'complex' },
+  { id: 'last_activity_at', group: 'contact', kind: 'date', neverAllowed: true },
+  { id: 'last_login_at', group: 'contact', kind: 'date', neverAllowed: true },
+  { id: 'consent.email', group: 'contact', kind: 'yesno' },
+  { id: 'consent.sms', group: 'contact', kind: 'yesno' },
+  { id: 'consent.whatsapp', group: 'contact', kind: 'yesno' },
   // Older single-purpose rules, kept so existing segments still read well.
-  { id: 'birthday_this_month', label: 'Birthday this month', group: 'Person', kind: 'yesno' },
-  { id: 'created_this_month', label: 'Added this month', group: 'Person', kind: 'yesno' },
-  { id: 'birth_month', label: 'Birth month', group: 'Person', kind: 'text' },
+  { id: 'birthday_this_month', group: 'person', kind: 'yesno' },
+  { id: 'created_this_month', group: 'person', kind: 'yesno' },
+  { id: 'birth_month', group: 'person', kind: 'text' },
 ];
+const GROUP_ORDER: Group[] = ['person', 'visits', 'membership', 'contact'];
+
+const fieldLabel = (t: TFunction, id: string) => t('cond.field.' + id, { defaultValue: id });
+/** The words for one stored value of a choice field (stage, source, gender). */
+function optionLabel(t: TFunction, field: string, value: string): string {
+  if (field === 'lifecycle_stage') return t('stage.' + value, { defaultValue: lifecycleStageLabel(value) });
+  if (field === 'source') return t('source.' + value, { defaultValue: PERSON_SOURCE_LABELS[value] ?? value });
+  return t('cond.gender.' + value, { defaultValue: value });
+}
+/** A stored date ("2026-11-24") in the language and format shown. */
+const day = (x: unknown) => formatDay(typeof x === 'string' ? x : null) || String(x ?? '');
 
 /** A sensible first condition for a field. */
 export function newRule(field: string): Rule {
@@ -75,7 +94,7 @@ export function newRule(field: string): Rule {
   }
   if (f.kind === 'yesno') return { field, operator: 'is_true' };
   if (f.kind === 'date') return { field, operator: 'within_days', value: 30 };
-  if (f.kind === 'choice') return { field, operator: 'eq', value: f.options?.[0]?.value };
+  if (f.kind === 'choice') return { field, operator: 'eq', value: f.options?.[0] };
   return { field, operator: 'eq', value: '' };
 }
 
@@ -120,142 +139,146 @@ function Select({ value, onChange, options, label, empty }: { value: any; onChan
     </select>
   );
 }
-const COUNT_OPS: Option[] = [{ value: 'gt', label: 'more than' }, { value: 'lt', label: 'less than' }, { value: 'eq', label: 'exactly' }];
+const countOps = (t: TFunction): Option[] => [{ value: 'gt', label: t('cond.countOp.gt') }, { value: 'lt', label: t('cond.countOp.lt') }, { value: 'eq', label: t('cond.countOp.eq') }];
 
 /** One condition line: what it is about, and its controls. */
 function Condition({ rule, onChange, onRemove, lk }: { rule: Rule; onChange: (r: Rule) => void; onRemove: () => void; lk: Lookups }) {
+  const { t } = useTranslation('customers');
   const f = FIELDS.find((x) => x.id === rule.field);
   const v = rule.value ?? {};
   const setV = (patch: any) => onChange({ ...rule, value: { ...v, ...patch } });
   const num = (key: string, label: string, ph = '') => <input type="number" min={0} style={{ ...st.ctl, ...st.num }} aria-label={label} placeholder={ph} value={v[key] ?? ''} onChange={(e) => setV({ [key]: e.target.value === '' ? '' : Number(e.target.value) })} />;
   const text = (key: string, label: string) => <input style={st.ctl} aria-label={label} placeholder={label} value={v[key] ?? ''} onChange={(e) => setV({ [key]: e.target.value })} />;
+  const days = t('cond.days');
   let body: React.ReactNode = null;
 
   switch (rule.field) {
     case 'visits':
       body = <>
-        <Select label="How many" value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={COUNT_OPS} />{num('count', 'Number of visits')}
-        <span style={st.muted}>in the last</span>{num('within_days', 'Days', 'any')}<span style={st.muted}>days</span>
-        <Select label="Service" value={v.service_id} onChange={(x) => setV({ service_id: x })} options={lk.services} empty="any service" />
-        <Select label="Staff" value={v.staff_id} onChange={(x) => setV({ staff_id: x })} options={lk.staff} empty="any staff" />
-        <Select label="Location" value={v.location_id} onChange={(x) => setV({ location_id: x })} options={lk.locations} empty="any location" />
-        <Select label="Membership used" value={v.membership_plan_id} onChange={(x) => setV({ membership_plan_id: x })} options={lk.plans} empty="any membership" />
-        <Select label="Event type" value={v.event_type_id} onChange={(x) => setV({ event_type_id: x })} options={lk.eventTypes} empty="any event type" />
-        <Select label="Event" value={v.event_id} onChange={(x) => setV({ event_id: x })} options={lk.events} empty="any event" />
-        <label style={st.muted}><input type="checkbox" checked={!!v.recurring} onChange={(e) => setV({ recurring: e.target.checked })} /> recurring events only</label>
+        <Select label={t('cond.l.howMany')} value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={countOps(t)} />{num('count', t('cond.l.numberOfVisits'))}
+        <span style={st.muted}>{t('cond.inTheLast')}</span>{num('within_days', days, t('cond.any'))}<span style={st.muted}>{t('cond.daysUnit')}</span>
+        <Select label={t('cond.l.service')} value={v.service_id} onChange={(x) => setV({ service_id: x })} options={lk.services} empty={t('cond.anyService')} />
+        <Select label={t('cond.l.staff')} value={v.staff_id} onChange={(x) => setV({ staff_id: x })} options={lk.staff} empty={t('cond.anyStaff')} />
+        <Select label={t('cond.l.location')} value={v.location_id} onChange={(x) => setV({ location_id: x })} options={lk.locations} empty={t('cond.anyLocation')} />
+        <Select label={t('cond.l.membershipUsed')} value={v.membership_plan_id} onChange={(x) => setV({ membership_plan_id: x })} options={lk.plans} empty={t('cond.anyMembership')} />
+        <Select label={t('cond.l.eventType')} value={v.event_type_id} onChange={(x) => setV({ event_type_id: x })} options={lk.eventTypes} empty={t('cond.anyEventType')} />
+        <Select label={t('cond.l.event')} value={v.event_id} onChange={(x) => setV({ event_id: x })} options={lk.events} empty={t('cond.anyEvent')} />
+        <label style={st.muted}><input type="checkbox" checked={!!v.recurring} onChange={(e) => setV({ recurring: e.target.checked })} /> {t('cond.recurringOnly')}</label>
       </>;
       break;
     case 'future_bookings':
-      body = <><Select label="How many" value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={COUNT_OPS} />{num('count', 'Number of bookings')}<span style={st.muted}>within</span>{num('within_days', 'Days', 'any')}<span style={st.muted}>days</span></>;
+      body = <><Select label={t('cond.l.howMany')} value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={countOps(t)} />{num('count', t('cond.l.numberOfBookings'))}<span style={st.muted}>{t('cond.within')}</span>{num('within_days', days, t('cond.any'))}<span style={st.muted}>{t('cond.daysUnit')}</span></>;
       break;
     case 'birthday':
       body = <>
-        <Select label="Birthday" value={v.mode} onChange={(m) => setV({ mode: m })} options={[{ value: 'next_month', label: 'next month' }, { value: 'this_month', label: 'this month' }, { value: 'next_days', label: 'in the next … days' }, { value: 'date', label: 'on a day' }, { value: 'between', label: 'between two days' }]} />
-        {v.mode === 'next_days' && <>{num('days', 'Days')}<span style={st.muted}>days</span></>}
-        {v.mode === 'date' && <input type="date" style={st.ctl} aria-label="Day" value={v.date ?? ''} onChange={(e) => setV({ date: e.target.value })} />}
-        {v.mode === 'between' && <><input type="date" style={st.ctl} aria-label="From" value={v.from ?? ''} onChange={(e) => setV({ from: e.target.value })} /><span style={st.muted}>to</span><input type="date" style={st.ctl} aria-label="To" value={v.to ?? ''} onChange={(e) => setV({ to: e.target.value })} /></>}
-        <span style={st.muted}>{v.mode === 'next_month' ? 'follows the calendar: in December it means January' : 'the year does not matter'}</span>
+        <Select label={t('cond.l.birthday')} value={v.mode} onChange={(m) => setV({ mode: m })} options={[{ value: 'next_month', label: t('cond.bday.nextMonth') }, { value: 'this_month', label: t('cond.bday.thisMonth') }, { value: 'next_days', label: t('cond.bday.nextDays') }, { value: 'date', label: t('cond.bday.date') }, { value: 'between', label: t('cond.bday.between') }]} />
+        {v.mode === 'next_days' && <>{num('days', days)}<span style={st.muted}>{t('cond.daysUnit')}</span></>}
+        {v.mode === 'date' && <input type="date" style={st.ctl} aria-label={t('cond.l.day')} value={v.date ?? ''} onChange={(e) => setV({ date: e.target.value })} />}
+        {v.mode === 'between' && <><input type="date" style={st.ctl} aria-label={t('cond.l.from')} value={v.from ?? ''} onChange={(e) => setV({ from: e.target.value })} /><span style={st.muted}>{t('cond.to')}</span><input type="date" style={st.ctl} aria-label={t('cond.l.to')} value={v.to ?? ''} onChange={(e) => setV({ to: e.target.value })} /></>}
+        <span style={st.muted}>{v.mode === 'next_month' ? t('cond.bday.calendarNote') : t('cond.bday.yearNote')}</span>
       </>;
       break;
     case 'age':
-      body = <><span style={st.muted}>between</span>{num('min', 'From age')}<span style={st.muted}>and</span>{num('max', 'To age')}<span style={st.muted}>years</span></>;
+      body = <><span style={st.muted}>{t('cond.between')}</span>{num('min', t('cond.l.fromAge'))}<span style={st.muted}>{t('cond.and')}</span>{num('max', t('cond.l.toAge'))}<span style={st.muted}>{t('cond.years')}</span></>;
       break;
     case 'tags':
       body = <>
-        <Select label="Tag match" value={v.mode} onChange={(m) => setV({ mode: m })} options={[{ value: 'any', label: 'has any of' }, { value: 'all', label: 'has all of' }, { value: 'none', label: 'has none of' }]} />
-        {lk.tags.map((t) => (
-          <label key={t.value} style={{ ...st.muted, display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-            <input type="checkbox" checked={(v.tag_ids || []).includes(t.value)} onChange={(e) => setV({ tag_ids: e.target.checked ? [...(v.tag_ids || []), t.value] : (v.tag_ids || []).filter((x: string) => x !== t.value) })} />{t.label}
+        <Select label={t('cond.l.tagMatch')} value={v.mode} onChange={(m) => setV({ mode: m })} options={[{ value: 'any', label: t('cond.tags.any') }, { value: 'all', label: t('cond.tags.all') }, { value: 'none', label: t('cond.tags.none') }]} />
+        {lk.tags.map((tg) => (
+          <label key={tg.value} style={{ ...st.muted, display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+            <input type="checkbox" checked={(v.tag_ids || []).includes(tg.value)} onChange={(e) => setV({ tag_ids: e.target.checked ? [...(v.tag_ids || []), tg.value] : (v.tag_ids || []).filter((x: string) => x !== tg.value) })} />{tg.label}
           </label>
         ))}
-        {lk.tags.length === 0 && <span style={st.muted}>No tags yet</span>}
+        {lk.tags.length === 0 && <span style={st.muted}>{t('cond.noTags')}</span>}
       </>;
       break;
     case 'address':
-      body = <>{text('street', 'Street')}{text('city', 'City')}{text('postcode', 'Postcode')}{text('country', 'Country')}<span style={st.muted}>any filled field; similar spellings match</span></>;
+      body = <>{text('street', t('cond.l.street'))}{text('city', t('cond.l.city'))}{text('postcode', t('cond.l.postcode'))}{text('country', t('cond.l.country'))}<span style={st.muted}>{t('cond.addressNote')}</span></>;
       break;
     case 'membership':
       body = <>
-        <Select label="Plan" value={v.plan_id} onChange={(x) => setV({ plan_id: x })} options={lk.plans} empty="Choose a plan…" />
-        <Select label="State" value={v.state} onChange={(x) => setV({ state: x })} options={[{ value: 'active', label: 'is active' }, { value: 'cancelled', label: 'was cancelled' }, { value: 'expired', label: 'expired' }, { value: 'never', label: 'never had it' }, { value: 'not_active', label: "doesn't have it active" }]} />
+        <Select label={t('cond.l.plan')} value={v.plan_id} onChange={(x) => setV({ plan_id: x })} options={lk.plans} empty={t('cond.choosePlan')} />
+        <Select label={t('cond.l.state')} value={v.state} onChange={(x) => setV({ state: x })} options={[{ value: 'active', label: t('cond.member.active') }, { value: 'cancelled', label: t('cond.member.cancelled') }, { value: 'expired', label: t('cond.member.expired') }, { value: 'never', label: t('cond.member.never') }, { value: 'not_active', label: t('cond.member.notActive') }]} />
       </>;
       break;
     case 'last_contacted':
       body = <>
-        <Select label="When" value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'within_days', label: 'in the last' }, { value: 'older_than_days', label: 'more than … ago' }, { value: 'between', label: 'between' }, { value: 'never', label: 'never' }]} />
-        {(rule.operator === 'within_days' || rule.operator === 'older_than_days') && <>{num('days', 'Days')}<span style={st.muted}>days</span></>}
-        {rule.operator === 'between' && <><input type="date" style={st.ctl} aria-label="From" value={v.from ?? ''} onChange={(e) => setV({ from: e.target.value })} /><input type="date" style={st.ctl} aria-label="To" value={v.to ?? ''} onChange={(e) => setV({ to: e.target.value })} /></>}
-        <Select label="Channel" value={v.channel} onChange={(x) => setV({ channel: x })} options={[{ value: 'email', label: 'by email' }, { value: 'in_app', label: 'in-app' }, { value: 'sms', label: 'by SMS' }]} empty="any channel" />
-        <span style={st.muted}>automatic messages count</span>
+        <Select label={t('cond.l.when')} value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'within_days', label: t('cond.inTheLast') }, { value: 'older_than_days', label: t('cond.moreThanAgo') }, { value: 'between', label: t('cond.between') }, { value: 'never', label: t('cond.never') }]} />
+        {(rule.operator === 'within_days' || rule.operator === 'older_than_days') && <>{num('days', days)}<span style={st.muted}>{t('cond.daysUnit')}</span></>}
+        {rule.operator === 'between' && <><input type="date" style={st.ctl} aria-label={t('cond.l.from')} value={v.from ?? ''} onChange={(e) => setV({ from: e.target.value })} /><input type="date" style={st.ctl} aria-label={t('cond.l.to')} value={v.to ?? ''} onChange={(e) => setV({ to: e.target.value })} /></>}
+        <Select label={t('cond.l.channel')} value={v.channel} onChange={(x) => setV({ channel: x })} options={[{ value: 'email', label: t('cond.channel.email') }, { value: 'in_app', label: t('cond.channel.inApp') }, { value: 'sms', label: t('cond.channel.sms') }]} empty={t('cond.anyChannel')} />
+        <span style={st.muted}>{t('cond.automaticCount')}</span>
       </>;
       break;
     case 'service':
-      body = <><Select label="Service" value={v.service_id} onChange={(x) => setV({ service_id: x })} options={lk.services} empty="Choose a service…" /><Select label="When" value={v.when} onChange={(x) => setV({ when: x })} options={[{ value: 'past', label: 'past only' }, { value: 'future', label: 'future only' }]} empty="past or future" /></>;
+      body = <><Select label={t('cond.l.service')} value={v.service_id} onChange={(x) => setV({ service_id: x })} options={lk.services} empty={t('cond.chooseService')} /><Select label={t('cond.l.when')} value={v.when} onChange={(x) => setV({ when: x })} options={[{ value: 'past', label: t('cond.pastOnly') }, { value: 'future', label: t('cond.futureOnly') }]} empty={t('cond.pastOrFuture')} /></>;
       break;
     case 'location':
-      body = <Select label="Location" value={v.location_id} onChange={(x) => setV({ location_id: x })} options={lk.locations} empty="Choose a location…" />;
+      body = <Select label={t('cond.l.location')} value={v.location_id} onChange={(x) => setV({ location_id: x })} options={lk.locations} empty={t('cond.chooseLocation')} />;
       break;
     case 'resource':
-      body = <Select label="Resource" value={v.resource_id} onChange={(x) => setV({ resource_id: x })} options={lk.resources} empty="Choose a resource…" />;
+      body = <Select label={t('cond.l.resource')} value={v.resource_id} onChange={(x) => setV({ resource_id: x })} options={lk.resources} empty={t('cond.chooseResource')} />;
       break;
     case 'created_at':
-      body = <><Select label="When" value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o, value: o === 'within_days' ? 30 : '' })} options={[{ value: 'gte', label: 'on or after' }, { value: 'lte', label: 'on or before' }, { value: 'within_days', label: 'in the last (days)' }]} />
+      body = <><Select label={t('cond.l.when')} value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o, value: o === 'within_days' ? 30 : '' })} options={[{ value: 'gte', label: t('cond.onOrAfter') }, { value: 'lte', label: t('cond.onOrBefore') }, { value: 'within_days', label: t('cond.inTheLastDays') }]} />
         {rule.operator === 'within_days'
-          ? <input type="number" min={0} style={{ ...st.ctl, ...st.num }} aria-label="Days" value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: Number(e.target.value) })} />
-          : <input type="date" style={st.ctl} aria-label="Date" value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: e.target.value })} />}</>;
+          ? <input type="number" min={0} style={{ ...st.ctl, ...st.num }} aria-label={days} value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: Number(e.target.value) })} />
+          : <input type="date" style={st.ctl} aria-label={t('cond.l.date')} value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: e.target.value })} />}</>;
       break;
     default:
-      if (f?.kind === 'yesno') body = <Select label="Yes or no" value={rule.operator} onChange={(o) => onChange({ field: rule.field, operator: o })} options={[{ value: 'is_true', label: 'yes' }, { value: 'is_false', label: 'no' }]} />;
-      else if (f?.kind === 'choice') body = <><Select label="Condition" value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }]} /><Select label="Value" value={rule.value} onChange={(x) => onChange({ ...rule, value: x })} options={f.options || []} /></>;
-      else if (f?.kind === 'date') body = <><Select label="When" value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'within_days', label: 'in the last (days)' }, { value: 'older_than_days', label: 'more than (days) ago' }, ...(f.neverAllowed ? [{ value: 'never', label: 'never' }] : [])]} />
-        {rule.operator !== 'never' && <input type="number" min={0} style={{ ...st.ctl, ...st.num }} aria-label="Days" value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: Number(e.target.value) })} />}</>;
-      else body = <><Select label="Condition" value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'eq', label: 'is' }, { value: 'contains', label: 'contains' }]} /><input style={st.ctl} aria-label="Value" value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: e.target.value })} /></>;
+      if (f?.kind === 'yesno') body = <Select label={t('cond.l.yesOrNo')} value={rule.operator} onChange={(o) => onChange({ field: rule.field, operator: o })} options={[{ value: 'is_true', label: t('cond.yes') }, { value: 'is_false', label: t('cond.no') }]} />;
+      else if (f?.kind === 'choice') body = <><Select label={t('cond.l.condition')} value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'eq', label: t('cond.is') }, { value: 'neq', label: t('cond.isNot') }]} /><Select label={t('cond.l.value')} value={rule.value} onChange={(x) => onChange({ ...rule, value: x })} options={(f.options || []).map((o) => ({ value: o, label: optionLabel(t, f.id, o) }))} /></>;
+      else if (f?.kind === 'date') body = <><Select label={t('cond.l.when')} value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'within_days', label: t('cond.inTheLastDays') }, { value: 'older_than_days', label: t('cond.moreThanDaysAgo') }, ...(f.neverAllowed ? [{ value: 'never', label: t('cond.never') }] : [])]} />
+        {rule.operator !== 'never' && <input type="number" min={0} style={{ ...st.ctl, ...st.num }} aria-label={days} value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: Number(e.target.value) })} />}</>;
+      else body = <><Select label={t('cond.l.condition')} value={rule.operator} onChange={(o) => onChange({ ...rule, operator: o })} options={[{ value: 'eq', label: t('cond.is') }, { value: 'contains', label: t('cond.contains') }]} /><input style={st.ctl} aria-label={t('cond.l.value')} value={rule.value ?? ''} onChange={(e) => onChange({ ...rule, value: e.target.value })} /></>;
   }
+  const name = f ? fieldLabel(t, f.id) : rule.field;
   return (
     <div style={st.row}>
-      <span style={st.what}>{f?.label || rule.field}</span>
+      <span style={st.what}>{name}</span>
       {body}
-      <button type="button" style={st.x} aria-label={`Remove condition: ${f?.label || rule.field}`} onClick={onRemove}>✕</button>
+      <button type="button" style={st.x} aria-label={t('cond.removeCondition', { name })} onClick={onRemove}>✕</button>
     </div>
   );
 }
 
 function AddCondition({ onAdd, allowGroup }: { onAdd: (r: Rule) => void; allowGroup: boolean }) {
-  const groups = Array.from(new Set(FIELDS.map((f) => f.group)));
+  const { t } = useTranslation('customers');
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      <select style={st.ctl} aria-label="Add condition" value="" onChange={(e) => { if (e.target.value) onAdd(newRule(e.target.value)); }}>
-        <option value="">+ Add condition…</option>
-        {groups.map((g) => <optgroup key={g} label={g}>{FIELDS.filter((f) => f.group === g && !['birthday_this_month', 'created_this_month', 'birth_month'].includes(f.id)).map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</optgroup>)}
+      <select style={st.ctl} aria-label={t('cond.addCondition')} value="" onChange={(e) => { if (e.target.value) onAdd(newRule(e.target.value)); }}>
+        <option value="">{t('cond.addConditionOption')}</option>
+        {GROUP_ORDER.map((g) => <optgroup key={g} label={t('cond.group.' + g)}>{FIELDS.filter((f) => f.group === g && !['birthday_this_month', 'created_this_month', 'birth_month'].includes(f.id)).map((f) => <option key={f.id} value={f.id}>{fieldLabel(t, f.id)}</option>)}</optgroup>)}
       </select>
-      {allowGroup && <Button size="sm" variant="ghost" onClick={() => onAdd({ field: 'group', operator: 'eq', value: { logic: 'OR', rules: [] } })}>+ Group (any of)</Button>}
+      {allowGroup && <Button size="sm" variant="ghost" onClick={() => onAdd({ field: 'group', operator: 'eq', value: { logic: 'OR', rules: [] } })}>{t('cond.addGroup')}</Button>}
     </div>
   );
 }
 
 /** The whole builder: lines, match all / any, groups one level deep. */
 export function SegmentConditions({ value, onChange, businessId }: { value: Rules; onChange: (r: Rules) => void; businessId: string }) {
+  const { t } = useTranslation('customers');
   const lk = useLookups(businessId);
   const setRule = (i: number, r: Rule) => onChange({ ...value, rules: value.rules.map((x, j) => (j === i ? r : x)) });
   const remove = (i: number) => onChange({ ...value, rules: value.rules.filter((_, j) => j !== i) });
   return (
     <div style={{ display: 'grid', gap: 6 }}>
       <label style={{ ...st.muted, display: 'flex', gap: 6, alignItems: 'center' }}>
-        Match
-        <select style={st.ctl} aria-label="How conditions combine" value={value.logic} onChange={(e) => onChange({ ...value, logic: e.target.value as 'AND' | 'OR' })}>
-          <option value="AND">all</option><option value="OR">any</option>
+        {t('cond.match')}
+        <select style={st.ctl} aria-label={t('cond.howCombine')} value={value.logic} onChange={(e) => onChange({ ...value, logic: e.target.value as 'AND' | 'OR' })}>
+          <option value="AND">{t('cond.all')}</option><option value="OR">{t('cond.anyOf')}</option>
         </select>
-        of these conditions
+        {t('cond.ofTheseConditions')}
       </label>
       {value.rules.map((r, i) => r.field === 'group' ? (
         <div key={i} style={st.group}>
           <label style={{ ...st.muted, display: 'flex', gap: 6, alignItems: 'center' }}>
-            Group: match
-            <select style={st.ctl} aria-label="How the group's conditions combine" value={r.value?.logic || 'OR'} onChange={(e) => setRule(i, { ...r, value: { ...r.value, logic: e.target.value } })}>
-              <option value="OR">any</option><option value="AND">all</option>
+            {t('cond.groupMatch')}
+            <select style={st.ctl} aria-label={t('cond.howGroupCombine')} value={r.value?.logic || 'OR'} onChange={(e) => setRule(i, { ...r, value: { ...r.value, logic: e.target.value } })}>
+              <option value="OR">{t('cond.anyOf')}</option><option value="AND">{t('cond.all')}</option>
             </select>
-            of
-            <button type="button" style={st.x} aria-label="Remove group" onClick={() => remove(i)}>✕</button>
+            {t('cond.of')}
+            <button type="button" style={st.x} aria-label={t('cond.removeGroup')} onClick={() => remove(i)}>✕</button>
           </label>
           {(r.value?.rules || []).map((g: Rule, k: number) => (
             <Condition key={k} rule={g} lk={lk}
@@ -273,30 +296,47 @@ export function SegmentConditions({ value, onChange, businessId }: { value: Rule
 }
 
 /** A condition in plain words, for the segment list. */
-export function describeRules(rules: Rules | undefined | null): string {
+export function describeRules(rules: Rules | undefined | null, t: TFunction): string {
   if (!rules?.rules?.length) return '';
+  const and = ` ${t('cond.and')} `;
+  const or = ` ${t('cond.or')} `;
   const one = (r: Rule): string => {
-    if (r.field === 'group') return `(${(r.value?.rules || []).map(one).join(r.value?.logic === 'AND' ? ' and ' : ' or ')})`;
-    const f = FIELDS.find((x) => x.id === r.field); const label = f?.label || r.field; const v = r.value ?? {};
+    if (r.field === 'group') return `(${(r.value?.rules || []).map(one).join(r.value?.logic === 'AND' ? and : or)})`;
+    const f = FIELDS.find((x) => x.id === r.field); const label = f ? fieldLabel(t, f.id) : r.field; const v = r.value ?? {};
     switch (r.field) {
-      case 'visits': case 'future_bookings': return `${label} ${({ gt: 'more than', lt: 'less than', eq: 'exactly' } as any)[r.operator] || r.operator} ${v.count}${v.within_days ? ` (${v.within_days} days)` : ''}`;
-      case 'birthday': return `Birthday ${({ next_month: 'next month', this_month: 'this month', next_days: `in the next ${v.days} days`, date: `on ${v.date}`, between: `between ${v.from} and ${v.to}` } as any)[v.mode] || ''}`;
-      case 'age': return `Age ${v.min || '…'}–${v.max || '…'}`;
-      case 'tags': return `Tags: ${v.mode} of ${(v.tag_ids || []).length}`;
-      case 'address': return `Address: ${[v.street, v.city, v.postcode, v.country].filter(Boolean).join(', ')}`;
-      case 'membership': return `Membership ${v.state}`;
-      case 'last_contacted': return `Last contacted ${r.operator === 'never' ? 'never' : r.operator === 'between' ? `${v.from}–${v.to}` : `${r.operator === 'within_days' ? 'in the last' : 'more than'} ${v.days} days`}`;
+      case 'visits': case 'future_bookings': {
+        const op = t('cond.countOp.' + r.operator, { defaultValue: r.operator });
+        return v.within_days
+          ? t('cond.describe.countDays', { label, op, n: v.count, days: v.within_days })
+          : t('cond.describe.count', { label, op, n: v.count });
+      }
+      case 'birthday': {
+        const when: Record<string, string> = {
+          next_month: t('cond.describe.nextMonth'), this_month: t('cond.describe.thisMonth'),
+          next_days: t('cond.describe.nextDays', { days: v.days }), date: t('cond.describe.onDate', { date: day(v.date) }),
+          between: t('cond.describe.betweenDays', { from: day(v.from), to: day(v.to) }),
+        };
+        return t('cond.describe.birthday', { when: when[v.mode] || '' });
+      }
+      case 'age': return t('cond.describe.age', { min: v.min || '…', max: v.max || '…' });
+      case 'tags': return t('cond.describe.tags', { mode: t('cond.describe.tagMode.' + v.mode, { defaultValue: v.mode }), n: (v.tag_ids || []).length });
+      case 'address': return t('cond.describe.address', { parts: [v.street, v.city, v.postcode, v.country].filter(Boolean).join(', ') });
+      case 'membership': return t('cond.describe.membership', { state: t('cond.describe.memberState.' + v.state, { defaultValue: v.state }) });
+      case 'last_contacted':
+        if (r.operator === 'never') return t('cond.describe.contactedNever');
+        if (r.operator === 'between') return t('cond.describe.contactedBetween', { from: day(v.from), to: day(v.to) });
+        return r.operator === 'within_days' ? t('cond.describe.contactedWithin', { days: v.days }) : t('cond.describe.contactedOlder', { days: v.days });
       case 'service': case 'location': case 'resource': return label;
     }
     if (r.operator === 'is_true') return label;
-    if (r.operator === 'is_false') return `Not: ${label.toLowerCase()}`;
-    if (r.operator === 'never') return `${label}: never`;
-    if (r.operator === 'within_days') return `${label} in the last ${r.value} days`;
-    if (r.operator === 'older_than_days') return `${label} more than ${r.value} days ago`;
-    if (r.operator === 'gte') return `${label} on or after ${r.value}`;
-    if (r.operator === 'lte') return `${label} on or before ${r.value}`;
-    const shown = f?.options?.find((o) => o.value === r.value)?.label ?? String(r.value);
-    return `${label} ${r.operator === 'neq' ? 'is not' : r.operator === 'contains' ? 'contains' : 'is'} ${shown}`;
+    if (r.operator === 'is_false') return t('cond.describe.not', { label: label.toLocaleLowerCase() });
+    if (r.operator === 'never') return t('cond.describe.never', { label });
+    if (r.operator === 'within_days') return t('cond.describe.withinDays', { label, n: r.value });
+    if (r.operator === 'older_than_days') return t('cond.describe.olderDays', { label, n: r.value });
+    if (r.operator === 'gte') return t('cond.describe.onOrAfter', { label, value: day(r.value) });
+    if (r.operator === 'lte') return t('cond.describe.onOrBefore', { label, value: day(r.value) });
+    const shown = f?.options?.includes(r.value) ? optionLabel(t, f.id, r.value) : String(r.value);
+    return t(r.operator === 'neq' ? 'cond.describe.isNot' : r.operator === 'contains' ? 'cond.describe.contains' : 'cond.describe.is', { label, value: shown });
   };
-  return rules.rules.map(one).join(rules.logic === 'OR' ? ' or ' : ' and ');
+  return rules.rules.map(one).join(rules.logic === 'OR' ? or : and);
 }

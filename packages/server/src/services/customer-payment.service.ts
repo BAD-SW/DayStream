@@ -9,6 +9,7 @@ import { getConfiguredAdapter } from './payments';
 import { METHOD_CATALOG, CatalogMethod } from './payment-catalog.service';
 import { confirmBooking, cancelBooking } from './booking-lifecycle.service';
 import { postPaymentJournalEntry, postGiftCardRedemptionJournal } from './payment-journal.service';
+import { msg } from '../i18n';
 
 /**
  * Section C — One-time customer payments (spec 10-payment-platform, task 4.2).
@@ -109,13 +110,13 @@ export interface ChargeStoredMethodResult {
 
 export async function chargeStoredMethod(input: ChargeStoredMethodInput): Promise<ChargeStoredMethodResult> {
   const { owner } = input;
-  if (!owner.businessId) throw new PaymentError('A business is required to charge a stored method', 'NO_BUSINESS');
+  if (!owner.businessId) throw new PaymentError(msg('errors:customerPayment.aBusinessIsRequiredToCharge'), 'NO_BUSINESS');
 
   const account = await resolveConnectedAccount(owner);
-  if (!account) throw new PaymentError('Business has no active payment processor connection', 'NO_CONNECTION');
+  if (!account) throw new PaymentError(msg('errors:customerPayment.businessHasNoActivePaymentProcessor'), 'NO_CONNECTION');
 
   const tokenInfo = await getProviderToken(input.paymentMethodId);
-  if (!tokenInfo) throw new PaymentError('Stored payment method is no longer available', 'METHOD_UNAVAILABLE');
+  if (!tokenInfo) throw new PaymentError(msg('errors:customerPayment.storedPaymentMethodIsNoLonger'), 'METHOD_UNAVAILABLE');
 
   // Off-session charge of a vaulted method must reference the provider Customer
   // it's attached to. The business connection owns both.
@@ -200,10 +201,10 @@ export async function insertChargeRow(
  */
 export async function takeOneTimePayment(input: OneTimePaymentInput): Promise<OneTimePaymentResult> {
   if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
-    throw new PaymentError('Amount must be a positive integer (cents)', 'INVALID_AMOUNT');
+    throw new PaymentError(msg('errors:customerPayment.amountMustBeAPositiveInteger'), 'INVALID_AMOUNT');
   }
   const def = METHOD_CATALOG[input.method];
-  if (!def) throw new PaymentError(`Unknown payment method: ${input.method}`, 'INVALID_METHOD');
+  if (!def) throw new PaymentError(msg('errors:customerPayment.unknownPaymentMethod', { method: input.method }), 'INVALID_METHOD');
 
   const currency = await resolveBusinessCurrency(input.businessId);
   const reference = generateReference();
@@ -253,7 +254,7 @@ async function runProcessed(
   input: OneTimePaymentInput, currency: string, reference: string,
 ): Promise<OneTimePaymentResult> {
   if (!input.paymentMethodId) {
-    throw new PaymentError('A stored payment method is required for a processed payment', 'METHOD_REQUIRED');
+    throw new PaymentError(msg('errors:customerPayment.aStoredPaymentMethodIsRequired'), 'METHOD_REQUIRED');
   }
   const owner: MethodOwner = {
     ownerLevel: 'customer', businessId: input.businessId, tenantId: input.tenantId, customerId: input.customerId,
@@ -321,7 +322,7 @@ async function runGiftCard(
   input: OneTimePaymentInput, currency: string, reference: string,
 ): Promise<OneTimePaymentResult> {
   const code = (input.giftCardCode || '').trim();
-  if (!code) throw new PaymentError('A gift card code is required for gift-card redemption', 'CODE_REQUIRED');
+  if (!code) throw new PaymentError(msg('errors:customerPayment.aGiftCardCodeIsRequired'), 'CODE_REQUIRED');
 
   const client = await adminPool.connect();
   try {
@@ -336,17 +337,17 @@ async function runGiftCard(
       [code, input.businessId, input.tenantId],
     );
     const card = cardRows[0];
-    if (!card) throw new PaymentError('Gift card not found for this business', 'GIFT_CARD_NOT_FOUND');
-    if (card.status !== 'active') throw new PaymentError(`Gift card is ${card.status}`, 'GIFT_CARD_INACTIVE');
+    if (!card) throw new PaymentError(msg('errors:customerPayment.giftCardNotFoundForThis'), 'GIFT_CARD_NOT_FOUND');
+    if (card.status !== 'active') throw new PaymentError(msg('errors:customerPayment.giftCardIs', { status: card.status }), 'GIFT_CARD_INACTIVE');
     if (card.expires_at && new Date(card.expires_at) < new Date()) {
-      throw new PaymentError('Gift card has expired', 'GIFT_CARD_EXPIRED');
+      throw new PaymentError(msg('errors:customerPayment.giftCardHasExpired'), 'GIFT_CARD_EXPIRED');
     }
     if (card.currency !== currency) {
-      throw new PaymentError('Gift card currency does not match the business currency', 'GIFT_CARD_CURRENCY');
+      throw new PaymentError(msg('errors:customerPayment.giftCardCurrencyDoesNotMatch'), 'GIFT_CARD_CURRENCY');
     }
     if (card.balance_cents < input.amountCents) {
       throw new PaymentError(
-        `Gift card balance (${card.balance_cents}) is less than the amount (${input.amountCents})`,
+        msg('errors:customerPayment.giftCardBalanceIsLessThan', { balance_cents: card.balance_cents, amountCents: input.amountCents }),
         'GIFT_CARD_INSUFFICIENT',
       );
     }

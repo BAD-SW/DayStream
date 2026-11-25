@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { ReportCatalogEntry } from './reports/reportCatalog';
 import { TENANT_REPORT_CATALOG } from './reports/tenantReportCatalog';
 
@@ -9,12 +10,13 @@ import { TENANT_REPORT_CATALOG } from './reports/tenantReportCatalog';
  * navigate to the tenant report runner (/admin/tenant-reports/run/:reportId).
  */
 export function TenantReportsHub() {
+  const { t } = useTranslation('tenantOps');
   const navigate = useNavigate();
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.pageTitle}>Reports</h1>
-      <p style={styles.pageSubtitle}>Reporting across your businesses. Run a report to view detail and export.</p>
+      <h1 style={styles.pageTitle}>{t('hub.title')}</h1>
+      <p style={styles.pageSubtitle}>{t('hub.subtitle')}</p>
 
       <div style={styles.categories}>
         {TENANT_REPORT_CATALOG.map((category) => (
@@ -39,7 +41,7 @@ export function TenantReportsHub() {
                   <span style={styles.tileIcon} aria-hidden="true">{report.icon}</span>
                   <span style={styles.tileTitle}>{report.title}</span>
                   <span style={styles.tileDescription}>{report.description}</span>
-                  {report.comingSoon && <span style={styles.comingSoonBadge}>Coming soon</span>}
+                  {report.comingSoon && <span style={styles.comingSoonBadge}>{t('hub.comingSoon')}</span>}
                 </button>
               ))}
             </div>

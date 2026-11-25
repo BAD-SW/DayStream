@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import './ParticipantCountField.css';
 
 interface ParticipantCountFieldProps {
@@ -14,6 +15,7 @@ interface ParticipantCountFieldProps {
 const OVERRIDE_MAX = 999;
 
 export function ParticipantCountField({ value, onChange, maxCapacity, remainingCapacity, disabled, overrideCapacity }: ParticipantCountFieldProps) {
+  const { t } = useTranslation('booking');
   // A resource with capacity <= 1 has no concept of "participants" — nothing to gate, hide the field.
   if (maxCapacity <= 1) return null;
 
@@ -27,7 +29,7 @@ export function ParticipantCountField({ value, onChange, maxCapacity, remainingC
 
   return (
     <div className="participant-count-field">
-      <label className="participant-count-field__label" htmlFor="participant-count-input">Number of participants</label>
+      <label className="participant-count-field__label" htmlFor="participant-count-input">{t('participants.label')}</label>
       <input
         id="participant-count-input"
         className="participant-count-field__input"

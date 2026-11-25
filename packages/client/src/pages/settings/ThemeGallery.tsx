@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { Badge } from '../../design-system/components/data/Badge';
 import { fetchThemes, deleteTheme } from '../../api/themes';
@@ -22,6 +23,7 @@ function ownScopeFor(persona: ThemeGalleryProps['persona']): ThemeScope {
 }
 
 export function ThemeGallery({ persona }: ThemeGalleryProps) {
+  const { t } = useTranslation('settings');
   const { refreshTheme } = useTheme();
   const [themes, setThemes] = useState<ThemeListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,25 +37,25 @@ export function ThemeGallery({ persona }: ThemeGalleryProps) {
     setLoading(true); setError(null);
     fetchThemes()
       .then(setThemes)
-      .catch(() => setError('Failed to load themes.'))
+      .catch(() => setError(t('themes.loadFailed')))
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(timer);
   }, [toast]);
 
   async function handleDelete(theme: ThemeListItem) {
     try {
       await deleteTheme(theme.id);
-      setToast(`"${theme.name}" deleted.`);
+      setToast(t('themes.deleted', { name: theme.name }));
       load();
     } catch (err: any) {
-      setToast(err.response?.data?.error || 'Failed to delete theme.');
+      setToast(err.response?.data?.error || t('themes.deleteFailed'));
     }
   }
 
@@ -72,7 +74,7 @@ export function ThemeGallery({ persona }: ThemeGalleryProps) {
         persona={persona}
         mode={editorTarget.mode}
         theme={editorTarget.theme}
-        onSaved={() => { setEditorTarget(null); load(); setToast('Theme saved.'); }}
+        onSaved={() => { setEditorTarget(null); load(); setToast(t('themes.saved')); }}
         onCancel={() => setEditorTarget(null)}
       />
     );
@@ -82,18 +84,18 @@ export function ThemeGallery({ persona }: ThemeGalleryProps) {
     <div className="tg">
       <div className="tg-header">
         <div>
-          <h2 className="tg-title">Themes</h2>
-          <p className="tg-subtext">Pick a theme to apply, customise one into a new named theme, or build one from scratch.</p>
+          <h2 className="tg-title">{t('themes.title')}</h2>
+          <p className="tg-subtext">{t('themes.subtext')}</p>
         </div>
-        <Button onClick={() => setEditorTarget({ mode: 'create' })}>New theme</Button>
+        <Button onClick={() => setEditorTarget({ mode: 'create' })}>{t('themes.newTheme')}</Button>
       </div>
 
       {toast && <div className="tg-toast" role="status">{toast}</div>}
 
-      {loading && <p className="tg-muted">Loading themes...</p>}
+      {loading && <p className="tg-muted">{t('themes.loading')}</p>}
       {error && (
         <div className="tg-error">
-          {error} <Button variant="ghost" size="sm" onClick={load}>Retry</Button>
+          {error} <Button variant="ghost" size="sm" onClick={load}>{t('themes.retry')}</Button>
         </div>
       )}
 
@@ -109,20 +111,20 @@ export function ThemeGallery({ persona }: ThemeGalleryProps) {
               <div className="tg-card-body">
                 <div className="tg-card-title">
                   <span className="tg-card-name">{theme.name}</span>
-                  {theme.is_active && <Badge variant="success">Active</Badge>}
+                  {theme.is_active && <Badge variant="success">{t('themes.active')}</Badge>}
                 </div>
                 <div className="tg-card-meta">
-                  {theme.is_built_in ? 'Built-in' : 'Custom'} · based on {theme.base_theme === 'navy' ? 'Navy' : theme.base_theme === 'bold-business' ? 'Bold Business' : 'Classic'}
-                  {!theme.is_built_in && theme.scope !== own && <> · {theme.scope} scope</>}
+                  {t(theme.is_built_in ? 'themes.metaBuiltIn' : 'themes.metaCustom', { base: t(`themes.base.${theme.base_theme}`, { defaultValue: t('themes.base.classic') }) })}
+                  {!theme.is_built_in && theme.scope !== own && <> · {t('themes.inScope', { scope: t(`themes.scope.${theme.scope}`, { defaultValue: theme.scope }) })}</>}
                 </div>
                 <div className="tg-card-actions">
-                  <Button variant="outline" size="sm" onClick={() => setApplyTarget(theme)}>Apply</Button>
-                  <Button variant="ghost" size="sm" onClick={() => setEditorTarget({ mode: 'create', theme })}>Customize</Button>
+                  <Button variant="outline" size="sm" onClick={() => setApplyTarget(theme)}>{t('themes.apply')}</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditorTarget({ mode: 'create', theme })}>{t('themes.customize')}</Button>
                   {!theme.is_built_in && (persona === 'system' || theme.scope === own) && (
-                    <Button variant="ghost" size="sm" onClick={() => setEditorTarget({ mode: 'edit', theme })}>Edit</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setEditorTarget({ mode: 'edit', theme })}>{t('common:edit')}</Button>
                   )}
                   {canDelete(theme) && (
-                    <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(theme)}>Delete</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(theme)}>{t('common:delete')}</Button>
                   )}
                 </div>
               </div>
@@ -136,7 +138,7 @@ export function ThemeGallery({ persona }: ThemeGalleryProps) {
           theme={applyTarget}
           persona={persona}
           onClose={() => setApplyTarget(null)}
-          onApplied={() => { setApplyTarget(null); load(); refreshTheme(); setToast(`"${applyTarget.name}" applied.`); }}
+          onApplied={() => { setApplyTarget(null); load(); refreshTheme(); setToast(t('themes.applied', { name: applyTarget.name })); }}
         />
       )}
 
@@ -144,9 +146,9 @@ export function ThemeGallery({ persona }: ThemeGalleryProps) {
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => { if (deleteTarget) handleDelete(deleteTarget); }}
-        title="Delete theme"
-        message={deleteTarget ? `Delete "${deleteTarget.name}"? This cannot be undone.` : ''}
-        confirmLabel="Delete"
+        title={t('themes.deleteTitle')}
+        message={deleteTarget ? t('themes.confirmDelete', { name: deleteTarget.name }) : ''}
+        confirmLabel={t('common:delete')}
       />
     </div>
   );

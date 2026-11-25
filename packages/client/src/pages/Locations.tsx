@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Table } from '../design-system/components/data/Table';
@@ -14,6 +15,7 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'neutral
 };
 
 export function Locations() {
+  const { t } = useTranslation('setup');
   const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
   const [locations, setLocations] = useState<Location[]>([]);
@@ -21,7 +23,7 @@ export function Locations() {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
 
-  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); }, 300); return () => clearTimeout(t); }, [searchInput]);
+  useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput); }, 300); return () => clearTimeout(timer); }, [searchInput]);
 
   const fetchLocations = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
@@ -37,32 +39,32 @@ export function Locations() {
   useEffect(() => { fetchLocations(); }, [fetchLocations]);
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
+    { key: 'name', header: t('locations.name'), sortable: true },
     {
-      key: 'address_line1', header: 'Address', sortable: true,
+      key: 'address_line1', header: t('locations.address'), sortable: true,
       render: (_: any, row: Location) => {
         const parts = [row.address_line1, row.city, row.state_province].filter(Boolean);
         return parts.join(', ') || '—';
       },
     },
-    { key: 'phone', header: 'Phone', sortable: true, render: (val: string) => val || '—' },
-    { key: 'timezone', header: 'Timezone', sortable: true, render: (val: string) => val || '—' },
+    { key: 'phone', header: t('locations.phone'), sortable: true, render: (val: string) => val || '—' },
+    { key: 'timezone', header: t('locations.timezone'), sortable: true, render: (val: string) => val || '—' },
     {
-      key: 'status', header: 'Status', sortable: true,
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
+      key: 'status', header: t('locations.status'), sortable: true,
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`locations.status_${val}`, { defaultValue: val.replace('_', ' ') })}</Badge>,
     },
     {
       key: 'is_primary', header: '', filter: false as const,
-      render: (val: boolean) => val ? <Badge variant="info">Primary</Badge> : null,
+      render: (val: boolean) => val ? <Badge variant="info">{t('locations.primary')}</Badge> : null,
     },
   ];
 
   return (
     <div>
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search locations..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder={t('locations.search')} />
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" onClick={() => navigate('/settings/locations/new')}>Add Location</Button>
+        <Button variant="secondary" onClick={() => navigate('/settings/locations/new')}>{t('locations.add')}</Button>
       </div>
 
       <Table
@@ -70,7 +72,7 @@ export function Locations() {
         data={locations}
         loading={loading}
         onRowClick={(row) => navigate(`/settings/locations/${row.id}`)}
-        emptyMessage="No locations found"
+        emptyMessage={t('locations.empty')}
         mobileCardMode
         clientSort
       />

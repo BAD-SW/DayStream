@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Get the current streak record for a customer.
@@ -99,7 +100,7 @@ export async function useStreakFreeze(tenantId: string, customerId: string) {
     [tenantId, customerId],
   );
   if (rows.length === 0) {
-    throw new Error('No streak freezes available');
+    throw new Error(msg('errors:communityStreaks.noStreakFreezesAvailable'));
   }
   return rows[0];
 }

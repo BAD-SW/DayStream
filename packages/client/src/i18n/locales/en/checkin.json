@@ -1,0 +1,18 @@
+{
+  "kiosk.title": "Kiosk",
+  "kiosk.titleNamed": "Kiosk · {{name}}",
+  "kiosk.otherAppointments": "Your other appointments",
+  "phone.linkInvalid": "This link is no longer valid. Please see the front desk.",
+  "prompt.title": "Forms still to complete",
+  "prompt.checkIn": "Check in",
+  "prompt.checkInAnyway": "Check in anyway",
+  "prompt.allComplete": "All the forms are complete. You can check in now.",
+  "prompt.lead_one": "This customer has not completed this form for the appointment:",
+  "prompt.lead_other": "This customer has not completed these forms for the appointment:",
+  "prompt.outOfDate": "out of date",
+  "prompt.fillInNow": "Fill in now",
+  "prompt.hint_one": "You can check in now and collect the form later, or have the customer complete it first.",
+  "prompt.hint_other": "You can check in now and collect the forms later, or have the customer complete them first.",
+  "prompt.openForms": "Open the customer's forms",
+  "prompt.startFailed": "The form could not be started."
+}

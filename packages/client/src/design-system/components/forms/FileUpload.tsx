@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FormField } from './FormField';
 
 interface FileUploadProps {
@@ -15,6 +16,7 @@ interface FileUploadProps {
 }
 
 export function FileUpload({ label, name, onChange, accept, multiple, maxSizeMB = 10, error, helperText, required, disabled }: FileUploadProps) {
+  const { t } = useTranslation('common');
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string>('');
   const [sizeError, setSizeError] = useState<string>('');
@@ -24,7 +26,7 @@ export function FileUpload({ label, name, onChange, accept, multiple, maxSizeMB 
     if (files && maxSizeMB) {
       for (let i = 0; i < files.length; i++) {
         if (files[i].size > maxSizeMB * 1024 * 1024) {
-          setSizeError(`File exceeds ${maxSizeMB}MB limit`);
+          setSizeError(t('fileUpload.tooLarge', { max: maxSizeMB }));
           return;
         }
       }
@@ -52,7 +54,7 @@ export function FileUpload({ label, name, onChange, accept, multiple, maxSizeMB 
         {fileName ? (
           <span style={styles.fileName}>{fileName}</span>
         ) : (
-          <span style={styles.placeholder}>Click to upload or drag and drop</span>
+          <span style={styles.placeholder}>{t('fileUpload.prompt')}</span>
         )}
       </div>
     </FormField>

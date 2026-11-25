@@ -1,5 +1,7 @@
+import { askConfirm } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Alert } from '../design-system/components/feedback/Alert';
@@ -11,6 +13,11 @@ import { SaveChanges } from '../components/unsaved/SaveChanges';
 import * as resourcesApi from '../api/resources';
 import type { Resource } from '../api/resources';
 import { formatDateOnly } from '../utils/date';
+import { currentLocale } from '../i18n';
+import { formatTime as formatClock } from '../utils/format';
+
+/** A day name (0 = Sunday) in the language shown. */
+const weekdayName = (i: number, width: 'long' | 'short' = 'long') => new Intl.DateTimeFormat(currentLocale(), { weekday: width }).format(new Date(2024, 0, 7 + i));
 
 type Tab = 'details' | 'schedule' | 'maintenance';
 
@@ -25,6 +32,7 @@ export function ResourceDetail() {
 }
 
 function ResourceDetailPage() {
+  const { t } = useTranslation('setup');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const guardedNavigate = useGuardedNavigate();
@@ -39,31 +47,31 @@ function ResourceDetailPage() {
     resourcesApi.getResource(id, businessId).then(setResource).catch(() => navigate('/business?tab=resources')).finally(() => setLoading(false));
   }, [id, navigate, businessId]);
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
-  if (!resource) return <div style={styles.loading}>Resource not found</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
+  if (!resource) return <div style={styles.loading}>{t('resourceDetail.notFound')}</div>;
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'details', label: 'Details' },
-    { key: 'schedule', label: 'Schedule' },
-    { key: 'maintenance', label: 'Maintenance' },
+    { key: 'details', label: t('resourceDetail.tabDetails') },
+    { key: 'schedule', label: t('resourceDetail.tabSchedule') },
+    { key: 'maintenance', label: t('resourceDetail.tabMaintenance') },
   ];
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
-        <button style={styles.back} onClick={() => guardedNavigate('/business?tab=resources')}>← Back to Business Setup</button>
+        <button style={styles.back} onClick={() => guardedNavigate('/business?tab=resources')}>{t('create.back', { ns: 'staff' })}</button>
         <div style={styles.headerRow}>
           <div>
             <h1 style={styles.title}>{resource.name}</h1>
-            <span style={styles.subtitle}>{resource.category ? resource.category.charAt(0).toUpperCase() + resource.category.slice(1) : ''}{resource.type_name ? ` · ${resource.type_name}` : ''}</span>
+            <span style={styles.subtitle}>{resource.category ? t(`resources.category_${resource.category}`, { defaultValue: resource.category.charAt(0).toUpperCase() + resource.category.slice(1) }) : ''}{resource.type_name ? ` · ${resource.type_name}` : ''}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <SaveChanges />
-            <Badge variant={resource.status === 'active' ? 'success' : resource.status === 'maintenance' ? 'warning' : 'neutral'}>{resource.status}</Badge>
+            <Badge variant={resource.status === 'active' ? 'success' : resource.status === 'maintenance' ? 'warning' : 'neutral'}>{t(`resources.status_${resource.status}`, { defaultValue: resource.status })}</Badge>
           </div>
         </div>
-        <TabBar aria-label="Resource sections" tabs={tabs.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+        <TabBar aria-label={t('resourceDetail.sections')} tabs={tabs.map((tab) => ({ ...tab, changed: dirtySections.some((s) => s.tab === tab.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
 
       {/* Tabs with drafts stay mounted, so their edits survive switching tabs. */}
@@ -79,6 +87,7 @@ function ResourceDetailPage() {
 // --- Details Tab (Editable; saved with the page's Save changes) ---
 
 function DetailsTab({ resource, businessId, onUpdate }: { resource: Resource; businessId: string; onUpdate: (r: Resource) => void }) {
+  const { t } = useTranslation('setup');
   const fromResource = (r: Resource) => ({
     name: r.name,
     description: r.description || '',
@@ -87,7 +96,7 @@ function DetailsTab({ resource, businessId, onUpdate }: { resource: Resource; bu
     buffer_minutes: r.buffer_minutes,
     is_24_7: r.is_24_7,
   });
-  const draft = useDraft('resource-details', 'Resource information', fromResource(resource), async (form) => {
+  const draft = useDraft('resource-details', t('resourceDetail.draftDetails'), fromResource(resource), async (form) => {
     const updated = await resourcesApi.updateResource(resource.id, form, businessId);
     onUpdate(updated);
     return fromResource(updated);
@@ -98,60 +107,60 @@ function DetailsTab({ resource, businessId, onUpdate }: { resource: Resource; bu
   const [error, setError] = useState('');
 
   const handleDeactivate = async () => {
-    if (!confirm('Deactivate this resource? It will no longer be available for booking.')) return;
+    if (!(await askConfirm({ message: t('resourceDetail.confirmDeactivate'), confirmLabel: t('common:action.deactivate'), destructive: true }))) return;
     setError('');
     try {
       const updated = await resourcesApi.deactivateResource(resource.id, businessId);
       onUpdate(updated);
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to deactivate'); }
+    } catch (err: any) { setError(err.response?.data?.error || t('resourceDetail.errDeactivate')); }
   };
 
   return (
     <>
       {error && <Alert variant="error">{error}</Alert>}
       <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
-        <h3 style={styles.cardTitle}>Resource Information<UnsavedTag dirty={draft.dirty} /></h3>
+        <h3 style={styles.cardTitle}>{t('resourceDetail.infoTitle')}<UnsavedTag dirty={draft.dirty} /></h3>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
+            <label style={styles.label}>{t('resourceCreate.name')}</label>
             <input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Category</label>
+            <label style={styles.label}>{t('resources.category')}</label>
             <select style={{ ...styles.input, ...mark('category') }} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              <option value="">— Select —</option>
-              <option value="room">Room</option>
-              <option value="equipment">Equipment</option>
-              <option value="facility">Facility</option>
+              <option value="">{t('resourceCreate.select')}</option>
+              <option value="room">{t('resources.category_room')}</option>
+              <option value="equipment">{t('resources.category_equipment')}</option>
+              <option value="facility">{t('resources.category_facility')}</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Capacity</label>
+            <label style={styles.label}>{t('resources.capacity')}</label>
             <input style={{ ...styles.input, ...mark('capacity') }} type="number" min={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })} />
-            <span style={styles.helper}>{form.capacity > 1 ? 'Concurrent users allowed' : 'Exclusive (one booking at a time)'}</span>
+            <span style={styles.helper}>{form.capacity > 1 ? t('resourceDetail.capacityConcurrent') : t('resourceDetail.capacityExclusive')}</span>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Buffer (minutes)</label>
+            <label style={styles.label}>{t('resourceCreate.buffer')}</label>
             <input style={{ ...styles.input, ...mark('buffer_minutes') }} type="number" min={0} value={form.buffer_minutes} onChange={(e) => setForm({ ...form, buffer_minutes: Number(e.target.value) })} />
-            <span style={styles.helper}>Time between bookings for cleanup/prep</span>
+            <span style={styles.helper}>{t('resourceDetail.bufferHelp')}</span>
           </div>
           <div style={styles.formGroup}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '20px' }}>
               <input type="checkbox" checked={form.is_24_7} onChange={(e) => setForm({ ...form, is_24_7: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.is_24_7)) }} />
-              Available 24/7 (no schedule restrictions)
+              {t('resourceDetail.available247')}
             </label>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Description</label>
+            <label style={styles.label}>{t('resourceCreate.description')}</label>
             <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', ...mark('description') }} value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional description..." />
+              onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('resourceDetail.descriptionPlaceholder')} />
           </div>
         </div>
       </div>
 
       {resource.status === 'active' && (
         <div style={{ marginTop: 'var(--space-lg)' }}>
-          <Button variant="destructive" onClick={handleDeactivate}>Deactivate Resource</Button>
+          <Button variant="destructive" onClick={handleDeactivate}>{t('resourceDetail.deactivate')}</Button>
         </div>
       )}
     </>
@@ -167,19 +176,20 @@ const scheduleData = (s: any) => ({
 });
 
 function ScheduleTab({ resourceId }: { resourceId: string }) {
+  const { t } = useTranslation('setup');
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
-  const list = useDraftList<any>('resource-schedules', 'Operating hours', {
+  const list = useDraftList<any>('resource-schedules', t('resourceDetail.draftSchedules'), {
     create: (s) => resourcesApi.createSchedule(resourceId, scheduleData(s)),
     update: (s) => resourcesApi.updateSchedule(resourceId, s.id, scheduleData(s)),
     remove: (s) => resourcesApi.deleteSchedule(resourceId, s.id).then(() => undefined),
   });
 
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayNames = Array.from({ length: 7 }, (_, i) => weekdayName(i));
 
   const emptySlots = () => dayNames.map((_, i) => ({ day_of_week: i, start_time: '09:00', end_time: '17:00', enabled: i >= 1 && i <= 6 }));
-  const [formName, setFormName] = useState('Operating Hours');
+  const [formName, setFormName] = useState(t('resourceDetail.defaultScheduleName'));
   const [formFrom, setFormFrom] = useState('');
   const [formTo, setFormTo] = useState('');
   const [formSlots, setFormSlots] = useState(emptySlots());
@@ -193,7 +203,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
 
   const openAdd = () => {
     setEditingKey(null);
-    setFormName('Operating Hours');
+    setFormName(t('resourceDetail.defaultScheduleName'));
     setFormFrom('');
     setFormTo('');
     setFormSlots(emptySlots());
@@ -202,7 +212,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
 
   const openEdit = (key: string, schedule: any) => {
     setEditingKey(key);
-    setFormName(schedule.name || 'Operating Hours');
+    setFormName(schedule.name || t('resourceDetail.defaultScheduleName'));
     setFormFrom(schedule.effective_from ? schedule.effective_from.split('T')[0] : '');
     setFormTo(schedule.effective_to ? schedule.effective_to.split('T')[0] : '');
     const slots = emptySlots().map(s => {
@@ -226,22 +236,22 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
     setFormSlots(formSlots.map(s => s.day_of_week === dayOfWeek ? { ...s, [field]: value } : s));
   };
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
 
   return (
     <div style={draftBox(list.dirty)}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Operating Hours<UnsavedTag dirty={list.dirty} /></h3>
-        <Button variant="secondary" size="sm" onClick={openAdd}>Add Schedule</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('resourceDetail.scheduleTitle')}<UnsavedTag dirty={list.dirty} /></h3>
+        <Button variant="secondary" size="sm" onClick={openAdd}>{t('resourceDetail.addSchedule')}</Button>
       </div>
 
       {showForm && (
         <div style={styles.card}>
-          <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editingKey ? 'Edit Schedule' : 'Add Schedule'}</h4>
+          <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editingKey ? t('resourceDetail.editSchedule') : t('resourceDetail.addSchedule')}</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
-            <div style={styles.formGroup}><label style={styles.label}>Name</label><input style={styles.input} value={formName} onChange={(e) => setFormName(e.target.value)} /></div>
-            <div style={styles.formGroup}><label style={styles.label}>Effective From</label><input type="date" style={styles.input} value={formFrom} onChange={(e) => setFormFrom(e.target.value)} /></div>
-            <div style={styles.formGroup}><label style={styles.label}>Effective To</label><input type="date" style={styles.input} value={formTo} onChange={(e) => setFormTo(e.target.value)} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>{t('resourceDetail.scheduleName')}</label><input style={styles.input} value={formName} onChange={(e) => setFormName(e.target.value)} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>{t('resourceDetail.effectiveFrom')}</label><input type="date" style={styles.input} value={formFrom} onChange={(e) => setFormFrom(e.target.value)} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>{t('resourceDetail.effectiveTo')}</label><input type="date" style={styles.input} value={formTo} onChange={(e) => setFormTo(e.target.value)} /></div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: 'var(--space-md)' }}>
             {formSlots.map((slot) => (
@@ -254,21 +264,21 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
                     <input type="time" style={styles.input} value={slot.end_time} onChange={(e) => updateSlot(slot.day_of_week, 'end_time', e.target.value)} />
                   </>
                 ) : (
-                  <span style={{ gridColumn: 'span 2', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Closed</span>
+                  <span style={{ gridColumn: 'span 2', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{t('locationDetail.closed')}</span>
                 )}
               </div>
             ))}
           </div>
-          <p style={{ ...styles.emptyText, marginBottom: 'var(--space-sm)' }}>Saved with the page's Save changes.</p>
+          <p style={{ ...styles.emptyText, marginBottom: 'var(--space-sm)' }}>{t('locationDetail.savedWithPage')}</p>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button size="sm" onClick={handleDone}>{editingKey ? 'Done' : 'Create'}</Button>
-            <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleDone}>{editingKey ? t('locationDetail.done') : t('common:create')}</Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>{t('common:cancel')}</Button>
           </div>
         </div>
       )}
 
       {list.rows.length === 0 && !showForm && (
-        <p style={styles.emptyText}>No operating hours defined. If the resource is marked "Available 24/7" on the Details tab, it has no time restrictions. Otherwise, add a schedule to define when this resource can be booked.</p>
+        <p style={styles.emptyText}>{t('resourceDetail.noSchedules')}</p>
       )}
 
       {list.rows.length > 0 && (
@@ -283,28 +293,28 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
                     <strong style={{ color: 'var(--color-text)' }}>{s.name}</strong>
                     {(s.effective_from || s.effective_to) && (
                       <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                        {s.effective_from ? formatDateOnly(s.effective_from) : 'Start'} → {s.effective_to ? formatDateOnly(s.effective_to) : 'Ongoing'}
+                        {s.effective_from ? formatDateOnly(s.effective_from) : t('resourceDetail.start')} → {s.effective_to ? formatDateOnly(s.effective_to) : t('resourceDetail.ongoing')}
                       </span>
                     )}
-                    {r.isNew && <> <RowTag>New</RowTag></>}
-                    {edited && <> <RowTag>Changed</RowTag></>}
-                    {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                    {r.isNew && <> <RowTag>{t('locationDetail.rowNew')}</RowTag></>}
+                    {edited && <> <RowTag>{t('locationDetail.rowChanged')}</RowTag></>}
+                    {r.deleted && <> <RowTag>{t('locationDetail.rowDeleted')}</RowTag></>}
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
-                      <button style={styles.iconBtn} onClick={() => openEdit(r.key, s)} title="Edit">✏️</button>
-                      <button style={styles.iconBtn} onClick={() => list.remove(r.key)} title="Delete">🗑️</button>
+                    {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>{t('locationDetail.undo')}</Button> : <>
+                      <button style={styles.iconBtn} onClick={() => openEdit(r.key, s)} title={t('common:edit')}>✏️</button>
+                      <button style={styles.iconBtn} onClick={() => list.remove(r.key)} title={t('common:delete')}>🗑️</button>
                     </>}
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {dayNames.map((dayName, i) => {
+                  {dayNames.map((dayLabel, i) => {
                     const slot = (s.slots || []).find((sl: any) => sl.day_of_week === i);
                     return (
                       <div key={i} style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)', fontWeight: 500 }}>{dayName}</span>
+                        <span style={{ color: 'var(--color-text-secondary)', fontWeight: 500 }}>{dayLabel}</span>
                         <span style={{ color: slot ? 'var(--color-text)' : 'var(--color-text-secondary)' }}>
-                          {slot ? `${slot.start_time.slice(0, 5)} – ${slot.end_time.slice(0, 5)}` : 'Closed'}
+                          {slot ? `${slot.start_time.slice(0, 5)} – ${slot.end_time.slice(0, 5)}` : t('locationDetail.closed')}
                         </span>
                       </div>
                     );
@@ -322,10 +332,11 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
 // --- Maintenance Tab (saved with the page's Save changes) ---
 
 function MaintenanceTab({ resourceId }: { resourceId: string }) {
+  const { t } = useTranslation('setup');
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ maintenance_type: 'weekly', day_of_week: '1', start_time: '06:00', end_time: '07:00', description: '' });
-  const list = useDraftList<any>('resource-maintenance', 'Maintenance windows', {
+  const list = useDraftList<any>('resource-maintenance', t('resourceDetail.draftMaintenance'), {
     create: (m) => resourcesApi.createMaintenance(resourceId, {
       // Stored as a recurring window: on its weekday, or every day without one (D-81).
       maintenance_type: 'recurring',
@@ -356,58 +367,58 @@ function MaintenanceTab({ resourceId }: { resourceId: string }) {
     setForm({ maintenance_type: 'weekly', day_of_week: '1', start_time: '06:00', end_time: '07:00', description: '' });
   };
 
-  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayLabels = Array.from({ length: 7 }, (_, i) => weekdayName(i, 'short'));
 
-  if (loading) return <div style={styles.loading}>Loading...</div>;
+  if (loading) return <div style={styles.loading}>{t('common:loading')}</div>;
 
   return (
     <>
       <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Maintenance Windows<UnsavedTag dirty={list.dirty} /></h3>
-          <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}>Add Maintenance</Button>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>{t('resourceDetail.maintenanceTitle')}<UnsavedTag dirty={list.dirty} /></h3>
+          <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}>{t('resourceDetail.addMaintenance')}</Button>
         </div>
 
         {showForm && (
           <div style={{ ...styles.card, background: 'var(--color-background)', marginBottom: 'var(--space-md)' }}>
             <div style={styles.formGrid}>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Type</label>
+                <label style={styles.label}>{t('resourceDetail.type')}</label>
                 <select style={styles.input} value={form.maintenance_type} onChange={(e) => setForm({ ...form, maintenance_type: e.target.value })}>
-                  <option value="weekly">Weekly</option>
-                  <option value="daily">Daily</option>
+                  <option value="weekly">{t('resourceDetail.weekly')}</option>
+                  <option value="daily">{t('resourceDetail.daily')}</option>
                 </select>
               </div>
               {form.maintenance_type === 'weekly' && (
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Day of Week</label>
+                  <label style={styles.label}>{t('resourceDetail.dayOfWeek')}</label>
                   <select style={styles.input} value={form.day_of_week} onChange={(e) => setForm({ ...form, day_of_week: e.target.value })}>
                     {dayLabels.map((d, i) => <option key={i} value={String(i)}>{d}</option>)}
                   </select>
                 </div>
               )}
               <div style={styles.formGroup}>
-                <label style={styles.label}>Start Time</label>
+                <label style={styles.label}>{t('resourceDetail.startTime')}</label>
                 <input type="time" style={styles.input} value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.label}>End Time</label>
+                <label style={styles.label}>{t('resourceDetail.endTime')}</label>
                 <input type="time" style={styles.input} value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
               </div>
               <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-                <label style={styles.label}>Description</label>
-                <input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g., Weekly deep clean" />
+                <label style={styles.label}>{t('resourceCreate.description')}</label>
+                <input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('resourceDetail.maintenancePlaceholder')} />
               </div>
             </div>
-            <p style={{ ...styles.emptyText, marginTop: 'var(--space-sm)' }}>Saved with the page's Save changes.</p>
+            <p style={{ ...styles.emptyText, marginTop: 'var(--space-sm)' }}>{t('locationDetail.savedWithPage')}</p>
             <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
-              <Button size="sm" onClick={handleAdd}>Add</Button>
-              <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button size="sm" onClick={handleAdd}>{t('locationDetail.add')}</Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>{t('common:cancel')}</Button>
             </div>
           </div>
         )}
 
-        {list.rows.length === 0 && !showForm && <p style={styles.emptyText}>No maintenance windows scheduled. Add recurring maintenance to block booking time for cleaning or upkeep.</p>}
+        {list.rows.length === 0 && !showForm && <p style={styles.emptyText}>{t('resourceDetail.noMaintenance')}</p>}
         {list.rows.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {list.rows.map((row) => {
@@ -415,14 +426,14 @@ function MaintenanceTab({ resourceId }: { resourceId: string }) {
               return (
                 <div key={row.key} style={{ ...styles.listItem, opacity: row.deleted ? 0.6 : 1 }}>
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', textDecoration: row.deleted ? 'line-through' : 'none' }}>
-                    <Badge variant="neutral">{r.maintenance_type === 'one_time' ? formatDateOnly(r.specific_date) : r.day_of_week != null ? dayLabels[r.day_of_week] : 'Daily'}</Badge>
-                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{formatTime(r.start_time)}–{formatTime(r.end_time)}</span>
+                    <Badge variant="neutral">{r.maintenance_type === 'one_time' ? formatDateOnly(r.specific_date) : r.day_of_week != null ? dayLabels[r.day_of_week] : t('resourceDetail.daily')}</Badge>
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{formatClock(timeToDate(r.start_time))}–{formatClock(timeToDate(r.end_time))}</span>
                     {r.description && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>— {r.description}</span>}
-                    {row.isNew && <RowTag>New</RowTag>}
-                    {row.deleted && <RowTag>Deleted when you save</RowTag>}
+                    {row.isNew && <RowTag>{t('locationDetail.rowNew')}</RowTag>}
+                    {row.deleted && <RowTag>{t('locationDetail.rowDeleted')}</RowTag>}
                   </div>
-                  {row.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(row.key)}>Undo</Button>
-                    : <button style={styles.iconBtn} onClick={() => list.remove(row.key)} title="Remove">🗑️</button>}
+                  {row.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(row.key)}>{t('locationDetail.undo')}</Button>
+                    : <button style={styles.iconBtn} onClick={() => list.remove(row.key)} title={t('locationDetail.remove')}>🗑️</button>}
                 </div>
               );
             })}
@@ -434,12 +445,12 @@ function MaintenanceTab({ resourceId }: { resourceId: string }) {
 }
 
 
-/** Format a time string (HH:mm or HH:mm:ss) to locale format */
-function formatTime(time: string): string {
+/** A time string (HH:mm or HH:mm:ss) as today's date at that time, for formatting in the locale. */
+function timeToDate(time: string): Date {
   const [h, m] = time.split(':');
   const date = new Date();
   date.setHours(parseInt(h), parseInt(m), 0);
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return date;
 }
 
 // --- Styles ---

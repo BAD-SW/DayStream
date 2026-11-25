@@ -1,4 +1,5 @@
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 interface BreadcrumbItem {
   label: string;
@@ -11,14 +12,15 @@ interface BreadcrumbsProps {
 }
 
 export function Breadcrumbs({ items, autoGenerate = false }: BreadcrumbsProps) {
+  const { t } = useTranslation('common');
   const location = useLocation();
 
-  const breadcrumbs = items || (autoGenerate ? generateFromPath(location.pathname) : []);
+  const breadcrumbs = items || (autoGenerate ? generateFromPath(location.pathname, t('breadcrumbs.home')) : []);
 
   if (breadcrumbs.length === 0) return null;
 
   return (
-    <nav aria-label="Breadcrumb" style={styles.nav}>
+    <nav aria-label={t('breadcrumbs.label')} style={styles.nav}>
       <ol style={styles.list}>
         {breadcrumbs.map((item, index) => (
           <li key={index} style={styles.item}>
@@ -35,9 +37,9 @@ export function Breadcrumbs({ items, autoGenerate = false }: BreadcrumbsProps) {
   );
 }
 
-function generateFromPath(pathname: string): BreadcrumbItem[] {
+function generateFromPath(pathname: string, homeLabel: string): BreadcrumbItem[] {
   const segments = pathname.split('/').filter(Boolean);
-  const crumbs: BreadcrumbItem[] = [{ label: 'Home', path: '/' }];
+  const crumbs: BreadcrumbItem[] = [{ label: homeLabel, path: '/' }];
 
   let currentPath = '';
   for (const segment of segments) {

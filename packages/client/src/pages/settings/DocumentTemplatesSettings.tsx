@@ -1,10 +1,14 @@
+import { askConfirm } from '../../design-system/components/feedback/dialogs';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { RichTextEditor, RichTextEditorHandle, sanitizeRichText } from '../../design-system/components/forms/RichTextEditor';
 import { BrandedDocumentView } from '../../components/BrandedDocumentView';
 import { DETAILS_TABLE_TOKEN } from '@daystream/shared';
 import { LanguageSelect } from '../../components/LanguageSelect';
+import { useBusinessLanguages } from '../../context/useBusinessLanguages';
 import { useContextManager } from '../../context/ContextManager';
 import { FormsTemplates } from './FormsTemplates';
 import { CheckInTextTemplates } from './CheckInTextTemplates';
@@ -135,15 +139,15 @@ function fillSamples(text: string, placeholders: DocumentPlaceholder[]): string 
   );
 }
 
-/** Sample rows so {{details_table}} shows a realistic table in the editor preview. */
-const SAMPLE_DETAILS_TABLE = {
+/** Sample rows so {{details_table}} shows a realistic table in the editor preview (the words come from the templates file). */
+const sampleDetailsTable = (t: (key: string) => string) => ({
   rows: [
-    { description: 'Infrared Sauna — 60 min', qty: 1, amountCents: 4500 },
-    { description: 'Cold Plunge', qty: 2, amountCents: 3000 },
+    { description: t('documents.sampleRow1'), qty: 1, amountCents: 4500 },
+    { description: t('documents.sampleRow2'), qty: 2, amountCents: 3000 },
   ],
   totalCents: 10500,
   currency: 'EUR',
-};
+});
 
 /**
  * Templates keep their own Save (David, 2026-11-02, decision 9). `onDirtyChange` tells the page
@@ -154,9 +158,17 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
   /** 'system': the platform's templates, on System Configuration → Templates (spec 51, gap 17). */
   scope?: 'business' | 'system';
 } = {}) {
+  const { t } = useTranslation('templates');
+  // The document types and their placeholders come from the shared English catalogue; the words shown are looked up by key with that English as the default.
+  const typeLabel = (c: DocumentArtifactType) => t(`types.${c.key}.label`, { defaultValue: c.label });
+  const typeDescription = (c: DocumentArtifactType) => t(`types.${c.key}.description`, { defaultValue: c.description });
+  const phText = (typeKey: string, p: DocumentPlaceholder, field: 'label' | 'description' | 'sample') =>
+    t([`types.${typeKey}.placeholders.${p.token}.${field}`, `placeholders.${p.token}.${field}`], { defaultValue: p[field] });
   const businessId = useContextManager().activeContext.businessId || '';
   const canUseCharts = useClinicalAccess();
   const isSystem = scope === 'system';
+  const { languages: businessLanguages } = useBusinessLanguages();
+  const languages = isSystem ? undefined : businessLanguages;
   // Where templates are read and saved: the business's own, or the platform's system templates.
   const api = useMemo(() => (isSystem ? {
     types: () => systemApi.getSystemArtifactTypes(),
@@ -213,30 +225,30 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
         setCatalog(cat);
         if (cat.length > 0) setArtifactType(cat[0].key);
       })
-      .catch(() => setError('Failed to load document types.'))
+      .catch(() => setError(t('documents.loadTypesFailed')))
       .finally(() => setLoading(false));
-  }, [api]);
+  }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTemplates = useCallback(() => {
     if ((!isSystem && !businessId) || !artifactType || artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE || artifactType === CHECKIN_TEXT_TYPE) return;
     api.list(artifactType)
       .then(setTemplates)
-      .catch(() => setError('Failed to load templates.'));
+      .catch(() => setError(t('documents.loadFailed')));
     if (!isSystem) {
       payApi.listSystemDocumentTemplates(businessId, artifactType)
         .then(setSystemTemplates)
         .catch(() => setSystemTemplates([]));
     }
-  }, [api, isSystem, businessId, artifactType]);
+  }, [api, isSystem, businessId, artifactType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Duplicate a system template into the business and open the copy (not active yet).
   const copyFromSystem = async (t: DocumentBrandingTemplate) => {
-    if (!keepOrDiscard()) return;
+    if (!(await keepOrDiscard())) return;
     setCopying(t.id); setError(null);
     try {
       const created = await payApi.copySystemDocumentTemplate(businessId, t.id);
       loadTemplates();
-      openEdit(created);
+      void openEdit(created);
     } catch (e: unknown) { setError(saveErr(e)); }
     finally { setCopying(null); }
   };
@@ -248,17 +260,17 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
   }, [loadTemplates]);
 
   // With the editor beside the list, opening another row would drop unsaved changes; ask first.
-  const keepOrDiscard = () => !dirty || confirm('Discard your unsaved changes?');
+  const keepOrDiscard = async (): Promise<boolean> => !dirty || askConfirm({ message: t('documents.discardConfirm'), confirmLabel: t('common:action.discard'), destructive: true });
 
-  const openNew = () => {
-    if (!keepOrDiscard()) return;
-    setForm({ ...EMPTY_FORM, name: 'New Template' });
-    setOpenedForm({ ...EMPTY_FORM, name: 'New Template' });
+  const openNew = async () => {
+    if (!(await keepOrDiscard())) return;
+    setForm({ ...EMPTY_FORM, name: t('documents.newTemplate') });
+    setOpenedForm({ ...EMPTY_FORM, name: t('documents.newTemplate') });
     setEditingId('new');
   };
 
-  const openEdit = (t: DocumentBrandingTemplate) => {
-    if (!keepOrDiscard()) return;
+  const openEdit = async (t: DocumentBrandingTemplate) => {
+    if (!(await keepOrDiscard())) return;
     setForm(toForm(t));
     setOpenedForm(toForm(t));
     setEditingId(t.id);
@@ -267,10 +279,10 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
   // Duplicate: open the editor pre-filled from an existing template as a NEW one
   // (name suffixed "(Copy)"), so a business can tweak seasonal details and save a
   // fresh variant without re-entering everything. Saving creates a new template.
-  const openDuplicate = (t: DocumentBrandingTemplate) => {
-    if (!keepOrDiscard()) return;
-    setForm({ ...toForm(t), name: `${t.name} (Copy)` });
-    setOpenedForm({ ...toForm(t), name: `${t.name} (Copy)` });
+  const openDuplicate = async (tpl: DocumentBrandingTemplate) => {
+    if (!(await keepOrDiscard())) return;
+    setForm({ ...toForm(tpl), name: t('documents.copyName', { name: tpl.name }) });
+    setOpenedForm({ ...toForm(tpl), name: t('documents.copyName', { name: tpl.name }) });
     setEditingId('new');
   };
 
@@ -281,7 +293,7 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) { setError('Template name is required.'); return; }
+    if (!form.name.trim()) { setError(t('documents.nameRequired')); return; }
     setSaving(true); setError(null);
     try {
       if (editingId === 'new') {
@@ -298,11 +310,11 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
     }
   };
 
-  const handleDelete = async (t: DocumentBrandingTemplate) => {
-    if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+  const handleDelete = async (tpl: DocumentBrandingTemplate) => {
+    if (!(await askConfirm({ message: t('documents.confirmDelete', { name: tpl.name }), confirmLabel: t('common:action.delete'), destructive: true }))) return;
     try {
-      await api.remove(t.id);
-      if (editingId === t.id) closeEditor();
+      await api.remove(tpl.id);
+      if (editingId === tpl.id) closeEditor();
       loadTemplates();
     } catch (e: unknown) {
       setError(saveErr(e));
@@ -334,24 +346,24 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
     }
   };
 
-  if (loading) return <p style={s.muted}>Loading...</p>;
+  if (loading) return <p style={s.muted}>{t('common:loading')}</p>;
 
   if (!isSystem && !businessId) {
-    return <p style={s.muted}>Select a business to manage document templates.</p>;
+    return <p style={s.muted}>{t('documents.selectBusiness')}</p>;
   }
 
   // Which template the business's emails of this type use now (criterion 4).
   const ownActive = templates.find((t) => t.isActive);
   const usedNote = isSystem ? null
-    : ownActive ? `Your emails of this type use your template “${ownActive.name}”.`
-    : systemTemplates[0] ? `You have no active template of your own, so your emails of this type use the system template “${systemTemplates[0].name}”. Duplicate it to make it yours.`
-    : 'No active template: a plain email is sent.';
+    : ownActive ? t('documents.usedOwn', { name: ownActive.name })
+    : systemTemplates[0] ? t('documents.usedSystem', { name: systemTemplates[0].name })
+    : t('documents.usedNone');
 
 
   // Artifact type selector
   const typePicker = (
     <div style={s.field}>
-      <label style={s.label} htmlFor="artifact-type">Document Type</label>
+      <label style={s.label} htmlFor="artifact-type">{t('documents.documentType')}</label>
       <select
         id="artifact-type"
         style={s.select}
@@ -359,25 +371,23 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
         onChange={(e) => setArtifactType(e.target.value)}
       >
         {catalog.map((c) => (
-          <option key={c.key} value={c.key}>{c.label}</option>
+          <option key={c.key} value={c.key}>{typeLabel(c)}</option>
         ))}
         {/* The same types on System Configuration as on a business (spec 51, gap 17, criterion 7) */}
-        <option value={FORMS_TYPE}>Forms</option>
-        {(isSystem || canUseCharts) && <option value={CHARTS_TYPE}>Charts</option>}
-        <option value={CHECKIN_TEXT_TYPE}>Check-In</option>
+        <option value={FORMS_TYPE}>{t('documents.typeForms')}</option>
+        {(isSystem || canUseCharts) && <option value={CHARTS_TYPE}>{t('documents.typeCharts')}</option>}
+        <option value={CHECKIN_TEXT_TYPE}>{t('documents.typeCheckIn')}</option>
       </select>
-      {selectedType && <span style={s.helper}>{selectedType.description}</span>}
+      {selectedType && <span style={s.helper}>{typeDescription(selectedType)}</span>}
     </div>
   );
   const splitLayout = artifactType !== CHECKIN_TEXT_TYPE && artifactType !== FORMS_TYPE && artifactType !== CHARTS_TYPE;
 
   return (
     <div style={s.section}>
-      <h2 style={s.title}>{isSystem ? 'System Templates' : 'Document Templates'}</h2>
+      <h2 style={s.title}>{isSystem ? t('documents.titleSystem') : t('documents.titleBusiness')}</h2>
       <p style={s.description}>
-        {isSystem
-          ? 'The platform\'s templates. A business that has no active template of its own for a document type sends with the active system template, filled in with its own details. Businesses see them read only and can duplicate one to customise it.'
-          : 'Brand the documents your customers receive. Pick a document type, then create one or more templates — for example a default and a seasonal variant, or per-language versions.'}
+        {t(isSystem ? 'documents.introSystem' : 'documents.introBusiness')}
       </p>
 
       {error && <p style={s.error} role="alert">{error}</p>}
@@ -399,19 +409,19 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
       {!isSystem && systemTemplates.length > 0 && (
         <>
           <div style={s.listHeader}>
-            <h3 style={s.subTitle}>System templates</h3>
+            <h3 style={s.subTitle}>{t('documents.systemTemplates')}</h3>
           </div>
           <div style={s.list}>
-            {systemTemplates.map((t) => (
-              <div key={t.id} style={s.listRow}>
+            {systemTemplates.map((tpl) => (
+              <div key={tpl.id} style={s.listRow}>
                 <div style={s.listInfo}>
-                  <span style={s.listName}>{t.name}</span>
-                  <span style={s.langTag}>System</span>
-                  {t.language && <span style={s.langTag}>{t.language}</span>}
+                  <span style={s.listName}>{tpl.name}</span>
+                  <span style={s.langTag}>{t('documents.system')}</span>
+                  {tpl.language && <span style={s.langTag}>{tpl.language}</span>}
                 </div>
                 <div style={s.listActions}>
-                  <Button size="sm" variant="secondary" onClick={() => setPreviewForm(toForm(t))}>Preview</Button>
-                  <Button size="sm" variant="ghost" loading={copying === t.id} onClick={() => copyFromSystem(t)}>Duplicate</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setPreviewForm(toForm(tpl))}>{t('documents.preview')}</Button>
+                  <Button size="sm" variant="ghost" loading={copying === tpl.id} onClick={() => copyFromSystem(tpl)}>{t('documents.duplicate')}</Button>
                 </div>
               </div>
             ))}
@@ -420,29 +430,29 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
       )}
       {/* Template list */}
       <div style={s.listHeader}>
-        <h3 style={s.subTitle}>Templates</h3>
-        <Button size="sm" onClick={openNew}>New Template</Button>
+        <h3 style={s.subTitle}>{t('documents.templates')}</h3>
+        <Button size="sm" onClick={openNew}>{t('documents.newTemplate')}</Button>
       </div>
 
       {usedNote && <p style={s.helper} role="status">{usedNote}</p>}
 
       {templates.length === 0 ? (
-        <p style={s.muted}>{isSystem ? 'No system template for this document type yet.' : 'No templates yet. Create one, or duplicate a system template above.'}</p>
+        <p style={s.muted}>{t(isSystem ? 'documents.noSystemTemplate' : 'documents.noTemplates')}</p>
       ) : (
         <div style={s.list}>
-          {templates.map((t) => (
-            <div key={t.id} style={{ ...s.listRow, ...(editingId === t.id ? s.listRowOpen : {}) }} aria-current={editingId === t.id ? 'true' : undefined}>
+          {templates.map((tpl) => (
+            <div key={tpl.id} style={{ ...s.listRow, ...(editingId === tpl.id ? s.listRowOpen : {}) }} aria-current={editingId === tpl.id ? 'true' : undefined}>
               <div style={s.listInfo}>
-                <span style={s.listName}>{t.name}</span>
-                {t.language && <span style={s.langTag}>{t.language}</span>}
-                <span style={{ ...s.statusTag, color: t.isActive ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
-                  {t.isActive ? '● Active' : '○ Inactive'}
+                <span style={s.listName}>{tpl.name}</span>
+                {tpl.language && <span style={s.langTag}>{tpl.language}</span>}
+                <span style={{ ...s.statusTag, color: tpl.isActive ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+                  {tpl.isActive ? t('documents.active') : t('documents.inactive')}
                 </span>
               </div>
               <div style={s.listActions}>
-                <Button size="sm" variant="secondary" onClick={() => openEdit(t)}>Edit</Button>
-                <Button size="sm" variant="ghost" onClick={() => openDuplicate(t)}>Duplicate</Button>
-                <Button size="sm" variant="ghost" onClick={() => handleDelete(t)}>Delete</Button>
+                <Button size="sm" variant="secondary" onClick={() => openEdit(tpl)}>{t('common:edit')}</Button>
+                <Button size="sm" variant="ghost" onClick={() => openDuplicate(tpl)}>{t('documents.duplicate')}</Button>
+                <Button size="sm" variant="ghost" onClick={() => handleDelete(tpl)}>{t('common:delete')}</Button>
               </div>
             </div>
           ))}
@@ -454,23 +464,23 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
       {editingId && selectedType && (
         <div style={{ ...s.editor, ...s.splitEditor }}>
           <div style={s.editorHead}>
-            <h3 style={s.subTitle}>{editingId === 'new' ? 'New Template' : 'Edit Template'}</h3>
+            <h3 style={s.subTitle}>{editingId === 'new' ? t('documents.newTemplate') : t('documents.editTemplate')}</h3>
             <div style={s.listActions}>
-              <Button size="sm" variant="secondary" onClick={() => setPreviewOpen(true)} disabled={saving}>Preview</Button>
-              <Button size="sm" onClick={handleSave} loading={saving}>{editingId === 'new' ? 'Create Template' : 'Save Changes'}</Button>
+              <Button size="sm" variant="secondary" onClick={() => setPreviewOpen(true)} disabled={saving}>{t('documents.preview')}</Button>
+              <Button size="sm" onClick={handleSave} loading={saving}>{editingId === 'new' ? t('documents.createTemplate') : t('documents.saveChanges')}</Button>
             </div>
           </div>
 
           <div style={s.formGrid}>
             <div style={s.field}>
-              <label style={s.label} htmlFor="tmpl-name">Name<span style={s.req}>*</span></label>
+              <label style={s.label} htmlFor="tmpl-name">{t('documents.name')}<span style={s.req}>*</span></label>
               <input id="tmpl-name" style={s.input} value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div style={s.field}>
-              <label style={s.label} htmlFor="tmpl-lang">Language</label>
-              <LanguageSelect id="tmpl-lang" style={s.input} value={form.language}
-                onChange={(v) => setForm({ ...form, language: v })} blankLabel="Default (no language)" />
+              <label style={s.label} htmlFor="tmpl-lang">{t('documents.language')}</label>
+              <LanguageSelect languages={languages} id="tmpl-lang" style={s.input} value={form.language}
+                onChange={(v) => setForm({ ...form, language: v })} blankLabel={t('documents.defaultNoLanguage')} />
             </div>
           </div>
 
@@ -478,33 +488,33 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
             <label style={s.checkLabel}>
               <input type="checkbox" checked={form.is_active}
                 onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
-              <span>Active (inactive templates are drafts and are not used)</span>
+              <span>{t('documents.activeHint')}</span>
             </label>
           </div>
 
           <div style={s.field}>
-            <label style={s.label} htmlFor="tmpl-logo">Logo URL</label>
+            <label style={s.label} htmlFor="tmpl-logo">{t('documents.logoUrl')}</label>
             <input id="tmpl-logo" style={s.input} placeholder="https://..." value={form.logo_url}
               onChange={(e) => setForm({ ...form, logo_url: e.target.value })} />
           </div>
 
           <div style={s.formGrid}>
-            <ColorField label="Primary Color" value={form.color_primary}
-              helper="Header bar and headings."
+            <ColorField label={t('documents.primaryColor')} value={form.color_primary}
+              helper={t('documents.primaryColorHelper')}
               onChange={(v) => setForm({ ...form, color_primary: v })} />
-            <ColorField label="Secondary Color" value={form.color_secondary}
-              helper="Accents and the footer rule."
+            <ColorField label={t('documents.secondaryColor')} value={form.color_secondary}
+              helper={t('documents.secondaryColorHelper')}
               onChange={(v) => setForm({ ...form, color_secondary: v })} />
           </div>
 
           <div style={s.formGrid}>
             <div style={s.field}>
-              <label style={s.label} htmlFor="tmpl-sender">Sender Name</label>
+              <label style={s.label} htmlFor="tmpl-sender">{t('documents.senderName')}</label>
               <input id="tmpl-sender" style={s.input} value={form.sender_name}
                 onChange={(e) => setForm({ ...form, sender_name: e.target.value })} />
             </div>
             <div style={s.field}>
-              <label style={s.label} htmlFor="tmpl-reply">Reply-To Email</label>
+              <label style={s.label} htmlFor="tmpl-reply">{t('documents.replyTo')}</label>
               <input id="tmpl-reply" style={s.input} type="email" value={form.reply_to}
                 onChange={(e) => setForm({ ...form, reply_to: e.target.value })} />
             </div>
@@ -512,24 +522,23 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
 
           {/* Placeholder chips — click to insert into the last-focused field */}
           <div style={s.chipArea}>
-            <label style={s.label}>Insert Placeholder</label>
+            <label style={s.label}>{t('documents.insertPlaceholder')}</label>
             <p style={s.helper}>
-              Click into a field below, then click a placeholder to insert it. Placeholders are
-              replaced with real values when the document is sent.
+              {t('documents.insertHelper')}
             </p>
             <div style={s.chips}>
               {selectedType.placeholders.map((ph) => (
                 <button key={ph.token} type="button" style={s.chip}
-                  title={`${ph.description} (e.g. ${ph.sample})`}
+                  title={t('documents.chipTitle', { description: phText(selectedType.key, ph, 'description'), sample: phText(selectedType.key, ph, 'sample') })}
                   onClick={() => insertPlaceholder(ph)}>
-                  {ph.label}
+                  {phText(selectedType.key, ph, 'label')}
                 </button>
               ))}
             </div>
           </div>
 
           <div style={s.field}>
-            <label style={s.label} htmlFor="tmpl-subject">Subject</label>
+            <label style={s.label} htmlFor="tmpl-subject">{t('documents.subject')}</label>
             <input id="tmpl-subject" style={s.input} value={form.subject_template}
               ref={(el) => { plainRefs.current.subject_template = el; }}
               onFocus={() => { lastFocused.current = 'subject_template'; }}
@@ -537,10 +546,10 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
           </div>
 
           <div style={s.field}>
-            <label style={s.label}>Body</label>
+            <label style={s.label}>{t('documents.body')}</label>
             <RichTextEditor
               ref={bodyRef}
-              ariaLabel="Document body"
+              ariaLabel={t('documents.documentBody')}
               value={form.body_template}
               onFocus={() => { lastFocused.current = 'body'; }}
               onChange={(html) => setForm((f) => ({ ...f, body_template: html }))}
@@ -548,7 +557,7 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
           </div>
 
           <div style={s.field}>
-            <label style={s.label} htmlFor="tmpl-footer">Footer</label>
+            <label style={s.label} htmlFor="tmpl-footer">{t('documents.footer')}</label>
             <input id="tmpl-footer" style={s.input} value={form.footer_text}
               ref={(el) => { plainRefs.current.footer_text = el; }}
               onFocus={() => { lastFocused.current = 'footer_text'; }}
@@ -557,31 +566,31 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
 
           <div style={s.formGrid}>
             <div style={s.field}>
-              <label style={s.label} htmlFor="tmpl-footer-link-text">Footer Link Text</label>
-              <input id="tmpl-footer-link-text" style={s.input} placeholder="e.g. Visit our website"
+              <label style={s.label} htmlFor="tmpl-footer-link-text">{t('documents.footerLinkText')}</label>
+              <input id="tmpl-footer-link-text" style={s.input} placeholder={t('documents.footerLinkTextPlaceholder')}
                 value={form.footer_link_text}
                 ref={(el) => { plainRefs.current.footer_link_text = el; }}
                 onFocus={() => { lastFocused.current = 'footer_link_text'; }}
                 onChange={(e) => setForm({ ...form, footer_link_text: e.target.value })} />
-              <span style={s.helper}>The clickable text shown in the footer.</span>
+              <span style={s.helper}>{t('documents.footerLinkTextHelper')}</span>
             </div>
             <div style={s.field}>
-              <label style={s.label} htmlFor="tmpl-footer-link-url">Footer Link URL</label>
+              <label style={s.label} htmlFor="tmpl-footer-link-url">{t('documents.footerLinkUrl')}</label>
               <input id="tmpl-footer-link-url" style={s.input} placeholder="https://..."
                 value={form.footer_link_url}
                 ref={(el) => { plainRefs.current.footer_link_url = el; }}
                 onFocus={() => { lastFocused.current = 'footer_link_url'; }}
                 onChange={(e) => setForm({ ...form, footer_link_url: e.target.value })} />
-              <span style={s.helper}>Must start with http:// or https://</span>
+              <span style={s.helper}>{t('documents.footerLinkUrlHelper')}</span>
             </div>
           </div>
 
           <div style={s.actions}>
             <Button onClick={handleSave} loading={saving}>
-              {editingId === 'new' ? 'Create Template' : 'Save Changes'}
+              {editingId === 'new' ? t('documents.createTemplate') : t('documents.saveChanges')}
             </Button>
-            <Button variant="secondary" onClick={() => setPreviewOpen(true)} disabled={saving}>Preview</Button>
-            <Button variant="ghost" onClick={closeEditor} disabled={saving}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setPreviewOpen(true)} disabled={saving}>{t('documents.preview')}</Button>
+            <Button variant="ghost" onClick={closeEditor} disabled={saving}>{t('common:cancel')}</Button>
           </div>
         </div>
       )}
@@ -591,30 +600,31 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
       {selectedType && (() => {
         // The template being edited, or a system template opened with Preview (read only).
         const shown = previewForm ?? form;
+        // The sample values in the language shown, for the filled-in preview.
+        const samplePlaceholders = selectedType.placeholders.map((p) => ({ ...p, sample: phText(selectedType.key, p, 'sample') }));
         return (
         <Modal open={previewOpen || !!previewForm} onClose={() => { setPreviewOpen(false); setPreviewForm(null); }}
-          title={`Preview — ${selectedType.label}${previewForm ? ' (system template)' : ''}`} size="lg">
+          title={t(previewForm ? 'documents.previewTitleSystem' : 'documents.previewTitle', { type: typeLabel(selectedType) })} size="lg">
           <div style={s.previewNote}>
-            Placeholders are shown filled with example values. Actual documents use real customer data
-            {previewForm ? ' and your own business details and branding' : ''}.
+            {t(previewForm ? 'documents.previewNoteSystem' : 'documents.previewNote')}
           </div>
           <BrandedDocumentView fields={{
             primaryColor: shown.color_primary || DEFAULT_PRIMARY,
             secondaryColor: shown.color_secondary || DEFAULT_SECONDARY,
             logoUrl: shown.logo_url || null,
-            businessName: fillSamples('{{business_name}}', selectedType.placeholders),
-            subject: fillSamples(shown.subject_template, selectedType.placeholders),
+            businessName: fillSamples('{{business_name}}', samplePlaceholders),
+            subject: fillSamples(shown.subject_template, samplePlaceholders),
             // Keep the {{details_table}} marker literal in the body so the preview
             // can draw a sample table where the user placed it.
-            bodyHtml: shown.body_template ? sanitizeRichText(fillSamples(shown.body_template, selectedType.placeholders)) : '',
-            footerText: fillSamples(shown.footer_text, selectedType.placeholders),
-            footerLinkText: fillSamples(shown.footer_link_text, selectedType.placeholders),
-            footerLinkUrl: fillSamples(shown.footer_link_url, selectedType.placeholders),
-            detailsTable: SAMPLE_DETAILS_TABLE,
+            bodyHtml: shown.body_template ? sanitizeRichText(fillSamples(shown.body_template, samplePlaceholders)) : '',
+            footerText: fillSamples(shown.footer_text, samplePlaceholders),
+            footerLinkText: fillSamples(shown.footer_link_text, samplePlaceholders),
+            footerLinkUrl: fillSamples(shown.footer_link_url, samplePlaceholders),
+            detailsTable: sampleDetailsTable(t),
           }} />
           {previewForm && (
             <div style={{ ...s.actions, marginTop: 'var(--space-md)' }}>
-              <p style={s.helper}>Read only. Duplicate it to make your own copy you can change.</p>
+              <p style={s.helper}>{t('documents.readOnly')}</p>
             </div>
           )}
         </Modal>
@@ -629,19 +639,20 @@ export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }:
 function ColorField({ label, value, helper, onChange }: {
   label: string; value: string; helper?: string; onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation('templates');
   const valid = /^#[0-9A-Fa-f]{6}$/.test(value);
   const id = `color-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   return (
     <div style={s.field}>
       <label style={s.label} htmlFor={id}>{label}</label>
       <div style={s.colorInputRow}>
-        <input type="color" aria-label={`${label} picker`}
+        <input type="color" aria-label={t('documents.colorPicker', { label })}
           value={valid ? value : '#000000'}
           onChange={(e) => onChange(e.target.value)} style={s.colorSwatch} />
-        <input id={id} type="text" value={value} placeholder="#RRGGBB (blank = default)"
+        <input id={id} type="text" value={value} placeholder={t('documents.colorPlaceholder')}
           spellCheck={false} onChange={(e) => onChange(e.target.value)} style={s.colorHex} />
       </div>
-      <div style={s.presetRow} role="group" aria-label={`${label} presets`}>
+      <div style={s.presetRow} role="group" aria-label={t('documents.colorPresets', { label })}>
         {COLOR_PRESETS.map((c) => (
           <button key={c} type="button" title={c} aria-label={c}
             aria-pressed={value.toLowerCase() === c.toLowerCase()}
@@ -657,7 +668,7 @@ function ColorField({ label, value, helper, onChange }: {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function saveErr(e: unknown): string {
   const anyE = e as any;
-  return anyE?.response?.data?.message || anyE?.message || 'Something went wrong.';
+  return anyE?.response?.data?.message || anyE?.message || i18n.t('templates:documents.somethingWrong');
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

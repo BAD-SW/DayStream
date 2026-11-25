@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface CreateBundleInput {
   businessId: string;
@@ -16,10 +17,10 @@ interface CreateBundleInput {
  */
 export async function createBundle(input: CreateBundleInput) {
   if (input.bundleType === 'fixed_price' && !input.bundlePrice) {
-    throw new Error('Fixed price bundles require a bundle_price');
+    throw new Error(msg('errors:pricingBundles.fixedPriceBundlesRequireABundle'));
   }
   if (input.bundleType === 'percentage_off' && !input.discountPercentage) {
-    throw new Error('Percentage off bundles require a discount_percentage');
+    throw new Error(msg('errors:pricingBundles.percentageOffBundlesRequireADiscount'));
   }
 
   const { rows } = await adminPool.query(

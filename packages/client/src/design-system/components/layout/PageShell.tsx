@@ -1,4 +1,5 @@
 import { ReactNode, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 
 interface PageShellProps {
@@ -13,6 +14,7 @@ interface PageShellProps {
  * Mobile: sidebar hidden by default, shown as overlay via FAB.
  */
 export function PageShell({ children, sidebar, header }: PageShellProps) {
+  const { t } = useTranslation('common');
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -27,7 +29,7 @@ export function PageShell({ children, sidebar, header }: PageShellProps) {
             <button
               onClick={() => setCollapsed(!collapsed)}
               style={styles.collapseBtn}
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={collapsed ? t('pageShell.expandSidebar') : t('pageShell.collapseSidebar')}
             >
               {collapsed ? '→' : '←'}
             </button>
@@ -50,7 +52,7 @@ export function PageShell({ children, sidebar, header }: PageShellProps) {
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           style={styles.fab}
-          aria-label="Toggle menu"
+          aria-label={t('pageShell.toggleMenu')}
         >
           ☰
         </button>

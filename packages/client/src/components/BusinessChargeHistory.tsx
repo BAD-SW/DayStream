@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Table } from '../design-system/components/data/Table';
 import { formatCurrency } from '../utils/currency';
+import { formatDate } from '../utils/format';
 import * as payApi from '../api/payments';
 import type { BusinessBillingCharge } from '../api/payments';
 
@@ -24,6 +26,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function BusinessChargeHistory({ businessId }: Props) {
+  const { t } = useTranslation('tenant');
   const [charges, setCharges] = useState<BusinessBillingCharge[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,28 +42,28 @@ export function BusinessChargeHistory({ businessId }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <p style={styles.muted}>Loading charge history…</p>;
-  if (charges.length === 0) return <p style={styles.muted}>No charges yet.</p>;
+  if (loading) return <p style={styles.muted}>{t('chargeHistory.loading')}</p>;
+  if (charges.length === 0) return <p style={styles.muted}>{t('chargeHistory.empty')}</p>;
 
   // The shared table: column filters beside the sort icon, scrolls instead of paging
   // (David, 2026-11-02).
   const money = (v: any, c: BusinessBillingCharge) => formatCurrency(Number(v), c.currency);
   return (
     <div>
-      <p style={styles.muted}>{charges.length} charge{charges.length === 1 ? '' : 's'}</p>
+      <p style={styles.muted}>{t('chargeHistory.count', { count: charges.length })}</p>
       <Table
         rowId={(c: BusinessBillingCharge) => c.id}
         data={charges}
         clientSort
         columns={[
-          { key: 'reference_number', header: 'Ref', sortable: true },
-          { key: 'cycle', header: 'Cycle', sortable: true, filterValue: (c: BusinessBillingCharge) => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}`, render: (_: any, c: BusinessBillingCharge) => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}` },
-          { key: 'flat_component_cents', header: 'Flat', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
-          { key: 'percentage_component_cents', header: '%', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
-          { key: 'credit_applied_cents', header: 'Credit', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
-          { key: 'amount_charged_cents', header: 'Charged', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
-          { key: 'status', header: 'Status', sortable: true, render: (v: string) => <span style={{ color: STATUS_COLOR[v] }}>{v}</span> },
-          { key: 'settled_at', header: 'Settled', sortable: true, filter: 'date' as const, render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') },
+          { key: 'reference_number', header: t('chargeHistory.ref'), sortable: true },
+          { key: 'cycle', header: t('chargeHistory.cycle'), sortable: true, filterValue: (c: BusinessBillingCharge) => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}`, render: (_: any, c: BusinessBillingCharge) => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}` },
+          { key: 'flat_component_cents', header: t('chargeHistory.flat'), align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'percentage_component_cents', header: t('chargeHistory.percent'), align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'credit_applied_cents', header: t('chargeHistory.credit'), align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'amount_charged_cents', header: t('chargeHistory.charged'), align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'status', header: t('chargeHistory.status'), sortable: true, render: (v: string) => <span style={{ color: STATUS_COLOR[v] }}>{t(`chargeStatus.${v}`, { defaultValue: v })}</span> },
+          { key: 'settled_at', header: t('chargeHistory.settled'), sortable: true, filter: 'date' as const, render: (v: string) => (v ? formatDate(v) : '—') },
         ]}
       />
     </div>

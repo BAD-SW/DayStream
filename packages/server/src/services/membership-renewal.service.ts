@@ -297,7 +297,7 @@ async function queueRenewalReceipt(
       currency,
       payment_method: 'card',
       payment_date: new Date().toISOString(),
-      membership_name: enr.plan_name ?? null,
+      membership_name: enr.plan_name ?? null, membership_plan_id: enr.plan_id ?? null,
       customer_name: [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim(),
       customer_email: cust.email,
     },
@@ -521,7 +521,7 @@ export async function scheduleRenewalReminders(
         recipientEmail: decision.address || enr.email || undefined,
         data: {
           enrollment_id: enr.id,                 // for the idempotency check (not a token)
-          membership_name: enr.plan_name,
+          membership_name: enr.plan_name, membership_plan_id: enr.plan_id,
           renewal_date: enr.next_billing_date,   // → renewal_date
           renewal_amount_cents: enr.price,       // → renewal_amount
           currency,

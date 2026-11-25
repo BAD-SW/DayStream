@@ -10,6 +10,7 @@ import { logAudit } from '../services/audit.service';
 import * as importService from '../services/customer-import.service';
 import * as activityService from '../services/customer-activity.service';
 import * as consentService from '../services/consent.service';
+import { msg } from '../i18n';
 
 export const customerPortalRouter = Router();
 
@@ -57,14 +58,14 @@ const updatePreferencesSchema = Joi.object({
 customerPortalRouter.get('/', async (req: Request, res: Response) => {
   try {
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     // Strip internal fields
     const { anonymized_at, anonymized_by, ...profile } = customer;
     success(res, profile);
   } catch (err: any) {
     console.error('Failed to get profile', err?.message || err);
-    error(res, 'Failed to get profile', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToGetProfile'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -73,7 +74,7 @@ customerPortalRouter.put('/', validate(updateProfileSchema), async (req: Request
   try {
     const authReq = req as AuthenticatedRequest;
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     const allowedFields = ['email', 'phone', 'preferred_language', 'country'];
     const fields: string[] = [];
@@ -110,7 +111,7 @@ customerPortalRouter.put('/', validate(updateProfileSchema), async (req: Request
     success(res, rows[0]);
   } catch (err: any) {
     console.error('Failed to update profile', err?.message || err);
-    error(res, 'Failed to update profile', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToUpdateProfile'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -118,7 +119,7 @@ customerPortalRouter.put('/', validate(updateProfileSchema), async (req: Request
 customerPortalRouter.get('/notes', async (req: Request, res: Response) => {
   try {
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     const { rows } = await adminPool.query(
       `SELECT cn.id, cn.category, cn.created_at FROM cus_notes cn
@@ -131,7 +132,7 @@ customerPortalRouter.get('/notes', async (req: Request, res: Response) => {
     success(res, rows);
   } catch (err: any) {
     console.error('Failed to get notes', err?.message || err);
-    error(res, 'Failed to get notes', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToGetNotes'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -139,7 +140,7 @@ customerPortalRouter.get('/notes', async (req: Request, res: Response) => {
 customerPortalRouter.get('/activities', async (req: Request, res: Response) => {
   try {
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
@@ -159,7 +160,7 @@ customerPortalRouter.get('/activities', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('Failed to get activities', err?.message || err);
-    error(res, 'Failed to get activities', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToGetActivities'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -168,7 +169,7 @@ customerPortalRouter.post('/export', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     const data = await importService.exportGDPR(customer.id, customer.business_id);
 
@@ -183,7 +184,7 @@ customerPortalRouter.post('/export', async (req: Request, res: Response) => {
     success(res, data);
   } catch (err: any) {
     console.error('Failed to export data', err?.message || err);
-    error(res, 'Failed to export data', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToExportData'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -192,7 +193,7 @@ customerPortalRouter.post('/delete', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     // Log the deletion request (actual anonymization requires staff approval in most cases)
     await activityService.createActivity({
@@ -215,7 +216,7 @@ customerPortalRouter.post('/delete', async (req: Request, res: Response) => {
     success(res, { message: 'Deletion request submitted. You will be notified when processed.' });
   } catch (err: any) {
     console.error('Failed to submit deletion request', err?.message || err);
-    error(res, 'Failed to submit deletion request', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToSubmitDeletionRequest'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -223,13 +224,13 @@ customerPortalRouter.post('/delete', async (req: Request, res: Response) => {
 customerPortalRouter.get('/preferences', async (req: Request, res: Response) => {
   try {
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     const { customer_id: _omit, ...prefs } = await consentService.getLegacyPreferences(customer.id);
     success(res, prefs);
   } catch (err: any) {
     console.error('Failed to get preferences', err?.message || err);
-    error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToGetPreferences'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -238,7 +239,7 @@ customerPortalRouter.put('/preferences', validate(updatePreferencesSchema), asyn
   try {
     const authReq = req as AuthenticatedRequest;
     const customer = await resolveCustomer(req);
-    if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
+    if (!customer) { error(res, msg('errors:customerPortal.customerProfileNotFound'), 'NOT_FOUND', 404); return; }
 
     // The person changing their own settings in the portal is itself the proof of consent.
     const updated = await consentService.setLegacyPreferences(customer.id, req.body, {
@@ -258,6 +259,6 @@ customerPortalRouter.put('/preferences', validate(updatePreferencesSchema), asyn
     success(res, prefs);
   } catch (err: any) {
     console.error('Failed to update preferences', err?.message || err);
-    error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:customerPortal.failedToUpdatePreferences'), 'INTERNAL_ERROR', 500);
   }
 });

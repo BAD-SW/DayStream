@@ -1,4 +1,7 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
+import { formatDate, formatTime as formatClock } from '../utils/format';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import * as staffApi from '../api/staff';
@@ -39,7 +42,7 @@ function formatTime(time: string): string {
   const [h, m] = time.split(':');
   const date = new Date();
   date.setHours(parseInt(h), parseInt(m), 0);
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return formatClock(date);
 }
 
 function getWeekDates(baseDate: Date): Date[] {
@@ -78,6 +81,7 @@ const STAFF_COLORS = [
 ];
 
 export function Schedule() {
+  const { t } = useTranslation('staff');
   const businessId = localStorage.getItem('business_id') || '';
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -199,7 +203,7 @@ export function Schedule() {
 
   // Handle clicking on a cell to add a shift
   const handleCellClick = async (date: Date, slotTime: string) => {
-    if (!selectedStaffId) { alert('Select a staff member first'); return; }
+    if (!selectedStaffId) { void showMessage({ message: t('schedule.selectFirst'), tone: 'info' }); return; }
     await createShift(selectedStaffId, date, slotTime);
   };
 
@@ -218,7 +222,7 @@ export function Schedule() {
         location_id: selectedLocationId || undefined,
       });
       fetchData();
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to add shift'); }
+    } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('schedule.errAdd'), tone: 'error' }); }
   };
 
   // Drag and drop handlers
@@ -263,7 +267,7 @@ export function Schedule() {
           end_time: newEnd,
         });
         fetchData();
-      } catch (err: any) { alert(err.response?.data?.error || 'Failed to move shift'); }
+      } catch (err: any) { void showMessage({ message: err.response?.data?.error || t('schedule.errMove'), tone: 'error' }); }
     }
   };
 
@@ -398,15 +402,15 @@ export function Schedule() {
     <div style={styles.page}>
       {/* Header */}
       <div style={styles.header}>
-        <h1 style={styles.title}>Schedule</h1>
+        <h1 style={styles.title}>{t('schedule.title')}</h1>
         <div style={styles.nav}>
           <Button variant="secondary" size="sm" onClick={prev}>←</Button>
-          <Button variant="secondary" size="sm" onClick={goToday}>Today</Button>
+          <Button variant="secondary" size="sm" onClick={goToday}>{t('common:dateRange.today')}</Button>
           <Button variant="secondary" size="sm" onClick={next}>→</Button>
           <span style={styles.weekLabel}>
             {viewMode === 'week'
-              ? `${weekDates[0].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${weekDates[6].toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
-              : currentDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+              ? `${formatDate(weekDates[0], { month: 'short', day: 'numeric' })} – ${formatDate(weekDates[6], { month: 'short', day: 'numeric', year: 'numeric' })}`
+              : formatDate(currentDate, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
             }
           </span>
         </div>
@@ -417,17 +421,17 @@ export function Schedule() {
             </select>
           )}
           <div style={styles.toggleGroup}>
-            <button onClick={() => setViewMode('week')} style={viewMode === 'week' ? styles.toggleActive : styles.toggleBtn}>Week</button>
-            <button onClick={() => setViewMode('day')} style={viewMode === 'day' ? styles.toggleActive : styles.toggleBtn}>Day</button>
+            <button onClick={() => setViewMode('week')} style={viewMode === 'week' ? styles.toggleActive : styles.toggleBtn}>{t('schedule.week')}</button>
+            <button onClick={() => setViewMode('day')} style={viewMode === 'day' ? styles.toggleActive : styles.toggleBtn}>{t('schedule.day')}</button>
           </div>
         </div>
       </div>
 
       {/* Staff selector - selected name is draggable */}
       <div style={styles.toolbar}>
-        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Staff:</label>
+        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 }}>{t('schedule.staff')}</label>
         <select style={{ ...styles.select, minWidth: '200px' }} value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value)}>
-          <option value="">Select staff to schedule...</option>
+          <option value="">{t('schedule.selectStaff')}</option>
           {staff.map((s) => <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>)}
         </select>
         {selectedStaffId && (
@@ -435,23 +439,23 @@ export function Schedule() {
             draggable
             onDragStart={(e) => handleDragStart(e, selectedStaffId)}
             style={styles.dragHandle}
-            title="Drag onto schedule"
+            title={t('schedule.dragOnto')}
           >
-            ⠿ {staff.find((s) => s.id === selectedStaffId)?.first_name} — drag to schedule
+            {t('schedule.dragHint', { name: staff.find((s) => s.id === selectedStaffId)?.first_name })}
           </div>
         )}
-        {!selectedStaffId && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Select a staff member, then drag or click to schedule</span>}
+        {!selectedStaffId && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{t('schedule.selectHint')}</span>}
       </div>
 
       {/* Grid */}
-      {loading ? <p style={{ color: 'var(--color-text-secondary)' }}>Loading...</p> : (
+      {loading ? <p style={{ color: 'var(--color-text-secondary)' }}>{t('common:loading')}</p> : (
         <div style={styles.gridWrapper}>
           <div style={{ ...styles.grid, gridTemplateColumns: `60px repeat(${visibleDates.length}, 1fr)` }}>
             {/* Header row */}
             <div style={styles.timeHeader} />
             {visibleDates.map((d) => (
               <div key={toDateStr(d)} style={{ ...styles.dayHeader, ...(toDateStr(d) === today ? styles.todayHeader : {}) }}>
-                <div style={styles.dayName}>{d.toLocaleDateString(undefined, { weekday: 'short' })}</div>
+                <div style={styles.dayName}>{formatDate(d, { weekday: 'short' })}</div>
                 <div style={styles.dayDate}>{d.getDate()}</div>
               </div>
             ))}
@@ -532,7 +536,7 @@ export function Schedule() {
                             if (slotTime) handleDrop(e, d, slotTime);
                           }}
                           style={{ ...styles.shiftBlock, top: adjustedTop, height: adjustedHeight, left: `${leftPct}%`, width: `${widthPct}%`, background: color, opacity: isResizingThis ? 0.85 : 1 }}
-                          title={`${entry.staff_first_name} ${entry.staff_last_name}\n${formatTime(entry.start_time.slice(0,5))}–${formatTime(entry.end_time.slice(0,5))}\nDrag to move`}
+                          title={`${entry.staff_first_name} ${entry.staff_last_name}\n${formatTime(entry.start_time.slice(0,5))}–${formatTime(entry.end_time.slice(0,5))}\n${t('schedule.dragToMove')}`}
                         >
                           <div
                             style={styles.resizeHandleTop}
@@ -543,7 +547,7 @@ export function Schedule() {
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteEntry(entry.id); }}
                             style={styles.shiftDeleteBtn}
-                            title="Remove shift"
+                            title={t('schedule.removeShift')}
                           >×</button>
                           <div
                             style={styles.resizeHandleBottom}

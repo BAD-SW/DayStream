@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Paying with a membership or package (spec 51, gap 19; design 19). One place decides what a
@@ -267,8 +268,8 @@ export async function holdBenefit(args: {
     if (own) await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`benefit:${args.ref.source_id}:${args.ref.item_id}`]);
     const option = await optionFor(args.target, args.ref, { exceptUseIds: args.exceptUseIds, db: client });
-    if (!option) throw new BenefitError('This customer has no such membership or package for this.', 'NOT_FOUND');
-    if (!option.covers) throw new BenefitError(`${option.name} does not cover this: ${option.reason}`, 'NOT_COVERED');
+    if (!option) throw new BenefitError(msg('errors:benefits.thisCustomerHasNoSuchMembership'), 'NOT_FOUND');
+    if (!option.covers) throw new BenefitError(msg('errors:benefits.doesNotCoverThis', { name: option.name, reason: option.reason }), 'NOT_COVERED');
     const { rows: biz } = await client.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [args.target.businessId]);
     const membership = args.ref.kind === 'membership';
     const { rows } = await client.query(
@@ -422,7 +423,7 @@ export async function setBookingBenefit(bookingId: string, ref: BenefitRef | nul
     let use: BenefitUse | null = null;
     if (ref) {
       const target = await bookingTarget(bookingId, client);
-      if (!target) throw new BenefitError('Choose a customer to pay with a membership or package.', 'INVALID');
+      if (!target) throw new BenefitError(msg('errors:benefits.chooseACustomerToPayWith'), 'INVALID');
       use = await holdBenefit({ target, ref, bookingId, userId, exceptUseIds: heldIds, client });
     }
     for (const id of heldIds) await releaseUse(id, client);
@@ -532,7 +533,7 @@ export async function lineOptions(orderItemId: string): Promise<{ options: Benef
  */
 export async function setLineBenefit(orderItemId: string, ref: BenefitRef | null, userId: string | null): Promise<void> {
   const lt = await lineTarget(orderItemId);
-  if (!lt) throw new BenefitError('Only a service or product line of an order with a customer can be paid with a membership or package.', 'INVALID');
+  if (!lt) throw new BenefitError(msg('errors:benefits.onlyAServiceOrProductLine'), 'INVALID');
   const client = await adminPool.connect();
   let name: string | null = null;
   try {

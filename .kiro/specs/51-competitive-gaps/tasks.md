@@ -154,7 +154,8 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Verify live and close with the owner
 
 ## 11. Multi-language (Requirement 11)
-- [ ] Tracked: finished in Phase 44
+- [x] ✅ Confirm current state and agree the model with the owner (24 Nov 2026; recorded in Phase 44 requirements)
+- [x] ✅ Tracked: finished in Phase 44 (closed with the owner, 25 Nov 2026)
 
 ## 12. AI assistant and receptionist (Requirement 12)
 - [ ] Tracked: finished in Phase 21

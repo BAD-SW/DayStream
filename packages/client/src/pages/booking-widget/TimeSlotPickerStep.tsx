@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAvailabilitySlots, WidgetApiError, WidgetAvailabilityCombo } from '../../api/widget';
 import { formatDayLabel, formatTimeLabel } from './format';
 
@@ -22,6 +23,7 @@ interface Props {
  * location column; the booking is tied to staff_id, from which a location is inferable).
  */
 export function TimeSlotPickerStep({ businessId, serviceId, variantId, date, expiredNotice, onSelectSlot, onBack }: Props) {
+  const { t } = useTranslation('widget');
   const [combos, setCombos] = useState<WidgetAvailabilityCombo[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +89,7 @@ export function TimeSlotPickerStep({ businessId, serviceId, variantId, date, exp
 
   return (
     <div className="dsw-step">
-      <h2 className="dsw-step-title">Choose a time</h2>
+      <h2 className="dsw-step-title">{t('slots.title')}</h2>
       <p className="dsw-step-text">{formatDayLabel(date)}</p>
 
       {(resolvedLocationName || resolvedStaffName) && (
@@ -98,24 +100,24 @@ export function TimeSlotPickerStep({ businessId, serviceId, variantId, date, exp
       )}
 
       {expiredNotice && (
-        <p className="dsw-step-notice">Your hold on the previous time slot expired. Please pick a new time.</p>
+        <p className="dsw-step-notice">{t('slots.expired')}</p>
       )}
 
-      {loading && <p className="dsw-step-text">Loading times…</p>}
+      {loading && <p className="dsw-step-text">{t('slots.loading')}</p>}
       {error && <p className="dsw-step-error">{error}</p>}
 
       {!loading && !error && (
         <>
           {availableLocations.length > 1 && (
             <div className="dsw-filter-row">
-              <span className="dsw-label">Location</span>
+              <span className="dsw-label">{t('slots.location')}</span>
               <div className="dsw-filter-chips">
                 <button
                   type="button"
                   className={`dsw-chip ${selectedLocation === null ? 'dsw-chip--active' : ''}`}
                   onClick={() => setSelectedLocation(null)}
                 >
-                  Any
+                  {t('slots.any')}
                 </button>
                 {availableLocations.map((l) => (
                   <button
@@ -133,14 +135,14 @@ export function TimeSlotPickerStep({ businessId, serviceId, variantId, date, exp
 
           {availableStaff.length > 1 && (
             <div className="dsw-filter-row">
-              <span className="dsw-label">Staff</span>
+              <span className="dsw-label">{t('slots.staff')}</span>
               <div className="dsw-filter-chips">
                 <button
                   type="button"
                   className={`dsw-chip ${selectedStaff === null ? 'dsw-chip--active' : ''}`}
                   onClick={() => setSelectedStaff(null)}
                 >
-                  Any
+                  {t('slots.any')}
                 </button>
                 {availableStaff.map((s) => (
                   <button
@@ -156,7 +158,7 @@ export function TimeSlotPickerStep({ businessId, serviceId, variantId, date, exp
             </div>
           )}
 
-          {times.length === 0 && <p className="dsw-step-text">No times available for this selection.</p>}
+          {times.length === 0 && <p className="dsw-step-text">{t('slots.noneAvailable')}</p>}
 
           {times.length > 0 && (
             <div className="dsw-slot-grid">
@@ -175,7 +177,7 @@ export function TimeSlotPickerStep({ businessId, serviceId, variantId, date, exp
         </>
       )}
 
-      <button type="button" className="dsw-btn dsw-btn--ghost" onClick={onBack}>Back</button>
+      <button type="button" className="dsw-btn dsw-btn--ghost" onClick={onBack}>{t('common:back')}</button>
     </div>
   );
 }

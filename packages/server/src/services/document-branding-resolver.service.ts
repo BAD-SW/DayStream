@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { formatCurrency, DETAILS_TABLE_TOKEN } from '@daystream/shared';
-import { getArtifactType, isKnownArtifactType } from '@daystream/shared';
+import { getArtifactType, isKnownArtifactType, DEFAULT_LANGUAGE, languageLocale } from '@daystream/shared';
+import { msgIn, hasMessage } from '../i18n';
 import type { DocumentDetailsTable } from '@daystream/shared';
 import { listTemplates, DocumentBrandingTemplate } from './document-branding.service';
 
@@ -39,13 +40,26 @@ export function resolveArtifactKey(notificationType: string): string {
 }
 
 /**
- * Pick the applicable template for a business + artifact type. Selection order:
- *   1. active template whose language matches the requested language exactly
- *   2. active template with no language set (language-agnostic / default)
- *   3. any active template (first by name)
- * With no active template of its own, the platform's active system template for the type is used
- * (spec 51, gap 17). Returns null when there is neither — callers then fall back to a
- * platform-default render.
+ * From a list of active templates, the one for a recipient's language (Phase 44, requirement 5): the
+ * template in that language, else the English one, else one with no language set; null when none of
+ * them fits (a template in another language is never sent).
+ */
+export function pickTemplateForLanguage<T extends { language?: string | null }>(templates: T[], language?: string | null): T | null {
+  const lang = (language || DEFAULT_LANGUAGE).toLowerCase();
+  const of = (t: T) => (t.language ?? '').toLowerCase();
+  return templates.find((t) => of(t) === lang)
+    ?? templates.find((t) => of(t) === DEFAULT_LANGUAGE)
+    ?? templates.find((t) => !t.language)
+    ?? null;
+}
+
+/**
+ * Pick the applicable template for a business + artifact type and the recipient's language:
+ *   1. the business's active template in that language
+ *   2. the business's active English template, or one with no language set
+ *   3. the platform's active system template in that language (spec 51, gap 17)
+ *   4. the platform's active English system template, or one with no language set
+ * Returns null when none fits — callers then send the built-in email in the recipient's language.
  */
 export async function selectTemplate(
   businessId: string,
@@ -55,21 +69,10 @@ export async function selectTemplate(
   const artifactKey = resolveArtifactKey(notificationType);
   if (!isKnownArtifactType(artifactKey)) return null;
 
-  const candidates = (await listTemplates(businessId, artifactKey)).filter((t) => t.isActive);
-  // None of its own: the platform's active system template for the type (spec 51, gap 17).
-  if (candidates.length === 0) {
-    const { activeSystemTemplate } = await import('./system-document-templates.service');
-    return activeSystemTemplate(artifactKey, language);
-  }
-
-  if (language) {
-    const exact = candidates.find((t) => (t.language ?? '').toLowerCase() === language.toLowerCase());
-    if (exact) return exact;
-  }
-  const agnostic = candidates.find((t) => !t.language);
-  if (agnostic) return agnostic;
-
-  return candidates[0];
+  const own = pickTemplateForLanguage((await listTemplates(businessId, artifactKey)).filter((t) => t.isActive), language);
+  if (own) return own;
+  const { activeSystemTemplate } = await import('./system-document-templates.service');
+  return activeSystemTemplate(artifactKey, language);
 }
 
 /** Business identity + locale, used as placeholder fallbacks and for formatting. */
@@ -82,6 +85,8 @@ interface BusinessIdentity {
   locale: string;
   /** The business's time zone (IANA), for dates and times. */
   timeZone?: string;
+  /** The recipient's language, for built-in words (Phase 44). */
+  language?: string | null;
 }
 
 async function getBusinessIdentity(businessId: string): Promise<BusinessIdentity> {
@@ -100,6 +105,11 @@ async function getBusinessIdentity(businessId: string): Promise<BusinessIdentity
     locale: localeFor(r.default_language),
     timeZone: r.timezone || undefined,
   };
+}
+
+/** The identity with the recipient's language's format (Phase 44): dates and amounts as the reader writes them. */
+function forLanguage(identity: BusinessIdentity, language?: string | null): BusinessIdentity {
+  return language ? { ...identity, locale: languageLocale(language), language } : identity;
 }
 
 /** Map a stored language tag to an Intl locale, defaulting sensibly. */
@@ -219,7 +229,7 @@ export function buildTokenMap(
     check_in_link: str(data.check_in_link),
     // Reminders: how long until the appointment (the reminder's lead time, in hours).
     reminder_lead: typeof data.hours_before === 'number' && data.hours_before > 0
-      ? `${data.hours_before} hour${data.hours_before === 1 ? '' : 's'}` : '',
+      ? msgIn(identity.language, 'email:hours', { count: data.hours_before }) : '',
     redeem_link: str(data.redeem_link),
     // Purchase order (purchase_order.sent, spec 51 gap 7): the recipient is the vendor.
     vendor_name: str(data.vendor_name),
@@ -260,8 +270,9 @@ export function buildTokenMap(
 export async function buildTokensForBusiness(
   businessId: string,
   data: Record<string, unknown>,
+  language?: string | null,
 ): Promise<Record<string, string>> {
-  const identity = await getBusinessIdentity(businessId);
+  const identity = forLanguage(await getBusinessIdentity(businessId), language);
   return buildTokenMap(data, identity);
 }
 
@@ -363,7 +374,7 @@ export async function resolveDocumentFields(
   language?: string | null,
   detailsTable: DocumentDetailsTable | null = null,
 ): Promise<ResolvedDocumentFields> {
-  const identity = await getBusinessIdentity(businessId);
+  const identity = forLanguage(await getBusinessIdentity(businessId), language);
   const tokens = buildTokenMap(data, identity);
   const template = await selectTemplate(businessId, notificationType, language);
   return {
@@ -392,7 +403,7 @@ export async function renderDocument(
   language?: string | null,
   detailsTable: DocumentDetailsTable | null = null,
 ): Promise<RenderedDocument> {
-  const identity = await getBusinessIdentity(businessId);
+  const identity = forLanguage(await getBusinessIdentity(businessId), language);
   const tokens = buildTokenMap(data, identity);
 
   const primary = template?.colorPrimary || '#1A1A1A';
@@ -401,7 +412,10 @@ export async function renderDocument(
 
   // Subject: branded template if present, else a sensible default per artifact.
   const artifact = getArtifactType(resolveArtifactKey(notificationType));
-  const defaultSubject = artifact ? `${identity.name} — ${artifact.label}` : identity.name;
+  const typeKey = resolveArtifactKey(notificationType);
+  // The document type's name in the recipient's language (the shared English name when it has none).
+  const typeName = artifact && hasMessage(`email:types.${typeKey}`) ? msgIn(language, `email:types.${typeKey}`) : artifact?.label;
+  const defaultSubject = typeName ? `${identity.name} — ${typeName}` : identity.name;
   const subject = template?.subjectTemplate
     ? substitute(template.subjectTemplate, tokens)
     : defaultSubject;
@@ -409,13 +423,13 @@ export async function renderDocument(
   // Body: branded HTML (already a sanitized subset), else a minimal default.
   const bodyWithMarker = template?.bodyTemplate
     ? substituteBodyHtml(template.bodyTemplate, tokens)
-    : `<p>Hi ${escapeHtml(tokens.customer_first_name || 'there')},</p>`;
+    : `<p>${escapeHtml(tokens.customer_first_name ? msgIn(language, 'email:greeting', { name: tokens.customer_first_name }) : msgIn(language, 'email:greetingNoName'))}</p>`;
 
   // The {{details_table}} token is a placement MARKER left literal by substitute.
   // Draw the native line-item table where it sits (or remove the marker cleanly
   // when there's no table), matching the on-screen/PDF renderers.
   const detailsMarker = `{{${DETAILS_TABLE_TOKEN}}}`;
-  const tableHtml = detailsTable ? renderDetailsTableHtml(detailsTable, secondary, identity) : '';
+  const tableHtml = detailsTable ? renderDetailsTableHtml(detailsTable, secondary, identity, language) : '';
   const bodyHtml = bodyWithMarker.split(detailsMarker).join(tableHtml);
 
   // Footer text + optional safe clickable link.
@@ -455,7 +469,7 @@ export async function renderDocument(
   // Plain-text fallback: strip tags from the body, keep footer text + link URL.
   // Plain-text body: strip tags from the marker-preserving body, then swap the
   // marker for a text rendering of the table (so the table survives stripTags).
-  const tableText = detailsTable ? renderDetailsTableText(detailsTable, identity.locale) : '';
+  const tableText = detailsTable ? renderDetailsTableText(detailsTable, identity.locale, language) : '';
   const bodyText = stripTags(bodyWithMarker).split(detailsMarker).join(tableText);
   const text = [
     bodyText,
@@ -492,14 +506,14 @@ function stripTags(html: string): string {
  * The table's own currency wins; locale comes from the business identity.
  */
 function renderDetailsTableHtml(
-  table: DocumentDetailsTable, accent: string, identity: BusinessIdentity,
+  table: DocumentDetailsTable, accent: string, identity: BusinessIdentity, language?: string | null,
 ): string {
   const money = (cents: number) => formatCurrency(cents, table.currency || identity.currency, identity.locale);
   const header = `
     <tr>
-      <th align="left" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">Description</th>
-      <th align="right" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">Qty</th>
-      <th align="right" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">Amount</th>
+      <th align="left" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">${escapeHtml(msgIn(language, 'email:table.description'))}</th>
+      <th align="right" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">${escapeHtml(msgIn(language, 'email:table.qty'))}</th>
+      <th align="right" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">${escapeHtml(msgIn(language, 'email:table.amount'))}</th>
     </tr>`;
   const body = (table.rows || []).map((r) => `
     <tr>
@@ -510,17 +524,17 @@ function renderDetailsTableHtml(
   const total = `
     <tr>
       <td></td>
-      <td align="right" style="padding:8px;font-weight:700;">Total</td>
+      <td align="right" style="padding:8px;font-weight:700;">${escapeHtml(msgIn(language, 'email:table.total'))}</td>
       <td align="right" style="padding:8px;font-weight:700;">${escapeHtml(money(table.totalCents))}</td>
     </tr>`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0;font-size:14px;color:#1a1a1a;">${header}${body}${total}</table>`;
 }
 
 /** Plain-text rendering of the details table for the text/plain fallback. */
-function renderDetailsTableText(table: DocumentDetailsTable, currencyLocale = 'en-US'): string {
+function renderDetailsTableText(table: DocumentDetailsTable, currencyLocale = 'en-US', language?: string | null): string {
   const money = (cents: number) => formatCurrency(cents, table.currency || 'EUR', currencyLocale);
   const lines = (table.rows || []).map((r) => `  ${r.description}${r.qty == null ? '' : `  x${r.qty}`}  ${money(r.amountCents)}`);
-  lines.push(`  Total: ${money(table.totalCents)}`);
+  lines.push(`  ${msgIn(language, 'email:table.total')}: ${money(table.totalCents)}`);
   return lines.join('\n');
 }
 

@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ModalProps {
   open: boolean;
@@ -12,6 +13,7 @@ interface ModalProps {
 const sizeMap = { sm: '400px', md: '560px', lg: '720px', full: '95vw' };
 
 export function Modal({ open, onClose, title, size = 'md', children, footer }: ModalProps) {
+  const { t } = useTranslation('common');
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function Modal({ open, onClose, title, size = 'md', children, footer }: M
   const dialogHeight = isMobile ? '100vh' : 'auto';
 
   return (
-    <div style={styles.overlay} aria-hidden="true">
+    <div style={styles.overlay}>
       <div
         ref={dialogRef}
         style={{ ...styles.dialog, maxWidth: dialogMaxWidth, borderRadius: dialogBorderRadius, height: dialogHeight }}
@@ -53,7 +55,7 @@ export function Modal({ open, onClose, title, size = 'md', children, footer }: M
       >
         <div style={styles.header}>
           <h2 id="modal-title" style={styles.title}>{title}</h2>
-          <button onClick={onClose} style={styles.close} aria-label="Close">✕</button>
+          <button onClick={onClose} style={styles.close} aria-label={t('modal.close')}>✕</button>
         </div>
         <div style={styles.body}>{children}</div>
         {footer && <div style={styles.footer}>{footer}</div>}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadStripe, Stripe, StripeExpressCheckoutElementReadyEvent } from '@stripe/stripe-js';
 import { Elements, ExpressCheckoutElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
@@ -31,6 +32,7 @@ function stripeFor(pk: string): Promise<Stripe | null> {
 }
 
 function WalletForm({ clientSecret, onCaptured, onCancel }: Omit<Props, 'publishableKey'>) {
+  const { t } = useTranslation('checkout');
   const stripe = useStripe();
   const elements = useElements();
   const [err, setErr] = useState<string | null>(null);
@@ -43,17 +45,17 @@ function WalletForm({ clientSecret, onCaptured, onCancel }: Omit<Props, 'publish
     // wallet returned, with no redirect for wallet methods.
     const { error: submitError } = await elements.submit();
     if (submitError) {
-      setErr(submitError.message || 'Could not confirm the wallet.');
+      setErr(submitError.message || t('stripe.walletConfirmFailed'));
       return;
     }
     const result = await stripe.confirmSetup({ elements, clientSecret, redirect: 'if_required' });
     if (result.error) {
-      setErr(result.error.message || 'Could not save the wallet payment method.');
+      setErr(result.error.message || t('stripe.walletSaveFailed'));
       return;
     }
     const pmId = result.setupIntent?.payment_method;
     if (typeof pmId !== 'string') {
-      setErr('Wallet setup did not return a payment method.');
+      setErr(t('stripe.walletNoMethod'));
       return;
     }
     onCaptured(pmId);
@@ -71,13 +73,12 @@ function WalletForm({ clientSecret, onCaptured, onCancel }: Omit<Props, 'publish
       />
       {unavailable && (
         <p style={styles.muted}>
-          No wallet is available in this browser/device. Apple Pay needs Safari on a configured
-          device over HTTPS; Google Pay needs a supported browser with a saved card.
+          {t('stripe.walletUnavailable')}
         </p>
       )}
       {err && <p style={styles.err}>{err}</p>}
       <div style={styles.actions}>
-        <button type="button" style={styles.link} onClick={onCancel}>Cancel</button>
+        <button type="button" style={styles.link} onClick={onCancel}>{t('common:cancel')}</button>
       </div>
     </div>
   );

@@ -1,0 +1,29 @@
+{
+  "keep": [
+    "DayStream",
+    "Bold Business"
+  ],
+  "fixed": {
+    "es": {
+      "Appointment": "Cita",
+      "Appointments": "Citas",
+      "Booking": "Reserva",
+      "Bookings": "Reservas",
+      "Check-In": "Registro",
+      "Check in": "Registrar llegada",
+      "Checkout": "Cobro",
+      "Customer": "Cliente",
+      "Customers": "Clientes",
+      "Staff": "Personal",
+      "Walk-in": "Sin cita",
+      "People": "Personas",
+      "Schedule": "Horario",
+      "Business Setup": "Configuración del negocio",
+      "Prospects": "Clientes potenciales",
+      "Overview": "Resumen",
+      "Custom range": "Rango personalizado",
+      "Dashboard": "Panel",
+      "Settings": "Ajustes"
+    }
+  }
+}

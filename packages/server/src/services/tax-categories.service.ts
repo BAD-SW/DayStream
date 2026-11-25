@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface CreateTaxCategoryInput {
   businessId: string;
@@ -101,7 +102,7 @@ export async function deleteTaxCategory(id: string, businessId: string): Promise
     [id, businessId],
   );
   if (inUse.length > 0) {
-    throw new Error('Cannot delete tax rate that is in use by services or products');
+    throw new Error(msg('errors:taxCategories.cannotDeleteTaxRateThatIs'));
   }
 
   const { rowCount } = await adminPool.query(

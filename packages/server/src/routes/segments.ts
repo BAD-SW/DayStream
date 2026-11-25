@@ -6,6 +6,7 @@ import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as segmentsService from '../services/customer-segments.service';
+import { msg } from '../i18n';
 
 export const segmentsRouter = Router();
 
@@ -60,7 +61,7 @@ const CHANNELS = ['email', 'sms', 'whatsapp', 'in_app', 'push'];
 segmentsRouter.get('/', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:segments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     // Every business has the starter segments; they are created the first time the list is opened.
     await segmentsService.seedPredefinedSegments(businessId);
@@ -68,7 +69,7 @@ segmentsRouter.get('/', requirePermission('customers:read'), async (req: Request
     success(res, segments);
   } catch (err: any) {
     console.error('Failed to list segments', err?.message || err);
-    error(res, 'Failed to list segments', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToListSegments'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -87,7 +88,7 @@ segmentsRouter.post('/', requirePermission('customers:*'), validate(createSegmen
     success(res, segment, undefined, 201);
   } catch (err: any) {
     console.error('Failed to create segment', err?.message || err);
-    error(res, 'Failed to create segment', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToCreateSegment'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -97,7 +98,7 @@ segmentsRouter.post('/count', requirePermission('customers:read'), validate(coun
     success(res, { total: await segmentsService.countRules(req.body.rules, req.body.business_id) });
   } catch (err: any) {
     console.error('Failed to count segment members', err?.message || err);
-    error(res, 'Failed to count segment members', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToCountSegmentMembers'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -109,11 +110,11 @@ segmentsRouter.put('/:id', requirePermission('customers:*'), validate(updateSegm
       description: req.body.description,
       rules: req.body.rules,
     });
-    if (!segment) { error(res, 'Segment not found', 'NOT_FOUND', 404); return; }
+    if (!segment) { error(res, msg('errors:segments.segmentNotFound'), 'NOT_FOUND', 404); return; }
     success(res, segment);
   } catch (err: any) {
     console.error('Failed to update segment', err?.message || err);
-    error(res, 'Failed to update segment', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToUpdateSegment'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -121,14 +122,14 @@ segmentsRouter.put('/:id', requirePermission('customers:*'), validate(updateSegm
 segmentsRouter.get('/:id/members', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:segments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
 
     const result = await segmentsService.evaluateSegment(req.params.id, businessId, page, limit);
     if (!result) {
-      error(res, 'Segment not found', 'NOT_FOUND', 404);
+      error(res, msg('errors:segments.segmentNotFound'), 'NOT_FOUND', 404);
       return;
     }
 
@@ -140,7 +141,7 @@ segmentsRouter.get('/:id/members', requirePermission('customers:read'), async (r
     });
   } catch (err: any) {
     console.error('Failed to evaluate segment', err?.message || err);
-    error(res, 'Failed to evaluate segment', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToEvaluateSegment'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -149,11 +150,11 @@ segmentsRouter.post('/:id/members', requirePermission('customers:*'), validate(m
   try {
     const authReq = req as AuthenticatedRequest;
     const added = await segmentsService.addMembers(req.params.id, req.body.business_id, req.body.customer_ids, authReq.user.sub);
-    if (added === null) { error(res, 'Fixed list not found', 'NOT_FOUND', 404); return; }
+    if (added === null) { error(res, msg('errors:segments.fixedListNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { added });
   } catch (err: any) {
     console.error('Failed to add people to the list', err?.message || err);
-    error(res, 'Failed to add people to the list', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToAddPeopleToThe'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -161,11 +162,11 @@ segmentsRouter.post('/:id/members', requirePermission('customers:*'), validate(m
 segmentsRouter.delete('/:id/members', requirePermission('customers:*'), validate(membersSchema), async (req: Request, res: Response) => {
   try {
     const removed = await segmentsService.removeMembers(req.params.id, req.body.business_id, req.body.customer_ids);
-    if (removed === null) { error(res, 'Fixed list not found', 'NOT_FOUND', 404); return; }
+    if (removed === null) { error(res, msg('errors:segments.fixedListNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { removed });
   } catch (err: any) {
     console.error('Failed to remove people from the list', err?.message || err);
-    error(res, 'Failed to remove people from the list', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToRemovePeopleFromThe'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -173,18 +174,18 @@ segmentsRouter.delete('/:id/members', requirePermission('customers:*'), validate
 segmentsRouter.get('/:id/audience-summary', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:segments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const channel = (req.query.channel as string) || 'email';
     const purpose = (req.query.purpose as string) || 'marketing';
     if (!CHANNELS.includes(channel) || !['marketing', 'transactional'].includes(purpose)) {
-      error(res, 'Unknown channel or purpose', 'VALIDATION_ERROR', 400); return;
+      error(res, msg('errors:segments.unknownChannelOrPurpose'), 'VALIDATION_ERROR', 400); return;
     }
     const summary = await segmentsService.audienceSummary(req.params.id, businessId, channel as any, purpose as any);
-    if (!summary) { error(res, 'Segment not found', 'NOT_FOUND', 404); return; }
+    if (!summary) { error(res, msg('errors:segments.segmentNotFound'), 'NOT_FOUND', 404); return; }
     success(res, summary);
   } catch (err: any) {
     console.error('Failed to summarise the audience', err?.message || err);
-    error(res, 'Failed to summarise the audience', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToSummariseTheAudience'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -192,11 +193,11 @@ segmentsRouter.get('/:id/audience-summary', requirePermission('customers:read'),
 segmentsRouter.delete('/:id', requirePermission('customers:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:segments.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const deleted = await segmentsService.deleteSegment(req.params.id, businessId);
     if (!deleted) {
-      error(res, 'Segment not found or is predefined', 'NOT_FOUND', 404);
+      error(res, msg('errors:segments.segmentNotFoundOrIsPredefined'), 'NOT_FOUND', 404);
       return;
     }
 
@@ -206,6 +207,6 @@ segmentsRouter.delete('/:id', requirePermission('customers:*'), async (req: Requ
       error(res, err.message, 'SEGMENT_IN_USE', 409);
       return;
     }
-    error(res, 'Failed to delete segment', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:segments.failedToDeleteSegment'), 'INTERNAL_ERROR', 500);
   }
 });

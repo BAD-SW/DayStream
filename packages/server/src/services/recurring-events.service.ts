@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * List recurring event templates for a tenant.
@@ -94,7 +95,7 @@ export async function cancelTemplate(id: string, tenantId: string) {
      WHERE id = $1 AND tenant_id = $2 AND status = 'active' RETURNING *`,
     [id, tenantId],
   );
-  if (!rows[0]) throw new Error('Template not found or already cancelled');
+  if (!rows[0]) throw new Error(msg('errors:recurringEvents.templateNotFoundOrAlreadyCancelled'));
 
   await logAudit({
     tenantId,
@@ -114,7 +115,7 @@ export async function generateInstances(templateId: string, tenantId: string) {
     `SELECT * FROM evt_recurring_templates WHERE id = $1 AND tenant_id = $2 AND status = 'active'`,
     [templateId, tenantId],
   );
-  if (templates.length === 0) throw new Error('Template not found or inactive');
+  if (templates.length === 0) throw new Error(msg('errors:recurringEvents.templateNotFoundOrInactive'));
 
   const template = templates[0];
   const now = new Date();

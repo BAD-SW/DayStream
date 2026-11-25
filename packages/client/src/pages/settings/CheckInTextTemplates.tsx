@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../design-system/components/actions/Button';
 import { LanguageSelect } from '../../components/LanguageSelect';
+import { useBusinessLanguages } from '../../context/useBusinessLanguages';
 import { CHECK_IN_TEXT_FIELDS, CHECK_IN_TEXT_PLACEHOLDERS, CHECK_IN_TEXT_DEFAULTS, DEFAULT_LANGUAGE, isSupportedLanguage } from '@daystream/shared';
 import type { CheckInTextField } from '@daystream/shared';
 import * as api from '../../api/checkinTexts';
@@ -12,6 +14,8 @@ import * as systemApi from '../../api/systemTemplates';
  * hint; type something to replace it, clear the box to go back to the built-in wording.
  */
 const GROUPS: CheckInTextField['group'][] = ['Phone page', 'Forms list', 'Kiosk'];
+/** The group names are stored English; the words shown come from checkInText.group.<id>. */
+const GROUP_IDS: Record<CheckInTextField['group'], string> = { 'Phone page': 'phonePage', 'Forms list': 'formsList', 'Kiosk': 'kiosk' };
 
 export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'business' }: {
   businessId: string;
@@ -19,6 +23,8 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
   scope?: 'business' | 'system';
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation('templates');
+  const fieldLabel = (f: CheckInTextField) => t(`checkInText.field.${f.key}`, { defaultValue: f.label });
   const [language, setLanguage] = useState<string>(DEFAULT_LANGUAGE);
   const [saved, setSaved] = useState<Record<string, string>>({});
   const [values, setValues] = useState<Record<string, string>>({});
@@ -30,6 +36,8 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
   const inputs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>({});
 
   const isSystem = scope === 'system';
+  const { languages: businessLanguages } = useBusinessLanguages();
+  const languages = isSystem ? undefined : businessLanguages;
   const builtIn = isSupportedLanguage(language) ? CHECK_IN_TEXT_DEFAULTS[language] : CHECK_IN_TEXT_DEFAULTS[DEFAULT_LANGUAGE];
   // What a piece says when it is not changed here: for a business, the platform's wording (spec 51,
   // gap 17); for the platform, the built-in wording.
@@ -40,9 +48,9 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
     setLoading(true); setError(null); setNote(null);
     (isSystem ? systemApi.getSystemCheckInTexts(language) : api.getCheckInTexts(businessId, language))
       .then((r) => { setSaved(r.overrides); setValues(r.overrides); setPlatform((r as { defaults?: Record<string, string> }).defaults ?? null); })
-      .catch(() => setError('Could not load the wording.'))
+      .catch(() => setError(t('checkInText.loadFailed')))
       .finally(() => setLoading(false));
-  }, [businessId, language, isSystem]);
+  }, [businessId, language, isSystem, t]);
   useEffect(() => { load(); }, [load]);
 
   const clean = (v: Record<string, string>) => Object.fromEntries(Object.entries(v).filter(([, x]) => x.trim() !== ''));
@@ -57,10 +65,10 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
         ? await systemApi.saveSystemCheckInTexts(language, clean(values))
         : await api.saveCheckInTexts(businessId, language, clean(values));
       setSaved(r.overrides); setValues(r.overrides);
-      setNote('Saved.');
+      setNote(t('checkInText.saved'));
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
-      setError(err.response?.data?.error || 'Could not save the wording.');
+      setError(err.response?.data?.error || t('checkInText.saveFailed'));
     } finally { setSaving(false); }
   };
 
@@ -79,22 +87,20 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
   return (
     <div>
       <p style={s.description}>
-        These are the words customers see when they check in from their phone or at the kiosk, and in the list of
-        forms. Leave a box empty to use the default wording shown in it{isSystem ? ' (built in)' : ' (the platform\'s)'}. Where a piece of wording can include the customer's
-        details, the box lists them: write them as {'{{first_name}}'}.
+        {t(isSystem ? 'checkInText.descriptionSystem' : 'checkInText.descriptionBusiness', { example: '{{first_name}}' })}
       </p>
       {/* Save at the top too, so there is no need to scroll down (owner, 24 Nov 2026) */}
       <div style={{ ...s.actions, marginTop: 0, marginBottom: 'var(--space-md)' }}>
-        <Button size="sm" onClick={save} loading={saving} disabled={!dirty}>Save wording</Button>
-        <Button size="sm" variant="ghost" onClick={() => setValues(saved)} disabled={!dirty || saving}>Discard changes</Button>
+        <Button size="sm" onClick={save} loading={saving} disabled={!dirty}>{t('checkInText.saveWording')}</Button>
+        <Button size="sm" variant="ghost" onClick={() => setValues(saved)} disabled={!dirty || saving}>{t('checkInText.discard')}</Button>
       </div>
       {error && <p style={s.error} role="alert">{error}</p>}
       {note && <p style={s.note} role="status">{note}</p>}
 
       <div style={s.chipArea}>
-        <span style={s.chipTitle}>Insert details</span>
+        <span style={s.chipTitle}>{t('checkInText.insertDetails')}</span>
         <span style={s.helper}>
-          {focusedField ? `Click a detail to add it where your cursor is in "${focusedField.label}".` : 'Click into a box below, then click a detail to add it.'}
+          {focusedField ? t('checkInText.clickDetailIn', { field: fieldLabel(focusedField) }) : t('checkInText.clickIntoBox')}
         </span>
         <div style={s.chips}>
           {CHECK_IN_TEXT_PLACEHOLDERS.map((p) => {
@@ -102,8 +108,8 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
             return (
               <button key={p.token} type="button" style={{ ...s.chip, ...(allowed ? {} : s.chipOff) }}
                 disabled={!allowed} onMouseDown={(e) => e.preventDefault()} onClick={() => insertPlaceholder(p.token)}
-                title={allowed ? `${p.description} Example: ${p.sample}` : focusedField ? 'This wording cannot include that detail.' : 'Click into a box first.'}>
-                {p.label}
+                title={allowed ? t('checkInText.chipTitle', { description: t(`checkInText.placeholder.${p.token}.description`, { defaultValue: p.description }), sample: t(`checkInText.placeholder.${p.token}.sample`, { defaultValue: p.sample }) }) : focusedField ? t('checkInText.chipNotAllowed') : t('checkInText.chipClickFirst')}>
+                {t(`checkInText.placeholder.${p.token}.label`, { defaultValue: p.label })}
               </button>
             );
           })}
@@ -111,20 +117,20 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
       </div>
 
       <div style={s.field}>
-        <label style={s.label} htmlFor="cit-lang">Language</label>
-        <LanguageSelect id="cit-lang" style={s.input} value={language} onChange={setLanguage} disabled={dirty || saving} />
-        {dirty && <span style={s.helper}>Save or discard your changes before choosing another language.</span>}
+        <label style={s.label} htmlFor="cit-lang">{t('checkInText.language')}</label>
+        <LanguageSelect languages={languages} id="cit-lang" style={s.input} value={language} onChange={setLanguage} disabled={dirty || saving} />
+        {dirty && <span style={s.helper}>{t('checkInText.saveFirst')}</span>}
       </div>
 
-      {loading ? <p style={s.muted}>Loading…</p> : GROUPS.map((group) => (
+      {loading ? <p style={s.muted}>{t('checkInText.loading')}</p> : GROUPS.map((group) => (
         <fieldset key={group} style={s.group}>
-          <legend style={s.legend}>{group}</legend>
+          <legend style={s.legend}>{t(`checkInText.group.${GROUP_IDS[group]}`)}</legend>
           {CHECK_IN_TEXT_FIELDS.filter((f) => f.group === group).map((f) => {
             const def = defaults[f.key];
             const id = `cit-${f.key}`;
             return (
               <div key={f.key} style={s.field}>
-                <label style={s.label} htmlFor={id}>{f.label}</label>
+                <label style={s.label} htmlFor={id}>{fieldLabel(f)}</label>
                 {def.length > 60 ? (
                   <textarea id={id} ref={(el) => { inputs.current[f.key] = el; }} onFocus={() => setFocusedKey(f.key)} style={{ ...s.input, minHeight: '64px' }} rows={2} maxLength={400}
                     value={values[f.key] ?? ''} placeholder={def}
@@ -134,7 +140,7 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
                     onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))} />
                 )}
                 {f.placeholders && (
-                  <span style={s.helper}>You can include: {f.placeholders.map((p) => `{{${p}}}`).join(', ')}</span>
+                  <span style={s.helper}>{t('checkInText.canInclude', { list: f.placeholders.map((p) => `{{${p}}}`).join(', ') })}</span>
                 )}
               </div>
             );
@@ -143,8 +149,8 @@ export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'busin
       ))}
 
       <div style={s.actions}>
-        <Button onClick={save} loading={saving} disabled={!dirty}>Save wording</Button>
-        <Button variant="ghost" onClick={() => setValues(saved)} disabled={!dirty || saving}>Discard changes</Button>
+        <Button onClick={save} loading={saving} disabled={!dirty}>{t('checkInText.saveWording')}</Button>
+        <Button variant="ghost" onClick={() => setValues(saved)} disabled={!dirty || saving}>{t('checkInText.discard')}</Button>
       </div>
     </div>
   );

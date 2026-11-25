@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ActiveContext, ContextLevel, SwitchableContext } from '@daystream/shared';
 import { useContextManager, Persona } from '../context/ContextManager';
 import './ContextSwitcher.css';
@@ -9,7 +10,7 @@ interface FlatOption {
   isActive: boolean;
 }
 
-const PLATFORM_OPTION: SwitchableContext = { id: 'system', type: 'system', displayName: 'DayStream Platform' };
+const PLATFORM_OPTION: SwitchableContext = { id: 'system', type: 'system', displayName: 'DayStream Platform' }; // i18n-ignore: stored name; shown through context.platform
 
 function isActiveOption(activeContext: ActiveContext, type: ContextLevel, id: string): boolean {
   if (type === 'system') return activeContext.contextLevel === 'system';
@@ -21,11 +22,11 @@ function buildGroups(persona: Persona, activeContext: ActiveContext, accessibleC
   const tenants = accessibleContexts.filter((c) => c.type === 'tenant');
   const businesses = accessibleContexts.filter((c) => c.type === 'business');
 
-  const groups: { label: string; domLabelId: string; options: FlatOption[] }[] = [];
+  const groups: { labelKey: string; domLabelId: string; options: FlatOption[] }[] = [];
 
   if (persona === 'system') {
     groups.push({
-      label: 'Platform',
+      labelKey: 'context.group.platform',
       domLabelId: 'ctx-group-system',
       options: [{ domId: 'ctx-opt-system', target: PLATFORM_OPTION, isActive: isActiveOption(activeContext, 'system', 'system') }],
     });
@@ -33,7 +34,7 @@ function buildGroups(persona: Persona, activeContext: ActiveContext, accessibleC
 
   if (tenants.length > 0) {
     groups.push({
-      label: 'Tenants',
+      labelKey: 'context.group.tenants',
       domLabelId: 'ctx-group-tenants',
       options: tenants.map((t) => ({
         domId: `ctx-opt-tenant-${t.id}`,
@@ -45,7 +46,7 @@ function buildGroups(persona: Persona, activeContext: ActiveContext, accessibleC
 
   if (businesses.length > 0) {
     groups.push({
-      label: 'Businesses',
+      labelKey: 'context.group.businesses',
       domLabelId: 'ctx-group-businesses',
       options: businesses.map((b) => ({
         domId: `ctx-opt-business-${b.id}`,
@@ -59,6 +60,7 @@ function buildGroups(persona: Persona, activeContext: ActiveContext, accessibleC
 }
 
 export function ContextSwitcher() {
+  const { t } = useTranslation('nav');
   const { persona, activeContext, accessibleContexts, isSwitching, switchContext } = useContextManager();
   const [isOpen, setIsOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -66,6 +68,8 @@ export function ContextSwitcher() {
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const isInteractive = persona === 'system' || persona === 'tenant';
+  // The platform's own name is ours to translate; business and tenant names are typed by people and stay as they are.
+  const nameOf = (type: ContextLevel, displayName: string) => (type === 'system' ? t('context.platform') : displayName);
 
   const groups = useMemo(
     () => buildGroups(persona, activeContext, accessibleContexts),
@@ -107,7 +111,7 @@ export function ContextSwitcher() {
             height={24}
           />
         )}
-        {activeContext.displayName}
+        {nameOf(activeContext.contextLevel, activeContext.displayName)}
       </span>
     );
   }
@@ -156,7 +160,7 @@ export function ContextSwitcher() {
       role="combobox"
       aria-expanded={isOpen}
       aria-haspopup="listbox"
-      aria-label="Active context"
+      aria-label={t('context.label')}
       aria-activedescendant={activeDescendant}
     >
       <button
@@ -173,14 +177,14 @@ export function ContextSwitcher() {
           <img
             className="context-switcher__logo"
             src={activeContext.logoUrl}
-            alt={`${activeContext.displayName} logo`}
+            alt={t('context.logo_alt', { name: nameOf(activeContext.contextLevel, activeContext.displayName) })}
             width={24}
             height={24}
           />
         )}
-        <span className="context-switcher__label">{activeContext.displayName}</span>
+        <span className="context-switcher__label">{nameOf(activeContext.contextLevel, activeContext.displayName)}</span>
         {isSwitching ? (
-          <span className="context-switcher__spinner" aria-label="Switching context" />
+          <span className="context-switcher__spinner" aria-label={t('context.switching')} />
         ) : (
           <svg className="context-switcher__chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12">
             <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -189,10 +193,10 @@ export function ContextSwitcher() {
       </button>
 
       {isOpen && (
-        <div className="context-switcher__panel" role="listbox" aria-label="Switch context">
+        <div className="context-switcher__panel" role="listbox" aria-label={t('context.switch')}>
           {groups.map((group) => (
             <div key={group.domLabelId} className="context-switcher__group" role="group" aria-labelledby={group.domLabelId}>
-              <span id={group.domLabelId} className="context-switcher__group-label">{group.label}</span>
+              <span id={group.domLabelId} className="context-switcher__group-label">{t(group.labelKey)}</span>
               {group.options.map((option) => {
                 const flatIdx = flatOptions.indexOf(option);
                 const isFocused = isOpen && flatIdx === focusedIndex;
@@ -219,7 +223,7 @@ export function ContextSwitcher() {
                         height={24}
                       />
                     )}
-                    {option.target.displayName}
+                    {nameOf(option.target.type, option.target.displayName)}
                   </div>
                 );
               })}

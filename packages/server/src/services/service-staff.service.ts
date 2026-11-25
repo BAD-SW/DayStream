@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface AssignStaffInput {
   serviceId: string;
@@ -21,7 +22,7 @@ export async function assignStaff(input: AssignStaffInput) {
 
   const { rows: existing } = await adminPool.query(checkQuery, checkParams);
   if (existing.length > 0) {
-    throw new Error('Staff member is already assigned to this service');
+    throw new Error(msg('errors:serviceStaff.staffMemberIsAlreadyAssignedTo'));
   }
 
   // If marking as primary, unset current primary for this service

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { COUNTRIES } from '@daystream/shared';
+import { formatCountry } from '../../../utils/format';
+import { currentLocale } from '../../../i18n';
 
 function flagEmoji(iso2: string): string {
   return iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
@@ -15,17 +18,28 @@ interface CountrySelectProps {
 
 /** Searchable/typeahead country picker — a plain <select> with ~195 entries isn't usable (§A5). */
 export function CountrySelect({ value, onChange, mode = 'name', id }: CountrySelectProps) {
+  const { t, i18n } = useTranslation('common');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const selected = COUNTRIES.find((c) => c.iso2 === value);
+  // Country names in the language shown (Phase 44), sorted in that language; the English name is kept for search.
+  const countries = useMemo(() => {
+    const locale = currentLocale();
+    return COUNTRIES
+      .map((c) => ({ ...c, englishName: c.name, name: formatCountry(c.iso2, c.name) }))
+      .sort((a, b) => a.name.localeCompare(b.name, locale));
+  }, [i18n.language]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selected = countries.find((c) => c.iso2 === value);
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return COUNTRIES;
-    const q = query.trim().toLowerCase();
-    return COUNTRIES.filter((c) => c.name.toLowerCase().includes(q) || c.dialCode.includes(q));
-  }, [query]);
+    if (!query.trim()) return countries;
+    // Accents ignored ("espana" finds España); the shown name, the English name, the code or the dial code.
+    const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const q = fold(query.trim());
+    return countries.filter((c) => fold(c.name).includes(q) || fold(c.englishName).includes(q) || c.iso2.toLowerCase() === q || c.dialCode.includes(q));
+  }, [query, countries]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -36,8 +50,8 @@ export function CountrySelect({ value, onChange, mode = 'name', id }: CountrySel
   }, [open]);
 
   const triggerLabel = mode === 'dial'
-    ? (selected ? `${flagEmoji(selected.iso2)} ${selected.dialCode}` : 'Select…')
-    : (selected ? selected.name : 'Search country…');
+    ? (selected ? `${flagEmoji(selected.iso2)} ${selected.dialCode}` : t('countrySelect.select'))
+    : (selected ? selected.name : t('countrySelect.searchCountry'));
 
   return (
     <div ref={rootRef} style={{ ...styles.root, ...(mode === 'dial' ? styles.rootDial : {}) }}>
@@ -59,11 +73,11 @@ export function CountrySelect({ value, onChange, mode = 'name', id }: CountrySel
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search…"
+            placeholder={t('countrySelect.search')}
             style={styles.searchInput}
           />
           <div style={styles.list} role="listbox">
-            {filtered.length === 0 && <div style={styles.empty}>No matches</div>}
+            {filtered.length === 0 && <div style={styles.empty}>{t('countrySelect.noMatches')}</div>}
             {filtered.map((c) => (
               <button
                 type="button"

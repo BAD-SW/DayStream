@@ -1,5 +1,7 @@
+import { askConfirm, showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Alert } from '../design-system/components/feedback/Alert';
@@ -44,6 +46,7 @@ function toUpdate(p: any, f: ReturnType<typeof toForm>) {
 }
 
 function CMSPageEditorPage() {
+  const { t } = useTranslation('cms');
   const { id } = useParams<{ id: string }>();
   const navigate = useGuardedNavigate();
   const [page, setPage] = useState<any>(null);
@@ -52,7 +55,7 @@ function CMSPageEditorPage() {
   const { dirtySections } = useDraftSections();
   const pageRef = useRef<any>(null);
   pageRef.current = page;
-  const draft = useDraft('cms-page', 'Page', toForm(null), async (values) => {
+  const draft = useDraft('cms-page', t('editor.draftName'), toForm(null), async (values) => {
     const updated = await cmsApi.updatePage(id!, toUpdate(pageRef.current, values));
     setPage(updated);
     return toForm(updated);
@@ -66,31 +69,31 @@ function CMSPageEditorPage() {
     cmsApi.getPage(id).then((p) => {
       setPage(p);
       draft.load(toForm(p));
-    }).catch(() => setError('Page not found.')).finally(() => setLoading(false));
+    }).catch(() => setError(t('editor.notFound'))).finally(() => setLoading(false));
   }, [id, draft.load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePublish = async () => {
-    if (!id || !confirm('Publish this page?')) return;
+    if (!id || !(await askConfirm({ message: t('editor.confirmPublish'), confirmLabel: t('common:action.publish') }))) return;
     try {
       const updated = await cmsApi.publishPage(id);
       setPage(updated);
-    } catch { alert('Publish failed'); }
+    } catch { void showMessage({ message: t('editor.publishFailed'), tone: 'error' }); }
   };
 
-  if (loading) return <div style={styles.page}><p>Loading...</p></div>;
+  if (loading) return <div style={styles.page}><p>{t('common:loading')}</p></div>;
   if (!page && error) return <div style={styles.page}><p>{error}</p></div>;
 
   return (
     <div style={styles.page}>
       <LeaveGuard when={dirtySections.length > 0} />
       <StickyPageTop>
-        <button style={styles.back} onClick={() => navigate('/cms')}>← Back to CMS</button>
+        <button style={styles.back} onClick={() => navigate('/cms')}>{t('backToCms')}</button>
         <div style={styles.header}>
-          <h1 style={styles.title}>Edit Page</h1>
-          {page?.status && <Badge variant={page.status === 'published' ? 'success' : 'neutral'}>{page.status}</Badge>}
+          <h1 style={styles.title}>{t('editor.title')}</h1>
+          {page?.status && <Badge variant={page.status === 'published' ? 'success' : 'neutral'}>{t(`status.${page.status}`, { defaultValue: page.status })}</Badge>}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <SaveChanges />
-            {page?.status !== 'published' && <Button size="sm" variant="secondary" onClick={handlePublish}>Publish</Button>}
+            {page?.status !== 'published' && <Button size="sm" variant="secondary" onClick={handlePublish}>{t('editor.publish')}</Button>}
           </div>
         </div>
       </StickyPageTop>
@@ -100,25 +103,25 @@ function CMSPageEditorPage() {
       <div style={styles.form}>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Title</label>
+            <label style={styles.label}>{t('editor.pageTitle')}</label>
             <input style={{ ...styles.input, ...mark('title') }} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Slug</label>
+            <label style={styles.label}>{t('editor.slug')}</label>
             <input style={{ ...styles.input, ...mark('slug') }} value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
           </div>
         </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Content</label>
+          <label style={styles.label}>{t('editor.content')}</label>
           <textarea style={{ ...styles.input, minHeight: '200px', ...mark('content') }} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} />
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>SEO Title</label>
+            <label style={styles.label}>{t('editor.seoTitle')}</label>
             <input style={{ ...styles.input, ...mark('meta_title') }} value={form.meta_title} onChange={(e) => setForm({ ...form, meta_title: e.target.value })} />
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>SEO Description</label>
+            <label style={styles.label}>{t('editor.seoDescription')}</label>
             <input style={{ ...styles.input, ...mark('meta_description') }} value={form.meta_description} onChange={(e) => setForm({ ...form, meta_description: e.target.value })} />
           </div>
         </div>

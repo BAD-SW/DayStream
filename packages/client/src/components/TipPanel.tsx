@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { CurrencyInput } from './CurrencyInput';
 import * as checkoutApi from '../api/checkout';
 import type { Order, TipSettings, OrderTip } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
+import { formatPercent } from '../utils/format';
 
 /**
  * The tip at Checkout (spec 51, gap 14): a slider, like a kiosk, from no tip up to the business's
@@ -14,6 +16,7 @@ import { formatCurrency } from '../utils/currency';
 export function TipPanel({ order, businessId, settings, locked, onChange }: {
   order: Order; businessId: string; settings: TipSettings; locked: boolean; onChange: (o: Order) => void;
 }) {
+  const { t } = useTranslation('checkout');
   const tip = order.tip_amount || 0;
   const [info, setInfo] = useState<OrderTip | null>(null);
   const [custom, setCustom] = useState<number | null>(null);
@@ -45,7 +48,7 @@ export function TipPanel({ order, businessId, settings, locked, onChange }: {
   const save = async (cents: number, split?: Array<{ user_id: string; amount_cents: number }> | null, percent: number | null = null) => {
     setBusy(true); setErr('');
     try { onChange(await checkoutApi.setOrderTip(order.id, businessId, cents, split, percent)); setSplitting(null); }
-    catch (e) { setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not set the tip.'); }
+    catch (e) { setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error || t('tip.setFailed')); }
     finally { setBusy(false); }
   };
 
@@ -72,31 +75,31 @@ export function TipPanel({ order, businessId, settings, locked, onChange }: {
 
   return (
     <div style={s.card}>
-      <h3 style={s.title}>Tip</h3>
+      <h3 style={s.title}>{t('tip.title')}</h3>
       <div style={s.slider}>
         <div style={s.readout} aria-live="polite">
           {typed && slide === null
-            ? <><strong>{formatCurrency(tip)}</strong><span style={s.label}>typed amount</span></>
+            ? <><strong>{formatCurrency(tip)}</strong><span style={s.label}>{t('tip.typedAmount')}</span></>
             : shown === 0
-              ? <strong>No tip</strong>
-              : <><strong>{shown}%</strong><span style={s.amount}>{formatCurrency(slide !== null ? pct(slide) : (currentPct !== null ? tip : pct(shown)))}</span></>}
+              ? <strong>{t('tip.noTip')}</strong>
+              : <><strong>{formatPercent(shown)}</strong><span style={s.amount}>{formatCurrency(slide !== null ? pct(slide) : (currentPct !== null ? tip : pct(shown)))}</span></>}
         </div>
         <input type="range" min={0} max={max} step={1} value={shown} disabled={locked || base <= 0}
-          aria-label="Tip percentage" aria-valuetext={shown === 0 ? 'No tip' : `${shown}%, ${formatCurrency(pct(shown))}`}
+          aria-label={t('tip.percentageLabel')} aria-valuetext={shown === 0 ? t('tip.noTip') : t('tip.valueText', { percent: formatPercent(shown), amount: formatCurrency(pct(shown)) })}
           onChange={(e) => { setCustom(null); setSlide(Number(e.target.value)); }}
           style={{ ...s.range, opacity: typed && slide === null ? 0.5 : 1 }} />
-        <div style={s.ends}><span>No tip</span><span>{max}%</span></div>
+        <div style={s.ends}><span>{t('tip.noTip')}</span><span>{formatPercent(max)}</span></div>
       </div>
       <div style={s.row}>
-        <span style={s.label}>Or enter an amount</span>
+        <span style={s.label}>{t('tip.enterAmount')}</span>
         <CurrencyInput value={custom ?? (typed ? tip : 0)} disabled={locked || busy}
           onChange={(v) => setCustom(Math.max(0, v))} style={s.amountInput} />
-        <Button size="sm" variant="secondary" disabled={locked || busy || custom === null || (typed && custom === tip)} onClick={() => save(custom ?? 0, null, (custom ?? 0) === 0 ? 0 : null)}>Add</Button>
+        <Button size="sm" variant="secondary" disabled={locked || busy || custom === null || (typed && custom === tip)} onClick={() => save(custom ?? 0, null, (custom ?? 0) === 0 ? 0 : null)}>{t('tip.add')}</Button>
       </div>
-      {locked && <p style={s.hint}>The card is being charged; the tip can no longer change. Cancel the card entry to change it.</p>}
+      {locked && <p style={s.hint}>{t('tip.locked')}</p>}
       {tip > 0 && info && (
         info.shares.length === 0 ? (
-          <p style={s.hint}>No staff member is on this order, so the tip goes to the tip pool. To give it to someone, credit the order or a line to them.</p>
+          <p style={s.hint}>{t('tip.noStaff')}</p>
         ) : splitting ? (
           <div style={s.split}>
             {staff.map((m) => (
@@ -107,22 +110,21 @@ export function TipPanel({ order, businessId, settings, locked, onChange }: {
             ))}
             <div style={s.row}>
               <span style={{ ...s.hint, color: splitTotal === tip ? 'var(--color-text-secondary)' : 'var(--color-error)' }}>
-                {formatCurrency(splitTotal)} of {formatCurrency(tip)}{splitTotal !== tip ? ' — the shares must add up to the tip' : ''}
+                {t(splitTotal !== tip ? 'tip.splitMismatch' : 'tip.splitProgress', { total: formatCurrency(splitTotal), tip: formatCurrency(tip) })}
               </span>
               <span style={{ flex: 1 }} />
-              <Button size="sm" variant="secondary" onClick={() => setSplitting(null)}>Cancel</Button>
+              <Button size="sm" variant="secondary" onClick={() => setSplitting(null)}>{t('common:cancel')}</Button>
               <Button size="sm" disabled={busy || splitTotal !== tip}
-                onClick={() => save(tip, Object.entries(splitting).map(([user_id, amount_cents]) => ({ user_id, amount_cents })), currentPct)}>Save split</Button>
+                onClick={() => save(tip, Object.entries(splitting).map(([user_id, amount_cents]) => ({ user_id, amount_cents })), currentPct)}>{t('tip.saveSplit')}</Button>
             </div>
           </div>
         ) : (
           <div style={s.row}>
             <span style={s.hint}>
-              Goes to {info.shares.map((x) => `${x.name} ${formatCurrency(x.amount_cents)}`).join(', ')}
-              {info.by_hand ? ' (split by hand)' : info.shares.length > 1 ? (settings.split === 'even' ? ' (split evenly)' : ' (split by the value of their services)') : ''}
+              {t(info.by_hand ? 'tip.goesToByHand' : info.shares.length > 1 ? (settings.split === 'even' ? 'tip.goesToEven' : 'tip.goesToByValue') : 'tip.goesTo', { shares: info.shares.map((x) => `${x.name} ${formatCurrency(x.amount_cents)}`).join(', ') })}
             </span>
-            {!locked && <button type="button" style={s.link} onClick={() => setSplitting(Object.fromEntries(info.shares.map((x) => [x.user_id, x.amount_cents])))}>Change</button>}
-            {!locked && info.by_hand && <button type="button" style={s.link} onClick={() => save(tip, null, currentPct)}>Use the usual split</button>}
+            {!locked && <button type="button" style={s.link} onClick={() => setSplitting(Object.fromEntries(info.shares.map((x) => [x.user_id, x.amount_cents])))}>{t('tip.change')}</button>}
+            {!locked && info.by_hand && <button type="button" style={s.link} onClick={() => save(tip, null, currentPct)}>{t('tip.useUsualSplit')}</button>}
           </div>
         )
       )}

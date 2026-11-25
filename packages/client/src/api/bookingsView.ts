@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import i18n from '../i18n';
 
 /**
  * Which screen Bookings opens on for staff (spec 51, gap 3): the calendar, or the list with the
@@ -7,8 +8,8 @@ import { apiClient } from './client';
 export type BookingsView = 'calendar' | 'list';
 
 export const BOOKINGS_VIEW_OPTIONS: { value: BookingsView; label: string }[] = [
-  { value: 'calendar', label: 'Calendar' },
-  { value: 'list', label: 'List with Waiting list' },
+  { value: 'calendar', get label() { return i18n.t('calendar:bookingsView.calendar'); } },
+  { value: 'list', get label() { return i18n.t('calendar:bookingsView.list'); } },
 ];
 
 export interface BookingsViewChoice {

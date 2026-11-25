@@ -4,8 +4,10 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as servicesApi from '../api/services';
 import type { ServiceCategory } from '../api/services';
+import { useTranslation } from 'react-i18next';
 
 export function ServiceCategories() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,24 +66,24 @@ export function ServiceCategories() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <button style={styles.back} onClick={() => navigate('/services')}>← Back to Services</button>
-        <h1 style={styles.title}>Service Categories</h1>
-        <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Category'}</Button>
+        <button style={styles.back} onClick={() => navigate('/services')}>{t('categories.backToServices')}</button>
+        <h1 style={styles.title}>{t('categories.title')}</h1>
+        <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? t('common:cancel') : t('categories.add')}</Button>
       </div>
 
       {showAdd && (
         <div style={styles.addForm}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Category name" style={styles.input} />
-          <input value={newIcon} onChange={(e) => setNewIcon(e.target.value)} placeholder="Icon name (optional)" style={styles.input} />
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t('categories.namePlaceholder')} style={styles.input} />
+          <input value={newIcon} onChange={(e) => setNewIcon(e.target.value)} placeholder={t('categories.iconOptional')} style={styles.input} />
           <select value={newParent} onChange={(e) => setNewParent(e.target.value)} style={styles.input}>
-            <option value="">No parent (top-level)</option>
+            <option value="">{t('categories.noParent')}</option>
             {parentCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <Button onClick={handleCreate}>Create</Button>
+          <Button onClick={handleCreate}>{t('common:create')}</Button>
         </div>
       )}
 
-      {loading && <p style={styles.empty}>Loading...</p>}
+      {loading && <p style={styles.empty}>{t('common:loading')}</p>}
 
       <div style={styles.list}>
         {parentCategories.map((cat) => (
@@ -90,20 +92,20 @@ export function ServiceCategories() {
               {editId === cat.id ? (
                 <div style={styles.editRow}>
                   <input value={editName} onChange={(e) => setEditName(e.target.value)} style={styles.input} />
-                  <input value={editIcon} onChange={(e) => setEditIcon(e.target.value)} placeholder="Icon" style={styles.inputSmall} />
-                  <Button onClick={handleSaveEdit}>Save</Button>
-                  <button style={styles.cancelBtn} onClick={() => setEditId(null)}>Cancel</button>
+                  <input value={editIcon} onChange={(e) => setEditIcon(e.target.value)} placeholder={t('categories.iconPlaceholder')} style={styles.inputSmall} />
+                  <Button onClick={handleSaveEdit}>{t('common:save')}</Button>
+                  <button style={styles.cancelBtn} onClick={() => setEditId(null)}>{t('common:cancel')}</button>
                 </div>
               ) : (
                 <>
                   <div style={styles.catInfo}>
                     {cat.icon && <span style={styles.icon}>{cat.icon}</span>}
                     <strong>{cat.name}</strong>
-                    <Badge variant="neutral">{cat.service_count} services</Badge>
+                    <Badge variant="neutral">{t('categories.serviceCount', { count: Number(cat.service_count) })}</Badge>
                   </div>
                   <div style={styles.catActions}>
-                    <button style={styles.actionBtn} onClick={() => { setEditId(cat.id); setEditName(cat.name); setEditIcon(cat.icon || ''); }}>Edit</button>
-                    <button style={styles.actionBtn} onClick={() => handleDelete(cat.id)}>Archive</button>
+                    <button style={styles.actionBtn} onClick={() => { setEditId(cat.id); setEditName(cat.name); setEditIcon(cat.icon || ''); }}>{t('common:edit')}</button>
+                    <button style={styles.actionBtn} onClick={() => handleDelete(cat.id)}>{t('shared.archive')}</button>
                   </div>
                 </>
               )}
@@ -115,14 +117,14 @@ export function ServiceCategories() {
                   <span style={styles.indent}>↳</span>
                   {child.icon && <span style={styles.icon}>{child.icon}</span>}
                   <span>{child.name}</span>
-                  <Badge variant="neutral">{child.service_count} services</Badge>
+                  <Badge variant="neutral">{t('categories.serviceCount', { count: Number(child.service_count) })}</Badge>
                 </div>
-                <button style={styles.actionBtn} onClick={() => handleDelete(child.id)}>Archive</button>
+                <button style={styles.actionBtn} onClick={() => handleDelete(child.id)}>{t('shared.archive')}</button>
               </div>
             ))}
           </div>
         ))}
-        {!loading && categories.length === 0 && <p style={styles.empty}>No categories. Create one to get started.</p>}
+        {!loading && categories.length === 0 && <p style={styles.empty}>{t('categories.empty')}</p>}
       </div>
     </div>
   );

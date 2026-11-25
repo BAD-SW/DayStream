@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as customersApi from '../api/customers';
@@ -6,7 +7,6 @@ import * as customersApi from '../api/customers';
 type Step = 'upload' | 'mapping' | 'validation' | 'confirm';
 
 const REQUIRED_FIELDS = ['email', 'first_name', 'last_name'];
-const REQUIRED_LABELS: Record<string, string> = { email: 'Email', first_name: 'First Name', last_name: 'Last Name' };
 
 function downloadCsv(filename: string, rows: string[][]) {
   const csv = rows.map((r) => r.map((cell) => {
@@ -22,6 +22,7 @@ function downloadCsv(filename: string, rows: string[][]) {
 }
 
 export function CustomerImport() {
+  const { t } = useTranslation('customers');
   const [step, setStep] = useState<Step>('upload');
   const [csvText, setCsvText] = useState('');
   const [headers, setHeaders] = useState<string[]>([]);
@@ -32,17 +33,9 @@ export function CustomerImport() {
 
   const businessId = localStorage.getItem('business_id') || '';
 
-  const CUSTOMER_FIELDS = [
-    { value: '', label: '— Skip —' },
-    { value: 'email', label: 'Email' },
-    { value: 'first_name', label: 'First Name' },
-    { value: 'last_name', label: 'Last Name' },
-    { value: 'phone', label: 'Phone' },
-    { value: 'date_of_birth', label: 'Date of Birth' },
-    { value: 'gender', label: 'Gender' },
-    { value: 'preferred_language', label: 'Language' },
-    { value: 'country', label: 'Country' },
-  ];
+  // The values are the field ids the import matches on; their words are import.field.<id> (skip for the empty one).
+  const CUSTOMER_FIELDS = ['', 'email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country'];
+  const fieldLabel = (value: string) => t('import.field.' + (value || 'skip'));
 
   // Step 1: File upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,8 +55,8 @@ export function CustomerImport() {
       const autoMap: Record<string, string> = {};
       for (const header of parsedHeaders) {
         const lower = header.toLowerCase().replace(/\s+/g, '_');
-        const match = CUSTOMER_FIELDS.find((f) => f.value === lower);
-        if (match) autoMap[header] = match.value;
+        const match = CUSTOMER_FIELDS.find((f) => f === lower);
+        if (match) autoMap[header] = match;
       }
       setMapping(autoMap);
       setStep('mapping');
@@ -112,17 +105,17 @@ export function CustomerImport() {
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Import Customers</h1>
+      <h1 style={styles.title}>{t('import.title')}</h1>
 
       {/* Step indicator */}
       <div style={styles.steps}>
-        {['Upload', 'Map Columns', 'Validate', 'Confirm'].map((label, i) => {
+        {(['upload', 'mapping', 'validation', 'confirm'] as Step[]).map((name, i) => {
           const stepNames: Step[] = ['upload', 'mapping', 'validation', 'confirm'];
           const isActive = stepNames.indexOf(step) >= i;
           return (
-            <div key={label} style={{ ...styles.step, ...(isActive ? styles.stepActive : {}) }}>
+            <div key={name} style={{ ...styles.step, ...(isActive ? styles.stepActive : {}) }}>
               <span style={styles.stepNum}>{i + 1}</span>
-              <span style={styles.stepLabel}>{label}</span>
+              <span style={styles.stepLabel}>{t('import.step.' + name)}</span>
             </div>
           );
         })}
@@ -131,7 +124,7 @@ export function CustomerImport() {
       {/* Step 1: Upload */}
       {step === 'upload' && (
         <div style={styles.stepContent}>
-          <p style={styles.description}>Upload a CSV file with your customer data.</p>
+          <p style={styles.description}>{t('import.uploadHelp')}</p>
           <input type="file" accept=".csv" onChange={handleFileUpload} style={styles.fileInput} />
         </div>
       )}
@@ -139,7 +132,7 @@ export function CustomerImport() {
       {/* Step 2: Column Mapping */}
       {step === 'mapping' && (
         <div style={styles.stepContent}>
-          <p style={styles.description}>Map your CSV columns to customer fields.</p>
+          <p style={styles.description}>{t('import.mapHelp')}</p>
           <div style={styles.mappingGrid}>
             {headers.map((header) => (
               <div key={header} style={styles.mappingRow}>
@@ -151,7 +144,7 @@ export function CustomerImport() {
                   style={styles.select}
                 >
                   {CUSTOMER_FIELDS.map((f) => (
-                    <option key={f.value} value={f.value}>{f.label}</option>
+                    <option key={f} value={f}>{fieldLabel(f)}</option>
                   ))}
                 </select>
               </div>
@@ -159,12 +152,12 @@ export function CustomerImport() {
           </div>
           {missingRequired.length > 0 && (
             <Alert variant="error">
-              Map a column to each required field before validating: {missingRequired.map((f) => REQUIRED_LABELS[f]).join(', ')}.
+              {t('import.missingRequired', { fields: missingRequired.map((f) => fieldLabel(f)).join(', ') })}
             </Alert>
           )}
           <div style={styles.actions}>
-            <Button onClick={() => setStep('upload')}>Back</Button>
-            <Button onClick={handleValidate} disabled={missingRequired.length > 0}>{loading ? 'Validating...' : 'Validate'}</Button>
+            <Button onClick={() => setStep('upload')}>{t('common:back')}</Button>
+            <Button onClick={handleValidate} disabled={missingRequired.length > 0}>{loading ? t('import.validating') : t('import.validate')}</Button>
           </div>
         </div>
       )}
@@ -172,32 +165,32 @@ export function CustomerImport() {
       {/* Step 3: Validation Results */}
       {step === 'validation' && validationResult && (
         <div style={styles.stepContent}>
-          <h2 style={styles.subtitle}>Validation Results</h2>
+          <h2 style={styles.subtitle}>{t('import.validationResults')}</h2>
           <div style={styles.stats}>
-            <span>Total rows: {validationResult.total}</span>
-            <span>Errors: {validationResult.errors.length}</span>
+            <span>{t('import.totalRows', { n: validationResult.total })}</span>
+            <span>{t('import.errorsCount', { n: validationResult.errors.length })}</span>
           </div>
           {validationResult.valid ? (
-            <Alert variant="success">All rows are valid and ready to import.</Alert>
+            <Alert variant="success">{t('import.allValid')}</Alert>
           ) : (
             <>
-              <Alert variant="warning">{validationResult.errors.length} error(s) found. These rows will be skipped.</Alert>
+              <Alert variant="warning">{t('import.errorsFound', { n: validationResult.errors.length })}</Alert>
               <div style={styles.errorList}>
                 {validationResult.errors.slice(0, 20).map((err: any, i: number) => (
                   <div key={i} style={styles.errorRow}>
-                    <span>Row {err.row}</span>
+                    <span>{t('import.row', { n: err.row })}</span>
                     <span>{err.field}: {err.message}</span>
                   </div>
                 ))}
                 {validationResult.errors.length > 20 && (
-                  <p style={styles.moreErrors}>...and {validationResult.errors.length - 20} more errors</p>
+                  <p style={styles.moreErrors}>{t('import.moreErrors', { n: validationResult.errors.length - 20 })}</p>
                 )}
               </div>
             </>
           )}
           <div style={styles.actions}>
-            <Button onClick={() => setStep('mapping')}>Back</Button>
-            <Button onClick={handleImport}>{loading ? 'Importing...' : 'Import'}</Button>
+            <Button onClick={() => setStep('mapping')}>{t('common:back')}</Button>
+            <Button onClick={handleImport}>{loading ? t('import.importing') : t('import.import')}</Button>
           </div>
         </div>
       )}
@@ -205,19 +198,19 @@ export function CustomerImport() {
       {/* Step 4: Confirm/Results */}
       {step === 'confirm' && importResult && (
         <div style={styles.stepContent}>
-          <h2 style={styles.subtitle}>Import Complete</h2>
+          <h2 style={styles.subtitle}>{t('import.complete')}</h2>
           <Alert variant="success">
-            Successfully imported {importResult.imported} of {importResult.total} customers.
+            {t('import.imported', { imported: importResult.imported, total: importResult.total })}
           </Alert>
           <div style={styles.stats}>
-            <span>Total: {importResult.total}</span>
-            <span>Imported: {importResult.imported}</span>
-            <span>Skipped: {importResult.skipped}</span>
+            <span>{t('import.statTotal', { n: importResult.total })}</span>
+            <span>{t('import.statImported', { n: importResult.imported })}</span>
+            <span>{t('import.statSkipped', { n: importResult.skipped })}</span>
           </div>
           {importResult.errors.length > 0 && (
             <div style={styles.errorList}>
               <div style={styles.errorListHeader}>
-                <h3 style={styles.errorTitle}>Skipped Rows</h3>
+                <h3 style={styles.errorTitle}>{t('import.skippedRows')}</h3>
                 <Button
                   variant="outline"
                   onClick={() => downloadCsv(
@@ -225,22 +218,22 @@ export function CustomerImport() {
                     [['row', 'field', 'reason'], ...importResult.errors.map((err: any) => [String(err.row), err.field, err.message])],
                   )}
                 >
-                  Download errors CSV
+                  {t('import.downloadErrors')}
                 </Button>
               </div>
               {importResult.errors.slice(0, 10).map((err: any, i: number) => (
                 <div key={i} style={styles.errorRow}>
-                  <span>Row {err.row}</span>
+                  <span>{t('import.row', { n: err.row })}</span>
                   <span>{err.field}: {err.message}</span>
                 </div>
               ))}
               {importResult.errors.length > 10 && (
-                <p style={styles.moreErrors}>...and {importResult.errors.length - 10} more — download the CSV above for the full list.</p>
+                <p style={styles.moreErrors}>{t('import.moreSkipped', { n: importResult.errors.length - 10 })}</p>
               )}
             </div>
           )}
           <Button onClick={() => { setStep('upload'); setCsvText(''); setHeaders([]); setMapping({}); setValidationResult(null); setImportResult(null); }}>
-            Import More
+            {t('import.importMore')}
           </Button>
         </div>
       )}

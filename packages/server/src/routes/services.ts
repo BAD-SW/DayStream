@@ -44,13 +44,13 @@ const updateCategorySchema = Joi.object({
 servicesRouter.get('/categories', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const categories = await categoriesService.getCategories(businessId);
     success(res, categories);
   } catch (err: any) {
     console.error('List categories error:', err);
-    error(res, 'Failed to list categories', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListCategories'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -67,12 +67,12 @@ servicesRouter.post('/categories', requirePermission('services:*'), validate(cre
     });
     success(res, category, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('duplicate key') || err.message.includes('unique') || err.message.includes('already exists')) {
-      error(res, 'A category with this name already exists', 'DUPLICATE_NAME', 409);
-    } else if (err.message.includes('not found') || err.message.includes('depth')) {
+    if (err.message.includes('duplicate key') || messageHas(err.message, 'unique') || messageHas(err.message, 'already exists')) {
+      error(res, msg('errors:services.aCategoryWithThisNameAlready'), 'DUPLICATE_NAME', 409);
+    } else if (messageHas(err.message, 'not found') || messageHas(err.message, 'depth')) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to create category', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToCreateCategory'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -81,7 +81,7 @@ servicesRouter.post('/categories', requirePermission('services:*'), validate(cre
 servicesRouter.put('/categories/:id', requirePermission('services:*'), validate(updateCategorySchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const category = await categoriesService.updateCategory(req.params.id, businessId, {
       name: req.body.name,
@@ -92,15 +92,15 @@ servicesRouter.put('/categories/:id', requirePermission('services:*'), validate(
       status: req.body.status,
     });
 
-    if (!category) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
+    if (!category) { error(res, msg('errors:services.categoryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, category);
   } catch (err: any) {
-    if (err.message.includes('duplicate key') || err.message.includes('unique')) {
-      error(res, 'A category with this name already exists', 'DUPLICATE_NAME', 409);
-    } else if (err.message.includes('not found') || err.message.includes('depth') || err.message.includes('own parent')) {
+    if (err.message.includes('duplicate key') || messageHas(err.message, 'unique')) {
+      error(res, msg('errors:services.aCategoryWithThisNameAlready'), 'DUPLICATE_NAME', 409);
+    } else if (messageHas(err.message, 'not found') || messageHas(err.message, 'depth') || (isMessage(err.message, 'errors:serviceCategories.categoryCannotBeItsOwnParent') || err.message.includes('own parent'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to update category', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToUpdateCategory'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -109,15 +109,15 @@ servicesRouter.put('/categories/:id', requirePermission('services:*'), validate(
 servicesRouter.delete('/categories/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const archived = await categoriesService.archiveCategory(req.params.id, businessId);
-    if (!archived) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
+    if (!archived) { error(res, msg('errors:services.categoryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
   } catch (err: any) {
     if (err?.code === 'CATEGORY_IN_USE') { error(res, err.message, 'CATEGORY_IN_USE', 409); return; }
     console.error('Failed to archive category', err?.message || err);
-    error(res, 'Failed to archive category', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToArchiveCategory'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -153,12 +153,12 @@ const updatePolicySchema = Joi.object({
 servicesRouter.get('/cancellation-policies', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const policies = await policiesService.getPolicies(businessId);
     success(res, policies);
   } catch (err: any) {
     console.error('Failed to list policies', err?.message || err);
-    error(res, 'Failed to list policies', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListPolicies'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -178,7 +178,7 @@ servicesRouter.post('/cancellation-policies', requirePermission('services:*'), v
     success(res, policy, undefined, 201);
   } catch (err: any) {
     console.error('Failed to create policy', err?.message || err);
-    error(res, 'Failed to create policy', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToCreatePolicy'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -186,7 +186,7 @@ servicesRouter.post('/cancellation-policies', requirePermission('services:*'), v
 servicesRouter.put('/cancellation-policies/:id', requirePermission('services:*'), validate(updatePolicySchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const policy = await policiesService.updatePolicy(req.params.id, businessId, {
       name: req.body.name,
@@ -198,11 +198,11 @@ servicesRouter.put('/cancellation-policies/:id', requirePermission('services:*')
       noshowFeeValue: req.body.noshow_fee_value,
     });
 
-    if (!policy) { error(res, 'Policy not found', 'NOT_FOUND', 404); return; }
+    if (!policy) { error(res, msg('errors:services.policyNotFound'), 'NOT_FOUND', 404); return; }
     success(res, policy);
   } catch (err: any) {
     console.error('Failed to update policy', err?.message || err);
-    error(res, 'Failed to update policy', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToUpdatePolicy'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -210,14 +210,14 @@ servicesRouter.put('/cancellation-policies/:id', requirePermission('services:*')
 servicesRouter.delete('/cancellation-policies/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const deleted = await policiesService.deletePolicy(req.params.id, businessId);
-    if (!deleted) { error(res, 'Policy not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:services.policyNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete policy', err?.message || err);
-    error(res, 'Failed to delete policy', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToDeletePolicy'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -241,7 +241,7 @@ servicesRouter.get('/templates', requirePermission('services:read'), async (req:
     success(res, { templates, business_types: businessTypes });
   } catch (err: any) {
     console.error('Failed to list templates', err?.message || err);
-    error(res, 'Failed to list templates', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListTemplates'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -256,10 +256,10 @@ servicesRouter.post('/templates/apply', requirePermission('services:*'), validat
     );
     success(res, result);
   } catch (err: any) {
-    if (err.message.includes('No templates')) {
+    if ((isMessage(err.message, 'errors:serviceTemplates.noTemplatesFoundForBusinessType') || err.message.includes('No templates'))) {
       error(res, err.message, 'NOT_FOUND', 404);
     } else {
-      error(res, 'Failed to apply template', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToApplyTemplate'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -287,12 +287,12 @@ const updateTaxCategorySchema = Joi.object({
 servicesRouter.get('/tax-categories', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const categories = await taxService.getTaxCategories(businessId);
     success(res, categories);
   } catch (err: any) {
     console.error('Failed to list tax categories', err?.message || err);
-    error(res, 'Failed to list tax categories', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListTaxCategories'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -307,10 +307,10 @@ servicesRouter.post('/tax-categories', requirePermission('services:*'), validate
     });
     success(res, category, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('duplicate key') || err.message.includes('unique')) {
-      error(res, 'A tax category with this name already exists', 'DUPLICATE_NAME', 409);
+    if (err.message.includes('duplicate key') || messageHas(err.message, 'unique')) {
+      error(res, msg('errors:services.aTaxCategoryWithThisName'), 'DUPLICATE_NAME', 409);
     } else {
-      error(res, 'Failed to create tax category', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToCreateTaxCategory'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -319,7 +319,7 @@ servicesRouter.post('/tax-categories', requirePermission('services:*'), validate
 servicesRouter.put('/tax-categories/:id', requirePermission('services:*'), validate(updateTaxCategorySchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const category = await taxService.updateTaxCategory(req.params.id, businessId, {
       name: req.body.name,
@@ -327,11 +327,11 @@ servicesRouter.put('/tax-categories/:id', requirePermission('services:*'), valid
       isDefault: req.body.is_default,
     });
 
-    if (!category) { error(res, 'Tax category not found', 'NOT_FOUND', 404); return; }
+    if (!category) { error(res, msg('errors:services.taxCategoryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, category);
   } catch (err: any) {
     console.error('Failed to update tax category', err?.message || err);
-    error(res, 'Failed to update tax category', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToUpdateTaxCategory'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -339,13 +339,13 @@ servicesRouter.put('/tax-categories/:id', requirePermission('services:*'), valid
 servicesRouter.delete('/tax-categories/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const deleted = await taxService.deleteTaxCategory(req.params.id, businessId);
-    if (!deleted) { error(res, 'Tax rate not found or in use', 'CONFLICT', 409); return; }
+    if (!deleted) { error(res, msg('errors:services.taxRateNotFoundOrIn'), 'CONFLICT', 409); return; }
     success(res, { deleted: true });
   } catch (err: any) {
-    if (err.message.includes('in use')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to delete tax rate', 'INTERNAL_ERROR', 500); }
+    if (messageHas(err.message, 'in use')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, msg('errors:services.failedToDeleteTaxRate'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -428,12 +428,12 @@ servicesRouter.post('/', requirePermission('services:*'), validate(createService
     });
     success(res, service, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('already exists')) {
+    if (messageHas(err.message, 'already exists')) {
       error(res, err.message, 'DUPLICATE_NAME', 409);
-    } else if (err.message.includes('not found')) {
+    } else if (messageHas(err.message, 'not found')) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to create service', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToCreateService'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -442,7 +442,7 @@ servicesRouter.post('/', requirePermission('services:*'), validate(createService
 servicesRouter.get('/', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const result = await serviceService.getServices(businessId, {
       categoryId: req.query.category_id as string,
@@ -463,7 +463,7 @@ servicesRouter.get('/', requirePermission('services:read'), async (req: Request,
     });
   } catch (err: any) {
     console.error('List services error:', err);
-    error(res, 'Failed to list services', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListServices'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -471,14 +471,14 @@ servicesRouter.get('/', requirePermission('services:read'), async (req: Request,
 servicesRouter.get('/:id', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const service = await serviceService.getServiceById(req.params.id, businessId);
-    if (!service) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
+    if (!service) { error(res, msg('errors:services.serviceNotFound'), 'NOT_FOUND', 404); return; }
     success(res, service);
   } catch (err: any) {
     console.error('Failed to get service', err?.message || err);
-    error(res, 'Failed to get service', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToGetService'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -487,16 +487,16 @@ servicesRouter.put('/:id', requirePermission('services:*'), validate(updateServi
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const service = await serviceService.updateService(req.params.id, businessId, req.body, authReq.user.sub, authReq.tenantId);
-    if (!service) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
+    if (!service) { error(res, msg('errors:services.serviceNotFound'), 'NOT_FOUND', 404); return; }
     success(res, service);
   } catch (err: any) {
-    if (err.message.includes('capacity')) {
+    if ((isMessage(err.message, 'errors:staff.failedToGetCapacityConfig', 'errors:staff.failedToUpdateCapacityConfig', 'errors:staff.failedToCreateCapacityOverride', 'errors:booking.onlySpotSRemainingExceedsResource', 'errors:eventRegistration.eventIsAtCapacity', 'errors:resourceBookings.resourceAtCapacityForThisTime', 'errors:service.sharedGroupServicesRequireCapacityOf') || err.message.includes('capacity'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to update service', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToUpdateService'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -506,14 +506,14 @@ servicesRouter.put('/:id/archive', requirePermission('services:*'), async (req: 
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const archived = await serviceService.archiveService(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
-    if (!archived) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
+    if (!archived) { error(res, msg('errors:services.serviceNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
   } catch (err: any) {
     console.error('Failed to archive service', err?.message || err);
-    error(res, 'Failed to archive service', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToArchiveService'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -521,14 +521,14 @@ servicesRouter.put('/:id/archive', requirePermission('services:*'), async (req: 
 servicesRouter.put('/:id/restore', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const restored = await serviceService.restoreService(req.params.id, businessId);
-    if (!restored) { error(res, 'Service not found or not archived', 'NOT_FOUND', 404); return; }
+    if (!restored) { error(res, msg('errors:services.serviceNotFoundOrNotArchived'), 'NOT_FOUND', 404); return; }
     success(res, { restored: true });
   } catch (err: any) {
     console.error('Failed to restore service', err?.message || err);
-    error(res, 'Failed to restore service', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToRestoreService'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -536,14 +536,14 @@ servicesRouter.put('/:id/restore', requirePermission('services:*'), async (req: 
 servicesRouter.put('/:id/pause', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const paused = await serviceService.pauseService(req.params.id, businessId);
-    if (!paused) { error(res, 'Service not found or not active', 'NOT_FOUND', 404); return; }
+    if (!paused) { error(res, msg('errors:services.serviceNotFoundOrNotActive'), 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
   } catch (err: any) {
     console.error('Failed to pause service', err?.message || err);
-    error(res, 'Failed to pause service', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToPauseService'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -551,16 +551,16 @@ servicesRouter.put('/:id/pause', requirePermission('services:*'), async (req: Re
 servicesRouter.put('/:id/activate', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const activated = await serviceService.activateService(req.params.id, businessId);
-    if (!activated) { error(res, 'Service not found or already active', 'NOT_FOUND', 404); return; }
+    if (!activated) { error(res, msg('errors:services.serviceNotFoundOrAlreadyActive'), 'NOT_FOUND', 404); return; }
     success(res, { activated: true });
   } catch (err: any) {
-    if (err.message.includes('variant')) {
+    if (messageHas(err.message, 'variant')) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to activate service', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToActivateService'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -606,7 +606,7 @@ servicesRouter.get('/:id/variants', requirePermission('services:read'), async (r
     success(res, variants);
   } catch (err: any) {
     console.error('Failed to list variants', err?.message || err);
-    error(res, 'Failed to list variants', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListVariants'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -628,10 +628,10 @@ servicesRouter.post('/:id/variants', requirePermission('services:*'), validate(c
     });
     success(res, variant, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('billing interval')) {
+    if ((isMessage(err.message, 'errors:serviceVariants.subscriptionVariantsRequireABillingInterval') || err.message.includes('billing interval'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to create variant', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToCreateVariant'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -657,17 +657,17 @@ servicesRouter.put('/:id/variants/:variantId', requirePermission('services:*'), 
       noShowFee: req.body.no_show_fee,
     });
 
-    if (!variant) { error(res, 'Variant not found', 'NOT_FOUND', 404); return; }
+    if (!variant) { error(res, msg('errors:services.variantNotFound'), 'NOT_FOUND', 404); return; }
     if (beforeRows[0] && req.body.price !== undefined && beforeRows[0].price !== variant.price) {
       await recordPriceChange(beforeRows[0].business_id, 'service_variant', variant.id, beforeRows[0].price, variant.price, (req as AuthenticatedRequest).user.sub)
         .catch((e) => console.error('Price history not recorded', e?.message || e));
     }
     success(res, variant);
   } catch (err: any) {
-    if (err.message.includes('billing interval')) {
+    if ((isMessage(err.message, 'errors:serviceVariants.subscriptionVariantsRequireABillingInterval') || err.message.includes('billing interval'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to update variant', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToUpdateVariant'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -680,14 +680,14 @@ servicesRouter.delete('/:id/variants/:variantId', requirePermission('services:*'
       if (result.error) {
         error(res, result.error, 'VALIDATION_ERROR', 400);
       } else {
-        error(res, 'Variant not found', 'NOT_FOUND', 404);
+        error(res, msg('errors:services.variantNotFound'), 'NOT_FOUND', 404);
       }
       return;
     }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete variant', err?.message || err);
-    error(res, 'Failed to delete variant', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToDeleteVariant'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -717,7 +717,7 @@ servicesRouter.get('/:id/images', requirePermission('services:read'), async (req
     success(res, images);
   } catch (err: any) {
     console.error('Failed to list images', err?.message || err);
-    error(res, 'Failed to list images', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListImages'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -726,9 +726,9 @@ servicesRouter.post('/:id/images', requirePermission('services:*'), upload.singl
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
-    if (!req.file) { error(res, 'No image file provided', 'VALIDATION_ERROR', 400); return; }
+    if (!req.file) { error(res, msg('errors:services.noImageFileProvided'), 'VALIDATION_ERROR', 400); return; }
 
     const image = await imagesService.uploadImage(
       req.params.id,
@@ -740,10 +740,10 @@ servicesRouter.post('/:id/images', requirePermission('services:*'), upload.singl
 
     success(res, image, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('Maximum') || err.message.includes('Invalid') || err.message.includes('too large') || err.message.includes('too small') || err.message.includes('dimensions')) {
+    if ((isMessage(err.message, 'errors:merchandiseImages.fileTooLargeMaximum5mb', 'errors:savedQuery.maximumSavedQueryLimitReached', 'errors:serviceCategories.maximumCategoryDepthIs2Levels', 'errors:serviceImages.maximumImagesPerService') || err.message.includes('Maximum')) || (isMessage(err.message, 'errors:invalid_credentials', 'errors:middleware.invalidToken', 'errors:widgetCors.invalidOrMissingBusinessId', 'errors:clock.invalidEmailOrPin', 'errors:paymentPlatform.invalidWebhookSignature', 'errors:users.invalidPaginationParams', 'errors:auth.invalidCredentials', 'errors:auth.invalidOrExpiredRefreshToken', 'errors:integrationOauth.invalidOrExpiredOauthState', 'errors:merchandiseImages.invalidFormatAcceptedJpegPngWebp', 'errors:mockAdapter.invalidWebhookSignature', 'errors:voucher.invalidDiscountType') || err.message.includes('Invalid')) || (isMessage(err.message, 'errors:customerProfile.theFileIsTooLarge', 'errors:merchandiseImages.fileTooLargeMaximum5mb') || err.message.includes('too large')) || (isMessage(err.message, 'errors:serviceImages.imageTooSmallMinimumDimensionsX') || err.message.includes('too small')) || (isMessage(err.message, 'errors:serviceImages.couldNotReadImageDimensions', 'errors:serviceImages.imageTooSmallMinimumDimensionsX') || err.message.includes('dimensions'))) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to upload image', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToUploadImage'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -752,11 +752,11 @@ servicesRouter.post('/:id/images', requirePermission('services:*'), upload.singl
 servicesRouter.put('/:id/images/:imageId', requirePermission('services:*'), validate(updateImageSchema), async (req: Request, res: Response) => {
   try {
     const image = await imagesService.updateImage(req.params.imageId, req.params.id, req.body);
-    if (!image) { error(res, 'Image not found', 'NOT_FOUND', 404); return; }
+    if (!image) { error(res, msg('errors:services.imageNotFound'), 'NOT_FOUND', 404); return; }
     success(res, image);
   } catch (err: any) {
     console.error('Failed to update image', err?.message || err);
-    error(res, 'Failed to update image', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToUpdateImage'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -764,11 +764,11 @@ servicesRouter.put('/:id/images/:imageId', requirePermission('services:*'), vali
 servicesRouter.delete('/:id/images/:imageId', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const deleted = await imagesService.deleteImage(req.params.imageId, req.params.id);
-    if (!deleted) { error(res, 'Image not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:services.imageNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete image', err?.message || err);
-    error(res, 'Failed to delete image', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToDeleteImage'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -792,7 +792,7 @@ servicesRouter.get('/:id/staff', requirePermission('services:read'), async (req:
     success(res, staff);
   } catch (err: any) {
     console.error('Failed to list staff', err?.message || err);
-    error(res, 'Failed to list staff', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListStaff'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -807,10 +807,10 @@ servicesRouter.post('/:id/staff', requirePermission('services:*'), validate(assi
     });
     success(res, assignment, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('already assigned')) {
+    if ((isMessage(err.message, 'errors:serviceStaff.staffMemberIsAlreadyAssignedTo') || err.message.includes('already assigned'))) {
       error(res, err.message, 'DUPLICATE', 409);
     } else {
-      error(res, 'Failed to assign staff', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToAssignStaff'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -820,11 +820,11 @@ servicesRouter.delete('/:id/staff/:userId', requirePermission('services:*'), asy
   try {
     const variantId = req.query.variant_id as string | undefined;
     const removed = await staffService.removeStaff(req.params.id, req.params.userId, variantId || null);
-    if (!removed) { error(res, 'Assignment not found', 'NOT_FOUND', 404); return; }
+    if (!removed) { error(res, msg('errors:services.assignmentNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
   } catch (err: any) {
     console.error('Failed to remove staff', err?.message || err);
-    error(res, 'Failed to remove staff', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToRemoveStaff'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -859,7 +859,7 @@ servicesRouter.get('/:id/availability', requirePermission('services:read'), asyn
     success(res, rules);
   } catch (err: any) {
     console.error('Failed to list availability rules', err?.message || err);
-    error(res, 'Failed to list availability rules', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListAvailabilityRules'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -883,10 +883,10 @@ servicesRouter.post('/:id/availability', requirePermission('services:*'), valida
     });
     success(res, rule, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('require')) {
+    if (messageHas(err.message, 'require')) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
-      error(res, 'Failed to create rule', 'INTERNAL_ERROR', 500);
+      error(res, msg('errors:services.failedToCreateRule'), 'INTERNAL_ERROR', 500);
     }
   }
 });
@@ -895,11 +895,11 @@ servicesRouter.post('/:id/availability', requirePermission('services:*'), valida
 servicesRouter.delete('/:id/availability/:ruleId', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const deleted = await availabilityService.deleteRule(req.params.ruleId, req.params.id);
-    if (!deleted) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:services.ruleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
     console.error('Failed to delete rule', err?.message || err);
-    error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToDeleteRule'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -935,11 +935,11 @@ servicesRouter.put('/:id/availability/:ruleId', requirePermission('services:*'),
       resourceIds: req.body.resource_ids,
       variantIds: req.body.variant_ids,
     });
-    if (!updated) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    if (!updated) { error(res, msg('errors:services.ruleNotFound'), 'NOT_FOUND', 404); return; }
     success(res, updated);
   } catch (err: any) {
     console.error('Failed to update rule', err?.message || err);
-    error(res, 'Failed to update rule', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToUpdateRule'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -963,7 +963,7 @@ servicesRouter.get('/:id/locations', requirePermission('services:read'), async (
     success(res, rows.map((r: any) => r.location_id));
   } catch (err: any) {
     console.error('Failed to get service locations', err?.message || err);
-    error(res, 'Failed to get service locations', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToGetServiceLocations'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -971,7 +971,7 @@ servicesRouter.get('/:id/locations', requirePermission('services:read'), async (
 servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const locationIds: string[] = req.body.location_ids || [];
 
@@ -982,7 +982,7 @@ servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req
         [businessId, locationIds],
       );
       if (rows.length !== locationIds.length) {
-        error(res, 'One or more location IDs are invalid', 'VALIDATION_ERROR', 400);
+        error(res, msg('errors:services.oneOrMoreLocationIdsAre'), 'VALIDATION_ERROR', 400);
         return;
       }
     }
@@ -1001,7 +1001,7 @@ servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req
     success(res, locationIds);
   } catch (err: any) {
     console.error('Failed to update service locations', err?.message || err);
-    error(res, 'Failed to update service locations', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToUpdateServiceLocations'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1010,6 +1010,7 @@ servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req
 // ============================================================
 
 import * as addonsService from '../services/addons.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 const setServiceAddonsSchema = Joi.object({
   // the service's add-ons in order: one with addon_id is kept (edited), one without is new
@@ -1025,11 +1026,11 @@ const setServiceAddonsSchema = Joi.object({
 servicesRouter.get('/:id/addons', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await addonsService.serviceAddons(req.params.id, businessId));
   } catch (err: any) {
     console.error('Failed to list service add-ons', err?.message || err);
-    error(res, 'Failed to list service add-ons', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToListServiceAddOns'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -1037,7 +1038,7 @@ servicesRouter.get('/:id/addons', requirePermission('services:read'), async (req
 servicesRouter.put('/:id/addons', requirePermission('services:*'), validate(setServiceAddonsSchema), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:services.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const authReq = req as AuthenticatedRequest;
     success(res, await addonsService.setServiceAddons(req.params.id, businessId, req.body.addons, authReq.user.sub));
   } catch (err: any) {
@@ -1046,6 +1047,6 @@ servicesRouter.put('/:id/addons', requirePermission('services:*'), validate(setS
       return;
     }
     console.error('Failed to set service add-ons', err?.message || err);
-    error(res, 'Failed to set service add-ons', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:services.failedToSetServiceAddOns'), 'INTERNAL_ERROR', 500);
   }
 });

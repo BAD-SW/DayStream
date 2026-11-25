@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 function generateSlug(title: string): string {
   return title
@@ -191,11 +192,11 @@ export async function updateEvent(
   const old = before[0];
   if (!old) return null;
   if (updates.capacity !== undefined && updates.capacity !== null && Number(updates.capacity) < old.taken) {
-    throw new EventChangeError(`Capacity cannot be lower than the ${old.taken} ${old.taken === 1 ? "place" : "places"} already taken`);
+    throw new EventChangeError(msg('errors:event.capacityCannotBeLowerThanThe', { taken: old.taken, value: old.taken === 1 ? "place" : "places" }));
   }
   if (updates.start_time !== undefined || updates.end_time !== undefined) {
     const start = new Date(updates.start_time ?? old.start_time); const end = new Date(updates.end_time ?? old.end_time);
-    if (!(end > start)) throw new EventChangeError('The event must end after it starts');
+    if (!(end > start)) throw new EventChangeError(msg('errors:event.theEventMustEndAfterIt'));
   }
   if (updates.location_id) {
     const { rows: loc } = await adminPool.query('SELECT name FROM sys_locations WHERE id = $1', [updates.location_id]);
@@ -270,13 +271,13 @@ export async function unpublishEvent(id: string, tenantId: string) {
     [id],
   );
   if (held[0].registrations > 0 || held[0].waiting > 0) {
-    throw new EventChangeError('People are registered or waiting: it can no longer be unpublished. Cancel the event instead (they are told and refunded).');
+    throw new EventChangeError(msg('errors:event.peopleAreRegisteredOrWaitingIt'));
   }
   const { rows } = await adminPool.query(
     `UPDATE evt_events SET status = 'draft', updated_at = NOW() WHERE id = $1 AND tenant_id = $2 AND status = 'published' RETURNING *`,
     [id, tenantId],
   );
-  if (!rows[0]) throw new EventChangeError('Only a published event can be unpublished');
+  if (!rows[0]) throw new EventChangeError(msg('errors:event.onlyAPublishedEventCanBe'));
   await logAudit({ tenantId, action: 'event.unpublished', resourceType: 'event', resourceId: id });
   return rows[0];
 }
@@ -288,13 +289,13 @@ export async function publishEvent(id: string, tenantId: string) {
   const { rows: tiers } = await adminPool.query(
     'SELECT 1 FROM evt_ticket_tiers t JOIN evt_events e ON e.id = t.event_id WHERE t.event_id = $1 AND e.tenant_id = $2 LIMIT 1', [id, tenantId],
   );
-  if (tiers.length === 0) throw new Error('Add at least one ticket (it can be free) before publishing: nobody could register otherwise');
+  if (tiers.length === 0) throw new Error(msg('errors:event.addAtLeastOneTicketIt'));
   const { rows } = await adminPool.query(
     `UPDATE evt_events SET status = 'published', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status = 'draft' RETURNING *`,
     [id, tenantId],
   );
-  if (!rows[0]) throw new Error('Event not found or not in draft status');
+  if (!rows[0]) throw new Error(msg('errors:event.eventNotFoundOrNotIn'));
 
   await logAudit({
     tenantId,
@@ -317,7 +318,7 @@ export async function publishEvent(id: string, tenantId: string) {
  */
 export async function cancelPreview(id: string, tenantId: string) {
   const { rows: ev } = await adminPool.query('SELECT id, status FROM evt_events WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-  if (!ev[0]) throw new Error('Event not found');
+  if (!ev[0]) throw new Error(msg('errors:event.eventNotFound'));
   const { rows: [counts] } = await adminPool.query(
     `SELECT (SELECT COUNT(*)::int FROM evt_registrations WHERE event_id = $1 AND status IN ('confirmed', 'pending')) AS registrations,
             (SELECT COUNT(*)::int FROM evt_waitlist WHERE event_id = $1 AND status IN ('waiting', 'notified')) AS waiting`,
@@ -356,7 +357,7 @@ export async function cancelPreview(id: string, tenantId: string) {
 export async function cancelEvent(id: string, tenantId: string, userId: string) {
   const { rows: ev } = await adminPool.query(
     `SELECT id FROM evt_events WHERE id = $1 AND tenant_id = $2 AND status IN ('draft','published')`, [id, tenantId]);
-  if (!ev[0]) throw new Error('Event not found or cannot be cancelled');
+  if (!ev[0]) throw new Error(msg('errors:event.eventNotFoundOrCannotBe'));
   // The waiting list goes first, so nobody is moved into a place that is being cancelled.
   await adminPool.query(`UPDATE evt_waitlist SET status = 'expired' WHERE event_id = $1 AND status IN ('waiting', 'notified')`, [id]).catch(() => undefined);
   // Each registration is cancelled the way staff cancel one (David, 2026-10-29): a paid ticket is
@@ -370,14 +371,14 @@ export async function cancelEvent(id: string, tenantId: string, userId: string) 
     catch (err: any) { failed.push(err?.message || 'not cancelled'); }
   }
   if (failed.length > 0) {
-    throw new Error(`The event was not cancelled: ${failed.length} of ${regs.length} registrations could not be cancelled (${failed[0]}). The others were cancelled and refunded; try again.`);
+    throw new Error(msg('errors:event.theEventWasNotCancelledOf', { length: failed.length, length2: regs.length, value: failed[0] }));
   }
   const { rows } = await adminPool.query(
     `UPDATE evt_events SET status = 'cancelled', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft','published') RETURNING *`,
     [id, tenantId],
   );
-  if (!rows[0]) throw new Error('Event not found or cannot be cancelled');
+  if (!rows[0]) throw new Error(msg('errors:event.eventNotFoundOrCannotBe'));
 
   await logAudit({
     tenantId,
@@ -401,8 +402,8 @@ export class EventArchiveError extends Error {
  */
 export async function archiveEvent(id: string, tenantId: string, userId: string) {
   const { rows: ev } = await adminPool.query('SELECT id, deleted_at FROM evt_events WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-  if (!ev[0]) throw new EventArchiveError('Event not found', 404, 'NOT_FOUND');
-  if (ev[0].deleted_at) throw new EventArchiveError('This event is already deleted', 409, 'ALREADY_DELETED');
+  if (!ev[0]) throw new EventArchiveError(msg('errors:event.eventNotFound'), 404, 'NOT_FOUND');
+  if (ev[0].deleted_at) throw new EventArchiveError(msg('errors:event.thisEventIsAlreadyDeleted'), 409, 'ALREADY_DELETED');
   const { rows: [held] } = await adminPool.query(
     `SELECT (SELECT COUNT(*)::int FROM evt_registrations WHERE event_id = $1 AND status IN ('pending', 'confirmed', 'waitlisted')) AS registrations,
             (SELECT COUNT(*)::int FROM evt_waitlist WHERE event_id = $1 AND status IN ('waiting', 'notified')) AS waiting`,
@@ -411,7 +412,7 @@ export async function archiveEvent(id: string, tenantId: string, userId: string)
   if (held.registrations > 0 || held.waiting > 0) {
     const parts = [held.registrations ? `${held.registrations} ${held.registrations === 1 ? 'registration' : 'registrations'}` : '',
       held.waiting ? `${held.waiting} on the waiting list` : ''].filter(Boolean).join(' and ');
-    throw new EventArchiveError(`This event has ${parts}. Cancel the event first, then delete it.`, 409, 'HAS_REGISTRATIONS');
+    throw new EventArchiveError(msg('errors:event.thisEventHasCancelTheEvent', { parts }), 409, 'HAS_REGISTRATIONS');
   }
   const { rows } = await adminPool.query(
     'UPDATE evt_events SET deleted_at = NOW(), deleted_by = $3, updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING *',
@@ -427,7 +428,7 @@ export async function restoreEvent(id: string, tenantId: string, userId: string)
     'UPDATE evt_events SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW() WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NOT NULL RETURNING *',
     [id, tenantId],
   );
-  if (!rows[0]) throw new EventArchiveError('Deleted event not found', 404, 'NOT_FOUND');
+  if (!rows[0]) throw new EventArchiveError(msg('errors:event.deletedEventNotFound'), 404, 'NOT_FOUND');
   await logAudit({ tenantId, userId, action: 'event.restored', resourceType: 'event', resourceId: id });
   return rows[0];
 }
@@ -441,7 +442,7 @@ export async function completeEvent(id: string, tenantId: string) {
      WHERE id = $1 AND tenant_id = $2 AND status = 'published' RETURNING *`,
     [id, tenantId],
   );
-  if (!rows[0]) throw new Error('Event not found or not in published status');
+  if (!rows[0]) throw new Error(msg('errors:event.eventNotFoundOrNotIn2'));
 
   await logAudit({
     tenantId,
@@ -475,7 +476,7 @@ export async function addFacilitator(eventId: string, staffId: string, role: str
      WHERE e.id = $1 AND p.id::text = $2`,
     [eventId, staffId || ''],
   );
-  if (!ok.length) throw Object.assign(new Error('Choose a staff member of this business'), { status: 400 });
+  if (!ok.length) throw Object.assign(new Error(msg('errors:event.chooseAStaffMemberOfThis')), { status: 400 });
   const { rows } = await adminPool.query(
     `INSERT INTO evt_facilitators (event_id, staff_id, role)
      VALUES ($1, $2, $3)

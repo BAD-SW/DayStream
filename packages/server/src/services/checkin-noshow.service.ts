@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { getConfig } from './checkin-config.service';
+import { msg } from '../i18n';
 
 /**
  * Detect no-shows: finds overdue bookings past grace period, marks as no_show, creates no_show_records.
@@ -119,7 +120,7 @@ export async function waiveNoShow(id: string, tenantId: string, waivedBy: string
     [waivedBy, reason, id, tenantId, businessId || null],
   );
 
-  if (rows.length === 0) throw new Error('No-show record not found');
+  if (rows.length === 0) throw new Error(msg('errors:checkinNoshow.noShowRecordNotFound'));
 
   await logAudit({
     tenantId,

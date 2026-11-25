@@ -2,6 +2,7 @@ import { adminPool } from '../db/pool';
 import { createBooking } from './booking.service';
 import { logger } from '../middleware/logger';
 import { localParts, localToUtc } from '../utils/business-time';
+import { msg } from '../i18n';
 
 interface CreateRecurringInput {
   businessId: string;
@@ -32,10 +33,10 @@ interface GenerationResult {
 export async function createRecurringSeries(input: CreateRecurringInput): Promise<{ series: any; generation: GenerationResult }> {
   // Validate
   if ((input.recurrencePattern === 'weekly' || input.recurrencePattern === 'biweekly') && input.dayOfWeek === undefined) {
-    throw new Error('day_of_week is required for weekly/biweekly patterns');
+    throw new Error(msg('errors:recurringBookings.dayOfWeekIsRequiredFor'));
   }
   if (input.recurrencePattern === 'monthly' && !input.dayOfMonth) {
-    throw new Error('day_of_month is required for monthly patterns');
+    throw new Error(msg('errors:recurringBookings.dayOfMonthIsRequiredFor'));
   }
 
   // Create series record

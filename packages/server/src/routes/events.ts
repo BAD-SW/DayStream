@@ -18,6 +18,7 @@ import * as checkinService from '../services/event-checkin.service';
 import * as commsService from '../services/event-communications.service';
 import * as reportsService from '../services/event-reports.service';
 import * as customerEvents from '../services/customer-events.service';
+import { msg, isMessage, messageHas } from '../i18n';
 
 export const eventsRouter = Router();
 
@@ -28,7 +29,7 @@ export const eventsRouter = Router();
 eventsRouter.get('/calendar', async (req: Request, res: Response) => {
   try {
     const tenantId = req.query.tenant_id as string;
-    if (!tenantId) { error(res, 'tenant_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!tenantId) { error(res, msg('errors:events.tenantIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const result = await eventService.getEvents(tenantId, {
       status: 'published',
       startDate: req.query.start_date as string || new Date().toISOString(),
@@ -42,22 +43,22 @@ eventsRouter.get('/calendar', async (req: Request, res: Response) => {
       location_name: e.location_name, capacity: e.capacity, tags: e.tags, event_type_id: e.event_type_id, status: e.status,
     }));
     success(res, visible, { page: result.page, limit: result.limit, total: result.total });
-  } catch (err: any) { console.error('Failed to load calendar', err?.message || err); error(res, 'Failed to load calendar', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to load calendar', err?.message || err); error(res, msg('errors:events.failedToLoadCalendar'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.get('/calendar/:slug', async (req: Request, res: Response) => {
   try {
     const tenantId = req.query.tenant_id as string;
-    if (!tenantId) { error(res, 'tenant_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!tenantId) { error(res, msg('errors:events.tenantIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await (await import('../db/pool')).adminPool.query(
       `SELECT e.*, et.name AS event_type_name FROM evt_events e
        LEFT JOIN evt_types et ON et.id = e.event_type_id
        WHERE e.slug = $1 AND e.tenant_id = $2 AND e.status = 'published' AND e.deleted_at IS NULL`, [req.params.slug, tenantId]);
-    if (rows.length === 0) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:events.eventNotFound'), 'NOT_FOUND', 404); return; }
     // Load tiers
     const tiers = await ticketsService.getTiers(rows[0].id);
     success(res, { ...rows[0], tiers });
-  } catch (err: any) { console.error('Failed to load event', err?.message || err); error(res, 'Failed to load event', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to load event', err?.message || err); error(res, msg('errors:events.failedToLoadEvent'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -78,7 +79,7 @@ function inOwnTenant(sql: string, what: string) {
       const { rows } = UUID.test(id || '') ? await adminPool.query(sql, [id]) : { rows: [] as any[] };
       const scope = await callerScope(authReq.user.sub);
       if (!rows[0] || (scope?.level !== 'system' && rows[0].tenant_id !== authReq.tenantId)) {
-        res.status(404).json({ error: `${what} not found`, code: 'NOT_FOUND' });
+        res.status(404).json({ error: msg('errors:events.notFound', { what }), code: 'NOT_FOUND' });
         return;
       }
       next();
@@ -141,10 +142,10 @@ eventsRouter.post('/customer/registrations/:rid/pay', async (req: Request, res: 
   try {
     const authReq = req as AuthenticatedRequest;
     const reg = await ownRegistration(req, req.params.rid);
-    if (!reg) { error(res, 'Registration not found', 'NOT_FOUND', 404); return; }
+    if (!reg) { error(res, msg('errors:events.registrationNotFound'), 'NOT_FOUND', 404); return; }
     const ref = req.body.provider_reference as string;
-    if (!ref) { error(res, 'provider_reference required', 'VALIDATION_ERROR', 400); return; }
-    if (!reg.order_id) { error(res, 'This registration has no online payment', 'CONFLICT', 409); return; }
+    if (!ref) { error(res, msg('errors:events.providerReferenceRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!reg.order_id) { error(res, msg('errors:events.thisRegistrationHasNoOnlinePayment'), 'CONFLICT', 409); return; }
     const { rows: o } = await adminPool.query('SELECT business_id, status FROM fin_orders WHERE id = $1', [reg.order_id]);
     const checkout = await import('../services/checkout.service');
     // A place released while the card was being confirmed: the order is open again so the
@@ -166,7 +167,7 @@ eventsRouter.post('/customer/registrations/:rid/pay', async (req: Request, res: 
       } else {
         await adminPool.query(`UPDATE evt_registrations SET status = 'pending' WHERE id = $1`, [reg.id]);
         const out = await customerEvents.cancelOwnRegistration({ registrationId: reg.id, tenantId: authReq.tenantId, userId: authReq.user.sub, byCustomer: false });
-        error(res, 'The place was released before the payment finished and the event is now full; the payment was refunded', 'PLACE_RELEASED', 409);
+        error(res, msg('errors:events.thePlaceWasReleasedBeforeThe'), 'PLACE_RELEASED', 409);
         void out; return;
       }
     }
@@ -180,7 +181,7 @@ eventsRouter.put('/customer/registrations/:rid/cancel', async (req: Request, res
   try {
     const authReq = req as AuthenticatedRequest;
     const reg = await ownRegistration(req, req.params.rid);
-    if (!reg) { error(res, 'Registration not found', 'NOT_FOUND', 404); return; }
+    if (!reg) { error(res, msg('errors:events.registrationNotFound'), 'NOT_FOUND', 404); return; }
     const out = await customerEvents.cancelOwnRegistration({ registrationId: reg.id, tenantId: authReq.tenantId, userId: authReq.user.sub, byCustomer: true });
     const { rows: info } = await adminPool.query('SELECT c.business_id, e.title FROM cus_customers c, evt_events e WHERE c.id = $1 AND e.id = $2', [reg.customer_id, reg.event_id]);
     if (info[0]) {
@@ -198,10 +199,10 @@ eventsRouter.delete('/customer/waitlist/:wid', async (req: Request, res: Respons
   try {
     const { rows } = await adminPool.query('SELECT customer_id FROM evt_waitlist WHERE id = $1', [req.params.wid]);
     const own = await ownCustomerIds(req);
-    if (!rows[0] || (!canManageEvents(req) && !own.includes(rows[0].customer_id))) { error(res, 'Waitlist entry not found', 'NOT_FOUND', 404); return; }
+    if (!rows[0] || (!canManageEvents(req) && !own.includes(rows[0].customer_id))) { error(res, msg('errors:events.waitlistEntryNotFound'), 'NOT_FOUND', 404); return; }
     const { rows: done } = await adminPool.query(
       `UPDATE evt_waitlist SET status = 'cancelled' WHERE id = $1 AND status IN ('waiting', 'notified') RETURNING *`, [req.params.wid]);
-    if (!done[0]) { error(res, 'You are no longer on this waitlist', 'CONFLICT', 409); return; }
+    if (!done[0]) { error(res, msg('errors:events.youAreNoLongerOnThis'), 'CONFLICT', 409); return; }
     success(res, done[0]);
   } catch (err: any) { customerEventError(res, err, 'Failed to leave the waitlist'); }
 });
@@ -212,7 +213,7 @@ eventsRouter.post('/registrations/:rid/checkout', requirePermission('events:*'),
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query('SELECT status, ticket_tier_id FROM evt_registrations WHERE id = $1', [req.params.rid]);
-    if (rows[0]?.status !== 'pending') { error(res, 'Only a place waiting for payment can be paid', 'CONFLICT', 409); return; }
+    if (rows[0]?.status !== 'pending') { error(res, msg('errors:events.onlyAPlaceWaitingForPayment'), 'CONFLICT', 409); return; }
     const { orderId, hostId } = await customerEvents.createTicketOrder(req.params.rid, authReq.user.sub);
     success(res, { order_id: orderId, business_id: hostId });
   } catch (err: any) { customerEventError(res, err, 'Failed to open the payment'); }
@@ -227,7 +228,7 @@ eventsRouter.get('/types', requirePermission('events:read'), async (req: Request
     const authReq = req as AuthenticatedRequest;
     const types = await eventTypesService.getEventTypes(authReq.tenantId);
     success(res, types);
-  } catch (err: any) { console.error('Failed to list event types', err?.message || err); error(res, 'Failed to list event types', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list event types', err?.message || err); error(res, msg('errors:events.failedToListEventTypes'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.post('/types', requirePermission('events:*'), async (req: Request, res: Response) => {
@@ -236,9 +237,9 @@ eventsRouter.post('/types', requirePermission('events:*'), async (req: Request, 
     const type = await eventTypesService.createEventType(authReq.tenantId, req.body);
     success(res, type, undefined, 201);
   } catch (err: any) {
-    if (err.message?.includes('duplicate') || err.message?.includes('unique')) error(res, 'A type with this name already exists.', 'DUPLICATE', 409);
+    if ((isMessage(err.message, 'errors:customers.failedToGetPossibleDuplicates') || err.message?.includes('duplicate')) || messageHas(err.message, 'unique')) error(res, msg('errors:events.aTypeWithThisNameAlready'), 'DUPLICATE', 409);
     else if (err.code === 'NAME_REQUIRED') error(res, err.message, 'VALIDATION_ERROR', 400);
-    else { console.error('Failed to create event type', err?.message || err); error(res, 'Failed to create type', 'INTERNAL_ERROR', 500); }
+    else { console.error('Failed to create event type', err?.message || err); error(res, msg('errors:events.failedToCreateType'), 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -246,9 +247,9 @@ eventsRouter.put('/types/:id', requirePermission('events:*'), async (req: Reques
   try {
     const authReq = req as AuthenticatedRequest;
     const type = await eventTypesService.updateEventType(req.params.id, authReq.tenantId, req.body);
-    if (!type) { error(res, 'Type not found', 'NOT_FOUND', 404); return; }
+    if (!type) { error(res, msg('errors:events.typeNotFound'), 'NOT_FOUND', 404); return; }
     success(res, type);
-  } catch (err: any) { console.error('Failed to update type', err?.message || err); error(res, 'Failed to update type', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update type', err?.message || err); error(res, msg('errors:events.failedToUpdateType'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -260,7 +261,7 @@ eventsRouter.get('/recurring', requirePermission('events:read'), async (req: Req
     const authReq = req as AuthenticatedRequest;
     const templates = await recurringService.getTemplates(authReq.tenantId);
     success(res, templates);
-  } catch (err: any) { console.error('Failed to list templates', err?.message || err); error(res, 'Failed to list templates', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list templates', err?.message || err); error(res, msg('errors:events.failedToListTemplates'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.post('/recurring', requirePermission('events:*'), async (req: Request, res: Response) => {
@@ -268,16 +269,16 @@ eventsRouter.post('/recurring', requirePermission('events:*'), async (req: Reque
     const authReq = req as AuthenticatedRequest;
     const template = await recurringService.createTemplate({ ...req.body, tenantId: authReq.tenantId, createdBy: authReq.user.sub });
     success(res, template, undefined, 201);
-  } catch (err: any) { console.error('Failed to create template', err?.message || err); error(res, 'Failed to create template', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create template', err?.message || err); error(res, msg('errors:events.failedToCreateTemplate'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.put('/recurring/:id', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const template = await recurringService.updateTemplate(req.params.id, authReq.tenantId, req.body);
-    if (!template) { error(res, 'Template not found', 'NOT_FOUND', 404); return; }
+    if (!template) { error(res, msg('errors:events.templateNotFound'), 'NOT_FOUND', 404); return; }
     success(res, template);
-  } catch (err: any) { console.error('Failed to update template', err?.message || err); error(res, 'Failed to update template', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update template', err?.message || err); error(res, msg('errors:events.failedToUpdateTemplate'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.put('/recurring/:id/cancel', requirePermission('events:*'), async (req: Request, res: Response) => {
@@ -305,7 +306,7 @@ eventsRouter.get('/series', requirePermission('events:read'), async (req: Reques
     const authReq = req as AuthenticatedRequest;
     const series = await seriesService.getSeries(authReq.tenantId);
     success(res, series);
-  } catch (err: any) { console.error('Failed to list series', err?.message || err); error(res, 'Failed to list series', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list series', err?.message || err); error(res, msg('errors:events.failedToListSeries'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.post('/series', requirePermission('events:*'), async (req: Request, res: Response) => {
@@ -313,25 +314,25 @@ eventsRouter.post('/series', requirePermission('events:*'), async (req: Request,
     const authReq = req as AuthenticatedRequest;
     const s = await seriesService.createSeries(authReq.tenantId, req.body);
     success(res, s, undefined, 201);
-  } catch (err: any) { console.error('Failed to create series', err?.message || err); error(res, 'Failed to create series', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create series', err?.message || err); error(res, msg('errors:events.failedToCreateSeries'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.get('/series/:id', requirePermission('events:read'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const s = await seriesService.getSeriesById(req.params.id, authReq.tenantId);
-    if (!s) { error(res, 'Series not found', 'NOT_FOUND', 404); return; }
+    if (!s) { error(res, msg('errors:events.seriesNotFound'), 'NOT_FOUND', 404); return; }
     success(res, s);
-  } catch (err: any) { console.error('Failed to get series', err?.message || err); error(res, 'Failed to get series', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get series', err?.message || err); error(res, msg('errors:events.failedToGetSeries'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.put('/series/:id', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const s = await seriesService.updateSeries(req.params.id, authReq.tenantId, req.body);
-    if (!s) { error(res, 'Series not found', 'NOT_FOUND', 404); return; }
+    if (!s) { error(res, msg('errors:events.seriesNotFound'), 'NOT_FOUND', 404); return; }
     success(res, s);
-  } catch (err: any) { console.error('Failed to update series', err?.message || err); error(res, 'Failed to update series', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update series', err?.message || err); error(res, msg('errors:events.failedToUpdateSeries'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -345,7 +346,7 @@ eventsRouter.get('/reports/summary', requirePermission('events:read'), async (re
     const endDate = req.query.end_date as string || new Date().toISOString();
     const summary = await reportsService.getEventsSummary(authReq.tenantId, startDate, endDate);
     success(res, summary);
-  } catch (err: any) { console.error('Failed to get summary', err?.message || err); error(res, 'Failed to get summary', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get summary', err?.message || err); error(res, msg('errors:events.failedToGetSummary'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -387,7 +388,7 @@ eventsRouter.put('/waitlist/:wid/confirm', async (req: Request, res: Response) =
   try {
     const { rows: w } = await adminPool.query('SELECT event_id, customer_id, ticket_tier_id FROM evt_waitlist WHERE id = $1', [req.params.wid]);
     const own = await ownCustomerIds(req);
-    if (!canManageEvents(req) && !own.includes(w[0]?.customer_id)) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+    if (!canManageEvents(req) && !own.includes(w[0]?.customer_id)) { error(res, msg('errors:events.insufficientPermissions'), 'FORBIDDEN', 403); return; }
     const entry = await waitlistService.confirmWaitlistSpot(req.params.wid);
     // Taking the place means being registered (confirming used to change the entry only).
     const registration = await registrationService.registerForEvent(w[0].event_id, { customerId: w[0].customer_id, ticketTierId: w[0].ticket_tier_id || undefined, groupSize: 1 } as any);
@@ -414,7 +415,7 @@ eventsRouter.get('/', requirePermission('events:read'), async (req: Request, res
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
     success(res, result.events, { page: result.page, limit: result.limit, total: result.total });
-  } catch (err: any) { console.error('Failed to list events', err?.message || err); error(res, 'Failed to list events', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list events', err?.message || err); error(res, msg('errors:events.failedToListEvents'), 'INTERNAL_ERROR', 500); }
 });
 
 // An event's tax category must be one of a business of the organisation (THE-20).
@@ -431,7 +432,7 @@ eventsRouter.post('/', requirePermission('events:*'), async (req: Request, res: 
   try {
     const authReq = req as AuthenticatedRequest;
     // Every event has a type (evt_events.event_type_id is required).
-    if (!req.body.event_type_id || !UUID.test(String(req.body.event_type_id))) { error(res, 'Choose an event type', 'VALIDATION_ERROR', 400); return; }
+    if (!req.body.event_type_id || !UUID.test(String(req.body.event_type_id))) { error(res, msg('errors:events.chooseAnEventType'), 'VALIDATION_ERROR', 400); return; }
     const taxProblem = await taxCategoryProblem(req);
     if (taxProblem) { error(res, taxProblem, 'VALIDATION_ERROR', 400); return; }
     const event = await eventService.createEvent({
@@ -446,16 +447,16 @@ eventsRouter.post('/', requirePermission('events:*'), async (req: Request, res: 
       taxCategoryId: req.body.tax_category_id || null,
     });
     success(res, event, undefined, 201);
-  } catch (err: any) { console.error('Failed to create event', err?.message || err); error(res, 'Failed to create event', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create event', err?.message || err); error(res, msg('errors:events.failedToCreateEvent'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.get('/:id', requirePermission('events:read'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const event = await eventService.getEventById(req.params.id, authReq.tenantId);
-    if (!event) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
+    if (!event) { error(res, msg('errors:events.eventNotFound'), 'NOT_FOUND', 404); return; }
     success(res, event);
-  } catch (err: any) { console.error('Failed to get event', err?.message || err); error(res, 'Failed to get event', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get event', err?.message || err); error(res, msg('errors:events.failedToGetEvent'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.put('/:id', requirePermission('events:*'), async (req: Request, res: Response) => {
@@ -465,11 +466,11 @@ eventsRouter.put('/:id', requirePermission('events:*'), async (req: Request, res
     if (taxProblem) { error(res, taxProblem, 'VALIDATION_ERROR', 400); return; }
     const updates = req.body.tax_category_id === '' ? { ...req.body, tax_category_id: null } : req.body;
     const event = await eventService.updateEvent(req.params.id, authReq.tenantId, updates, authReq.user.sub);
-    if (!event) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
+    if (!event) { error(res, msg('errors:events.eventNotFound'), 'NOT_FOUND', 404); return; }
     success(res, event);
   } catch (err: any) {
     if (err instanceof eventService.EventChangeError) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
-    console.error('Failed to update event', err?.message || err); error(res, 'Failed to update event', 'INTERNAL_ERROR', 500);
+    console.error('Failed to update event', err?.message || err); error(res, msg('errors:events.failedToUpdateEvent'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -480,7 +481,7 @@ eventsRouter.put('/:id/unpublish', requirePermission('events:*'), async (req: Re
     success(res, await eventService.unpublishEvent(req.params.id, authReq.tenantId));
   } catch (err: any) {
     if (err instanceof eventService.EventChangeError) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
-    console.error('Failed to unpublish event', err?.message || err); error(res, 'Failed to unpublish event', 'INTERNAL_ERROR', 500);
+    console.error('Failed to unpublish event', err?.message || err); error(res, msg('errors:events.failedToUnpublishEvent'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -514,7 +515,7 @@ eventsRouter.delete('/:id', requirePermission('events:*'), async (req: Request, 
     success(res, await eventService.archiveEvent(req.params.id, authReq.tenantId, authReq.user.sub));
   } catch (err: any) {
     if (err instanceof eventService.EventArchiveError) { error(res, err.message, err.code, err.status); return; }
-    console.error('Failed to delete event', err?.message || err); error(res, 'Failed to delete event', 'INTERNAL_ERROR', 500);
+    console.error('Failed to delete event', err?.message || err); error(res, msg('errors:events.failedToDeleteEvent'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -524,7 +525,7 @@ eventsRouter.put('/:id/restore', requirePermission('events:*'), async (req: Requ
     success(res, await eventService.restoreEvent(req.params.id, authReq.tenantId, authReq.user.sub));
   } catch (err: any) {
     if (err instanceof eventService.EventArchiveError) { error(res, err.message, err.code, err.status); return; }
-    console.error('Failed to restore event', err?.message || err); error(res, 'Failed to restore event', 'INTERNAL_ERROR', 500);
+    console.error('Failed to restore event', err?.message || err); error(res, msg('errors:events.failedToRestoreEvent'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -541,9 +542,9 @@ eventsRouter.get('/:id/facilitators', requirePermission('events:read'), async (r
   try {
     const authReq = req as AuthenticatedRequest;
     const event = await eventService.getEventById(req.params.id, authReq.tenantId);
-    if (!event) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
+    if (!event) { error(res, msg('errors:events.eventNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await eventService.getFacilitators(req.params.id));
-  } catch (err: any) { console.error('Failed to list facilitators', err?.message || err); error(res, 'Failed to list facilitators', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list facilitators', err?.message || err); error(res, msg('errors:events.failedToListFacilitators'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.post('/:id/facilitators', requirePermission('events:*'), async (req: Request, res: Response) => {
@@ -552,16 +553,16 @@ eventsRouter.post('/:id/facilitators', requirePermission('events:*'), async (req
     success(res, f, undefined, 201);
   } catch (err: any) {
     if (err?.status === 400) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
-    console.error('Failed to add facilitator', err?.message || err); error(res, 'Failed to add facilitator', 'INTERNAL_ERROR', 500);
+    console.error('Failed to add facilitator', err?.message || err); error(res, msg('errors:events.failedToAddFacilitator'), 'INTERNAL_ERROR', 500);
   }
 });
 
 eventsRouter.delete('/:id/facilitators/:fid', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const deleted = await eventService.removeFacilitator(req.params.fid, req.params.id);
-    if (!deleted) { error(res, 'Facilitator not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:events.facilitatorNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to remove facilitator', err?.message || err); error(res, 'Failed to remove facilitator', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to remove facilitator', err?.message || err); error(res, msg('errors:events.failedToRemoveFacilitator'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -572,7 +573,7 @@ eventsRouter.get('/:id/tickets', requirePermission('events:read'), async (req: R
   try {
     const tiers = await ticketsService.getTiers(req.params.id);
     success(res, tiers);
-  } catch (err: any) { console.error('Failed to list tiers', err?.message || err); error(res, 'Failed to list tiers', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list tiers', err?.message || err); error(res, msg('errors:events.failedToListTiers'), 'INTERNAL_ERROR', 500); }
 });
 
 const ELIGIBILITY = ['all', 'members_only', 'first_time', 'custom'];
@@ -580,7 +581,7 @@ const ELIGIBILITY = ['all', 'members_only', 'first_time', 'custom'];
 eventsRouter.post('/:id/tickets', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     if (req.body.eligibility_type !== undefined && !ELIGIBILITY.includes(req.body.eligibility_type)) {
-      error(res, `eligibility_type must be one of ${ELIGIBILITY.join(', ')}`, 'VALIDATION_ERROR', 400); return;
+      error(res, msg('errors:events.eligibilityTypeMustBeOneOf', { ELIGIBILITY: ELIGIBILITY.join(', ') }), 'VALIDATION_ERROR', 400); return;
     }
     const tier = await ticketsService.createTier(req.params.id, {
       name: req.body.name, description: req.body.description,
@@ -590,25 +591,25 @@ eventsRouter.post('/:id/tickets', requirePermission('events:*'), async (req: Req
       displayOrder: req.body.display_order,
     });
     success(res, tier, undefined, 201);
-  } catch (err: any) { console.error('Failed to create tier', err?.message || err); error(res, 'Failed to create tier', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create tier', err?.message || err); error(res, msg('errors:events.failedToCreateTier'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.put('/:id/tickets/:tid', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const tier = await ticketsService.updateTier(req.params.tid, req.params.id, req.body);
-    if (!tier) { error(res, 'Tier not found', 'NOT_FOUND', 404); return; }
+    if (!tier) { error(res, msg('errors:events.tierNotFound'), 'NOT_FOUND', 404); return; }
     success(res, tier);
-  } catch (err: any) { console.error('Failed to update tier', err?.message || err); error(res, 'Failed to update tier', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update tier', err?.message || err); error(res, msg('errors:events.failedToUpdateTier'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.delete('/:id/tickets/:tid', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const deleted = await ticketsService.deleteTier(req.params.tid, req.params.id);
-    if (!deleted) { error(res, 'Tier not found', 'NOT_FOUND', 404); return; }
+    if (!deleted) { error(res, msg('errors:events.tierNotFound'), 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
-    if (err.message?.includes('registrations')) error(res, err.message, 'VALIDATION_ERROR', 400);
-    else error(res, 'Failed to delete tier', 'INTERNAL_ERROR', 500);
+    if ((isMessage(err.message, 'errors:events.failedToListRegistrations', 'errors:eventTickets.cannotDeleteTierWithExistingRegistrations', 'errors:event.theEventWasNotCancelledOf') || err.message?.includes('registrations'))) error(res, err.message, 'VALIDATION_ERROR', 400);
+    else error(res, msg('errors:events.failedToDeleteTier'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -622,15 +623,15 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
     // A customer registers themself; staff who manage events register anyone of the organisation.
     const own = await ownCustomerIds(req);
     const customerId = req.body.customer_id as string;
-    if (!canManageEvents(req) && !own.includes(customerId)) { error(res, 'You can register yourself only', 'FORBIDDEN', 403); return; }
+    if (!canManageEvents(req) && !own.includes(customerId)) { error(res, msg('errors:events.youCanRegisterYourselfOnly'), 'FORBIDDEN', 403); return; }
     const { rows: person } = UUID.test(customerId || '') ? await adminPool.query(
       `SELECT 1 FROM cus_customers c JOIN sys_businesses b ON b.id = c.business_id WHERE c.id = $1 AND b.tenant_id = $2 AND c.status = 'active'`,
       [customerId, authReq.tenantId]) : { rows: [] as any[] };
-    if (person.length === 0) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    if (person.length === 0) { error(res, msg('errors:events.customerNotFound'), 'NOT_FOUND', 404); return; }
     const groupSize = req.body.group_size === undefined ? 1 : req.body.group_size;
-    if (!Number.isInteger(groupSize) || groupSize < 1 || groupSize > 20) { error(res, 'group_size must be between 1 and 20', 'VALIDATION_ERROR', 400); return; }
+    if (!Number.isInteger(groupSize) || groupSize < 1 || groupSize > 20) { error(res, msg('errors:events.groupSizeMustBeBetween1'), 'VALIDATION_ERROR', 400); return; }
     const payAt = req.body.pay_at === undefined ? 'reception' : req.body.pay_at;
-    if (!['online', 'reception'].includes(payAt)) { error(res, "pay_at must be 'online' or 'reception'", 'VALIDATION_ERROR', 400); return; }
+    if (!['online', 'reception'].includes(payAt)) { error(res, msg('errors:events.payAtMustBeOnlineOr'), 'VALIDATION_ERROR', 400); return; }
     const byCustomer = !canManageEvents(req);
     try {
       await customerEvents.assertNotAlreadyRegistered(req.params.id, customerId);
@@ -645,7 +646,7 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
       const paid = !!tier && tier.price > 0;
       const hostId = paid ? await customerEvents.hostBusinessId(req.params.id) : null;
       if (paid && payAt === 'online' && !(await customerEvents.canPayOnline(hostId))) {
-        error(res, 'Paying online is not available for this event; choose to pay at reception', 'VALIDATION_ERROR', 400); return;
+        error(res, msg('errors:events.payingOnlineIsNotAvailableFor'), 'VALIDATION_ERROR', 400); return;
       }
       // A paid ticket is sold by the hosting business, to the person's record there.
       const registrant = paid && hostId ? await customerEvents.hostCustomerId(hostId, customerId, authReq.user.sub) : customerId;
@@ -683,13 +684,13 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
       success(res, { ...reg, payment }, undefined, 201);
     } catch (err: any) {
       // Full: the person goes on the waitlist instead of being turned away.
-      if (!err.message?.includes('at capacity')) throw err;
+      if (!(isMessage(err.message, 'errors:eventRegistration.eventIsAtCapacity', 'errors:resourceBookings.resourceAtCapacityForThisTime') || err.message?.includes('at capacity'))) throw err;
       const entry = await waitlistService.addToWaitlist(req.params.id, customerId, req.body.ticket_tier_id);
       success(res, { waitlisted: true, ...entry }, undefined, 202);
     }
   } catch (err: any) {
     if (err instanceof customerEvents.CustomerEventError) error(res, err.message, err.code, err.status);
-    else if (err.message?.includes('capacity') || err.message?.includes('sold out')) error(res, err.message, 'CONFLICT', 409);
+    else if ((isMessage(err.message, 'errors:staff.failedToGetCapacityConfig', 'errors:staff.failedToUpdateCapacityConfig', 'errors:staff.failedToCreateCapacityOverride', 'errors:booking.onlySpotSRemainingExceedsResource', 'errors:eventRegistration.eventIsAtCapacity', 'errors:resourceBookings.resourceAtCapacityForThisTime', 'errors:service.sharedGroupServicesRequireCapacityOf') || err.message?.includes('capacity')) || (isMessage(err.message, 'errors:eventRegistration.ticketTierSoldOut') || err.message?.includes('sold out'))) error(res, err.message, 'CONFLICT', 409);
     else error(res, err.message || 'Failed to register', 'VALIDATION_ERROR', 400);
   }
 });
@@ -702,7 +703,7 @@ eventsRouter.get('/:id/registrations', requirePermission('events:read'), async (
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 50,
     });
     success(res, result.registrations, { page: result.page, limit: result.limit, total: result.total });
-  } catch (err: any) { console.error('Failed to list registrations', err?.message || err); error(res, 'Failed to list registrations', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list registrations', err?.message || err); error(res, msg('errors:events.failedToListRegistrations'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -713,7 +714,7 @@ eventsRouter.get('/:id/waitlist', requirePermission('events:read'), async (req: 
   try {
     const waitlist = await waitlistService.getWaitlist(req.params.id);
     success(res, waitlist);
-  } catch (err: any) { console.error('Failed to get waitlist', err?.message || err); error(res, 'Failed to get waitlist', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get waitlist', err?.message || err); error(res, msg('errors:events.failedToGetWaitlist'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -731,14 +732,14 @@ eventsRouter.get('/:id/attendees', requirePermission('events:read'), async (req:
   try {
     const attendees = await checkinService.getAttendees(req.params.id);
     success(res, attendees);
-  } catch (err: any) { console.error('Failed to get attendees', err?.message || err); error(res, 'Failed to get attendees', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get attendees', err?.message || err); error(res, msg('errors:events.failedToGetAttendees'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.get('/:id/attendees/export', requirePermission('events:read'), async (req: Request, res: Response) => {
   try {
     const data = await reportsService.exportAttendeeList(req.params.id);
     success(res, data);
-  } catch (err: any) { console.error('Failed to export', err?.message || err); error(res, 'Failed to export', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to export', err?.message || err); error(res, msg('errors:events.failedToExport'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -749,14 +750,14 @@ eventsRouter.post('/:id/communications', requirePermission('events:*'), async (r
   try {
     const record = await commsService.sendAdHoc(req.params.id, req.body.subject, req.body.content);
     success(res, record, undefined, 201);
-  } catch (err: any) { console.error('Failed to send', err?.message || err); error(res, 'Failed to send', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to send', err?.message || err); error(res, msg('errors:events.failedToSend'), 'INTERNAL_ERROR', 500); }
 });
 
 eventsRouter.get('/:id/communications', requirePermission('events:read'), async (req: Request, res: Response) => {
   try {
     const history = await commsService.getCommunicationHistory(req.params.id);
     success(res, history);
-  } catch (err: any) { console.error('Failed to get history', err?.message || err); error(res, 'Failed to get history', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get history', err?.message || err); error(res, msg('errors:events.failedToGetHistory'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -767,5 +768,5 @@ eventsRouter.get('/:id/reports', requirePermission('events:read'), async (req: R
   try {
     const report = await reportsService.getEventReport(req.params.id);
     success(res, report);
-  } catch (err: any) { console.error('Failed to get report', err?.message || err); error(res, 'Failed to get report', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get report', err?.message || err); error(res, msg('errors:events.failedToGetReport'), 'INTERNAL_ERROR', 500); }
 });

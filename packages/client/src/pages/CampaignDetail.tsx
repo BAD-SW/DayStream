@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as marketingApi from '../api/marketing';
+import { formatDate, formatNumber } from '../utils/format';
 
 export function CampaignDetail() {
+  const { t } = useTranslation('marketing');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [campaign, setCampaign] = useState<any>(null);
@@ -28,36 +31,36 @@ export function CampaignDetail() {
     try {
       await marketingApi.sendCampaign(id);
       setCampaign({ ...campaign, status: 'sent' });
-    } catch (err: any) { setSendError(err.response?.data?.error || 'The campaign could not be sent'); }
+    } catch (err: any) { setSendError(err.response?.data?.error || t('campaignDetail.sendFailed')); }
   };
 
-  if (loading) return <div style={styles.page}><p>Loading...</p></div>;
-  if (!campaign) return <div style={styles.page}><p>Campaign not found.</p></div>;
+  if (loading) return <div style={styles.page}><p>{t('common:loading')}</p></div>;
+  if (!campaign) return <div style={styles.page}><p>{t('campaignDetail.notFound')}</p></div>;
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/marketing')}>← Back to Marketing</button>
+      <button style={styles.back} onClick={() => navigate('/marketing')}>{t('page.back')}</button>
       <div style={styles.header}>
         <h1 style={styles.title}>{campaign.name}</h1>
-        <Badge variant={campaign.status === 'sent' ? 'success' : campaign.status === 'draft' ? 'neutral' : 'info'}>{campaign.status}</Badge>
+        <Badge variant={campaign.status === 'sent' ? 'success' : campaign.status === 'draft' ? 'neutral' : 'info'}>{t('status.' + campaign.status, { defaultValue: campaign.status })}</Badge>
       </div>
 
       <div style={styles.card}>
-        <div style={styles.field}><span style={styles.label}>Channel</span><span style={styles.value}>{campaign.channel}</span></div>
-        <div style={styles.field}><span style={styles.label}>Subject</span><span style={styles.value}>{campaign.subject}</span></div>
-        {campaign.created_at && <div style={styles.field}><span style={styles.label}>Created</span><span style={styles.value}>{new Date(campaign.created_at).toLocaleDateString()}</span></div>}
+        <div style={styles.field}><span style={styles.label}>{t('campaign.channel')}</span><span style={styles.value}>{t('channel.' + campaign.channel, { defaultValue: campaign.channel })}</span></div>
+        <div style={styles.field}><span style={styles.label}>{t('campaignDetail.subject')}</span><span style={styles.value}>{campaign.subject}</span></div>
+        {campaign.created_at && <div style={styles.field}><span style={styles.label}>{t('campaignDetail.created')}</span><span style={styles.value}>{formatDate(campaign.created_at)}</span></div>}
       </div>
 
       {campaign.status === 'draft' && (
         <div style={styles.actions}>
           {confirmSend ? (
             <>
-              <span style={styles.label}>Send this campaign now?</span>
-              <Button variant="secondary" onClick={() => setConfirmSend(false)}>Cancel</Button>
-              <Button onClick={handleSend}>Send</Button>
+              <span style={styles.label}>{t('campaignDetail.sendConfirm')}</span>
+              <Button variant="secondary" onClick={() => setConfirmSend(false)}>{t('common:cancel')}</Button>
+              <Button onClick={handleSend}>{t('campaignDetail.send')}</Button>
             </>
           ) : (
-            <Button onClick={() => setConfirmSend(true)}>Send Now</Button>
+            <Button onClick={() => setConfirmSend(true)}>{t('campaignDetail.sendNow')}</Button>
           )}
         </div>
       )}
@@ -66,12 +69,12 @@ export function CampaignDetail() {
 
       {analytics && (
         <>
-          <h2 style={{ ...styles.title, fontSize: 'var(--font-size-lg)', marginTop: 'var(--space-xl)' }}>Analytics</h2>
+          <h2 style={{ ...styles.title, fontSize: 'var(--font-size-lg)', marginTop: 'var(--space-xl)' }}>{t('campaignDetail.analytics')}</h2>
           <div style={styles.card}>
             {Object.entries(analytics).map(([key, val]) => (
               <div key={key} style={styles.field}>
-                <span style={styles.label}>{key.replace(/_/g, ' ')}</span>
-                <span style={styles.value}>{String(val)}</span>
+                <span style={styles.label}>{t('analytics.' + key, { defaultValue: key.replace(/_/g, ' ') })}</span>
+                <span style={styles.value}>{typeof val === 'number' ? formatNumber(val) : String(val)}</span>
               </div>
             ))}
           </div>

@@ -38,10 +38,10 @@ export interface FormPdfInput {
 }
 
 const WORDS: Record<string, Record<string, string>> = {
-  en: { yes: 'Yes', no: 'No', none: 'Not answered', customer: 'Customer', completed: 'Completed', signed: 'Signed by', agreed: 'Agreed', ref: 'Reference', version: 'Version', via: 'Completed', device: 'on a device at the business', link: 'from an emailed link', staff: 'by staff on the customer\'s behalf', ip: 'IP address', dev: 'Device', page: 'Page' },
-  es: { yes: 'Sí', no: 'No', none: 'Sin respuesta', customer: 'Cliente', completed: 'Completado', signed: 'Firmado por', agreed: 'Aceptado', ref: 'Referencia', version: 'Versión', via: 'Completado', device: 'en un dispositivo del negocio', link: 'desde un enlace por correo', staff: 'por el personal en nombre del cliente', ip: 'Dirección IP', dev: 'Dispositivo', page: 'Página' },
-  fr: { yes: 'Oui', no: 'Non', none: 'Sans réponse', customer: 'Client', completed: 'Rempli', signed: 'Signé par', agreed: 'Accepté', ref: 'Référence', version: 'Version', via: 'Rempli', device: 'sur un appareil de l\'établissement', link: 'depuis un lien envoyé par e-mail', staff: 'par le personnel au nom du client', ip: 'Adresse IP', dev: 'Appareil', page: 'Page' },
-  de: { yes: 'Ja', no: 'Nein', none: 'Nicht beantwortet', customer: 'Kunde', completed: 'Ausgefüllt', signed: 'Unterschrieben von', agreed: 'Zugestimmt', ref: 'Referenz', version: 'Version', via: 'Ausgefüllt', device: 'auf einem Gerät im Betrieb', link: 'über einen E-Mail-Link', staff: 'vom Personal im Namen des Kunden', ip: 'IP-Adresse', dev: 'Gerät', page: 'Seite' },
+  en: { yes: 'Yes', no: 'No', none: 'Not answered', customer: 'Customer', completed: 'Completed', signed: 'Signed by', agreed: 'Agreed', ref: 'Reference', version: 'Version', via: 'Completed', device: 'on a device at the business', link: 'from an emailed link', staff: 'by staff on the customer\'s behalf', ip: 'IP address', dev: 'Device', page: 'Page', amendments: 'Amendments' },
+  es: { yes: 'Sí', no: 'No', none: 'Sin respuesta', customer: 'Cliente', completed: 'Completado', signed: 'Firmado por', agreed: 'Aceptado', ref: 'Referencia', version: 'Versión', via: 'Completado', device: 'en un dispositivo del negocio', link: 'desde un enlace por correo', staff: 'por el personal en nombre del cliente', ip: 'Dirección IP', dev: 'Dispositivo', page: 'Página', amendments: 'Enmiendas' },
+  fr: { yes: 'Oui', no: 'Non', none: 'Sans réponse', customer: 'Client', completed: 'Rempli', signed: 'Signé par', agreed: 'Accepté', ref: 'Référence', version: 'Version', via: 'Rempli', device: 'sur un appareil de l\'établissement', link: 'depuis un lien envoyé par e-mail', staff: 'par le personnel au nom du client', ip: 'Adresse IP', dev: 'Appareil', page: 'Page', amendments: 'Modifications' },
+  de: { yes: 'Ja', no: 'Nein', none: 'Nicht beantwortet', customer: 'Kunde', completed: 'Ausgefüllt', signed: 'Unterschrieben von', agreed: 'Zugestimmt', ref: 'Referenz', version: 'Version', via: 'Ausgefüllt', device: 'auf einem Gerät im Betrieb', link: 'über einen E-Mail-Link', staff: 'vom Personal im Namen des Kunden', ip: 'IP-Adresse', dev: 'Gerät', page: 'Seite', amendments: 'Änderungen' },
 };
 const wordsFor = (lang: string | null) => WORDS[(lang ?? 'en').slice(0, 2)] ?? WORDS.en;
 
@@ -190,7 +190,7 @@ export function renderFormPdf(input: FormPdfInput): Promise<Buffer> {
         .text(`Reference: ${input.reference}  |  Template version: ${input.formVersion}`, pad, doc.y + 2, { width: contentWidth });
       if (chart.amendments.length > 0) {
         doc.moveDown(0.8);
-        doc.fillColor(primary).font('Helvetica-Bold').fontSize(12).text('Amendments', pad, doc.y, { width: contentWidth });
+        doc.fillColor(primary).font('Helvetica-Bold').fontSize(12).text(w.amendments, pad, doc.y, { width: contentWidth });
         for (const a of chart.amendments) {
           ensure(50);
           doc.fillColor('#666666').font('Helvetica').fontSize(8.5)

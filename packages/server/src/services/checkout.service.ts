@@ -4,6 +4,7 @@ import { generateJournalEntries } from './order-journal.service';
 import { touchActivity } from './person-identity.service';
 import { validateCode, redeemCode } from './discount-codes.service';
 import { withBookingLock } from './booking.service';
+import { msg } from '../i18n';
 
 interface CreateOrderInput {
   businessId: string;
@@ -130,7 +131,7 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
   );
   if (paid.length > 0) {
     if (paid[0].booking_status === 'completed') {
-      throw Object.assign(new Error(`This booking has already been checked out (order ${paid[0].order_number})`), { code: 'ALREADY_CHECKED_OUT' });
+      throw Object.assign(new Error(msg('errors:checkout.thisBookingHasAlreadyBeenChecked', { order_number: paid[0].order_number })), { code: 'ALREADY_CHECKED_OUT' });
     }
     const { rows: extras } = await adminPool.query(
       `SELECT id FROM fin_orders WHERE booking_id = $1 AND business_id = $2 AND status = 'open' ORDER BY created_at LIMIT 1`, [bookingId, businessId],
@@ -160,7 +161,7 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
     [bookingId, businessId],
   );
 
-  if (bookings.length === 0) throw new Error('Booking not found');
+  if (bookings.length === 0) throw new Error(msg('errors:checkout.bookingNotFound'));
   const booking = bookings[0];
 
   // Check if an open order already exists for this booking
@@ -267,8 +268,8 @@ export async function addItem(orderId: string, input: AddItemInput) {
   const { rows: orderRows } = await adminPool.query(
     `SELECT id, status FROM fin_orders WHERE id = $1`, [orderId],
   );
-  if (orderRows.length === 0) throw new Error('Order not found');
-  if (orderRows[0].status !== 'open') throw new Error('Order is not open');
+  if (orderRows.length === 0) throw new Error(msg('errors:checkout.orderNotFound'));
+  if (orderRows[0].status !== 'open') throw new Error(msg('errors:checkout.orderIsNotOpen'));
 
   // Prorate membership if not the 1st of the month
   let unitPrice = input.unitPrice;
@@ -391,10 +392,10 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   const { rows: existing } = await adminPool.query(
     'SELECT * FROM fin_order_items WHERE id = $1 AND order_id = $2', [itemId, orderId],
   );
-  if (existing.length === 0) throw new Error('Item not found');
+  if (existing.length === 0) throw new Error(msg('errors:checkout.itemNotFound'));
 
   const { rows: orderRows } = await adminPool.query('SELECT status FROM fin_orders WHERE id = $1', [orderId]);
-  if (orderRows[0]?.status !== 'open') throw new Error('Order is not open');
+  if (orderRows[0]?.status !== 'open') throw new Error(msg('errors:checkout.orderIsNotOpen'));
 
   const item = existing[0];
   let quantity = updates.quantity ?? item.quantity;
@@ -447,7 +448,7 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
  */
 export async function removeItem(itemId: string, orderId: string) {
   const { rows: orderRows } = await adminPool.query('SELECT status, booking_id FROM fin_orders WHERE id = $1', [orderId]);
-  if (orderRows[0]?.status !== 'open') throw new Error('Order is not open');
+  if (orderRows[0]?.status !== 'open') throw new Error(msg('errors:checkout.orderIsNotOpen'));
   // The service of the appointment being checked out stays on its order: it is what is being paid
   // for (owner, 23 Nov 2026). Its price or credit can be changed; the appointment can be cancelled.
   if (orderRows[0].booking_id) {
@@ -455,7 +456,7 @@ export async function removeItem(itemId: string, orderId: string) {
       `SELECT 1 FROM fin_order_items WHERE id = $1 AND order_id = $2 AND item_type = 'service' AND booking_id = $3`,
       [itemId, orderId, orderRows[0].booking_id]);
     if (own.length > 0) {
-      throw Object.assign(new Error("The appointment's service can't be removed from its checkout. Change its price, or cancel the appointment instead."), { code: 'BOOKING_SERVICE' });
+      throw Object.assign(new Error(msg('errors:checkout.theAppointmentSServiceCanT')), { code: 'BOOKING_SERVICE' });
     }
   }
 
@@ -467,7 +468,7 @@ export async function removeItem(itemId: string, orderId: string) {
   const { rowCount } = await adminPool.query(
     'DELETE FROM fin_order_items WHERE id = $1 AND order_id = $2', [itemId, orderId],
   );
-  if ((rowCount ?? 0) === 0) throw new Error('Item not found');
+  if ((rowCount ?? 0) === 0) throw new Error(msg('errors:checkout.itemNotFound'));
   // An add-on's line removed at Checkout: the appointment no longer has the add-on (spec 51, gap 15).
   const bookingAddonId: string | null = addonRows[0]?.booking_addon_id ?? null;
   if (bookingAddonId && orderRows[0].booking_id) {
@@ -534,8 +535,8 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const { rows: orderRows } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2', [orderId, businessId],
   );
-  if (orderRows.length === 0) throw new Error('Order not found');
-  if (orderRows[0].status !== 'open') throw new Error('Order is not open');
+  if (orderRows.length === 0) throw new Error(msg('errors:checkout.orderNotFound'));
+  if (orderRows[0].status !== 'open') throw new Error(msg('errors:checkout.orderIsNotOpen'));
 
   const { rows: items } = await adminPool.query(
     'SELECT id FROM fin_order_items WHERE order_id = $1', [orderId],
@@ -546,7 +547,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const { findPrepaidOrderId } = await import('./prepaid-order.service');
   if (items.length === 0 && !(Number(orderRows[0].tip_amount) > 0 && (await findPrepaidOrderId(orderId, orderRows[0].booking_id)))) {
     const prepaidId = await findPrepaidOrderId(orderId, orderRows[0].booking_id);
-    if (!prepaidId) throw new Error('Cannot complete an empty order');
+    if (!prepaidId) throw new Error(msg('errors:checkout.cannotCompleteAnEmptyOrder'));
     await adminPool.query(`UPDATE fin_orders SET status = 'voided', updated_at = NOW() WHERE id = $1 AND status = 'open'`, [orderId]);
     await completeBookingAtCheckout(orderRows[0].booking_id, input.checkedOutBy, 'Finished at Checkout (paid at reservation)');
     return getOrder(prepaidId);
@@ -564,7 +565,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   if (tip > 0 && manual) {
     const { getTipSettings } = await import('./tips.service');
     if (!(await getTipSettings(businessId)).onManual) {
-      throw new OrderPaymentError('This business takes tips on card payments only. Remove the tip, or pay by card.', 'TIP_CARD_ONLY');
+      throw new OrderPaymentError(msg('errors:checkout.thisBusinessTakesTipsOnCard'), 'TIP_CARD_ONLY');
     }
   }
 
@@ -597,7 +598,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
     if (!input.paymentReference) input.paymentReference = payment.referenceNumber;
   } else if (payable > 0 && (openOrder.customer_id || !manual)) {
     if (!openOrder.customer_id) {
-      throw new OrderPaymentError('Select a customer, or take a one-time card payment, to pay by card, direct debit or gift card', 'CUSTOMER_REQUIRED');
+      throw new OrderPaymentError(msg('errors:checkout.selectACustomerOrTakeA'), 'CUSTOMER_REQUIRED');
     }
     const { rows: tenantRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
     const { takeOneTimePayment } = await import('./customer-payment.service');
@@ -907,7 +908,7 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
   const { rows: orderRows } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2 AND status = $3', [orderId, businessId, 'open'],
   );
-  if (orderRows.length === 0) throw new Error('Order not found or not open');
+  if (orderRows.length === 0) throw new Error(msg('errors:checkout.orderNotFoundOrNotOpen'));
 
   // Find and validate promotion
   const { rows: promos } = await adminPool.query(
@@ -947,23 +948,23 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
   const today = now.toISOString().slice(0, 10);
   if (promo.date_from) {
     const fromStr = typeof promo.date_from === 'string' ? promo.date_from.split('T')[0] : promo.date_from.toISOString().slice(0, 10);
-    if (today < fromStr) throw new Error('Promotion has not started yet');
+    if (today < fromStr) throw new Error(msg('errors:checkout.promotionHasNotStartedYet'));
   }
   if (promo.date_to) {
     const toStr = typeof promo.date_to === 'string' ? promo.date_to.split('T')[0] : promo.date_to.toISOString().slice(0, 10);
-    if (today > toStr) throw new Error('Promotion has expired');
+    if (today > toStr) throw new Error(msg('errors:checkout.promotionHasExpired'));
   }
   if (promo.days_of_week && promo.days_of_week.length > 0) {
-    if (!promo.days_of_week.includes(now.getDay())) throw new Error('Promotion is not valid on this day of the week');
+    if (!promo.days_of_week.includes(now.getDay())) throw new Error(msg('errors:checkout.promotionIsNotValidOnThis'));
   }
   if (promo.time_from && promo.time_to) {
     const mins = now.getHours() * 60 + now.getMinutes();
     const [fh, fm] = String(promo.time_from).split(':').map(Number);
     const [th, tm] = String(promo.time_to).split(':').map(Number);
-    if (mins < fh * 60 + fm || mins > th * 60 + tm) throw new Error('Promotion is not valid at this time of day');
+    if (mins < fh * 60 + fm || mins > th * 60 + tm) throw new Error(msg('errors:checkout.promotionIsNotValidAtThis'));
   }
   if (promo.max_redemptions && promo.redemption_count >= promo.max_redemptions) {
-    throw new Error('Promotion has reached its maximum redemptions');
+    throw new Error(msg('errors:checkout.promotionHasReachedItsMaximumRedemptions'));
   }
 
   // Load items and determine scope
@@ -997,7 +998,7 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
     }
   }
 
-  if (qualifyingTotal <= 0) throw new Error('Promotion code does not apply to items in this order');
+  if (qualifyingTotal <= 0) throw new Error(msg('errors:checkout.promotionCodeDoesNotApplyTo'));
 
   // Calculate total promo amount
   let promoAmount = 0;
@@ -1014,10 +1015,10 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
     promoAmount = promo.value;
     isDiscount = false;
   } else if (promo.type === 'price_override') {
-    throw new Error('Price override promotions cannot be applied as a code');
+    throw new Error(msg('errors:checkout.priceOverridePromotionsCannotBeApplied'));
   }
 
-  if (promoAmount <= 0) throw new Error('Promotion code does not apply to items in this order');
+  if (promoAmount <= 0) throw new Error(msg('errors:checkout.promotionCodeDoesNotApplyTo'));
 
   // Distribute promo amount to each qualifying line item proportionally
   let distributed = 0;
@@ -1068,7 +1069,7 @@ export async function removePromoCode(orderId: string, businessId: string) {
   const { rows } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2 AND status = $3', [orderId, businessId, 'open'],
   );
-  if (rows.length === 0) throw new Error('Order not found or not open');
+  if (rows.length === 0) throw new Error(msg('errors:checkout.orderNotFoundOrNotOpen'));
 
   // Reset all line item discounts and recalculate their tax
   const { rows: items } = await adminPool.query(
@@ -1106,7 +1107,7 @@ export async function updateOrderCreditedTo(orderId: string, businessId: string,
      WHERE id = $2 AND business_id = $3 AND status = 'open' RETURNING *`,
     [creditedTo, orderId, businessId],
   );
-  if (rows.length === 0) throw new Error('Order not found or not open');
+  if (rows.length === 0) throw new Error(msg('errors:checkout.orderNotFoundOrNotOpen'));
   // a split of the tip by hand was for the old staff
   const { refreshOrderTip } = await import('./tips.service');
   await refreshOrderTip(orderId, { staffChanged: true });
@@ -1122,7 +1123,7 @@ export async function updateOrderCustomer(orderId: string, businessId: string, c
      WHERE id = $2 AND business_id = $3 AND status = 'open' RETURNING *`,
     [customerId, orderId, businessId],
   );
-  if (rows.length === 0) throw new Error('Order not found or not open');
+  if (rows.length === 0) throw new Error(msg('errors:checkout.orderNotFoundOrNotOpen'));
   return getOrder(orderId);
 }
 
@@ -1135,7 +1136,7 @@ export async function voidOrder(orderId: string, businessId: string) {
      WHERE id = $1 AND business_id = $2 AND status = 'open' RETURNING *`,
     [orderId, businessId],
   );
-  if (rows.length === 0) throw new Error('Order not found or cannot be voided');
+  if (rows.length === 0) throw new Error(msg('errors:checkout.orderNotFoundOrCannotBe'));
   const { releaseForOrder } = await import('./benefits.service');
   await releaseForOrder(orderId);
   return rows[0];

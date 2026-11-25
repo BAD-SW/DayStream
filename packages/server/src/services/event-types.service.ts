@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /** "Yoga on the beach!" -> "yoga-on-the-beach" (letters with accents keep their base letter). */
 function slugify(text: string): string {
@@ -28,7 +29,7 @@ export async function createEventType(
   // The Types tab sends only a name; the slug (unique per tenant) is made from it. It used to be
   // required, so every new type failed on the database's NOT NULL slug (a 500).
   const slug = slugify(input.slug || input.name);
-  if (!input.name?.trim() || !slug) throw Object.assign(new Error('A type needs a name.'), { code: 'NAME_REQUIRED' });
+  if (!input.name?.trim() || !slug) throw Object.assign(new Error(msg('errors:eventTypes.aTypeNeedsAName')), { code: 'NAME_REQUIRED' });
   const { rows } = await adminPool.query(
     `INSERT INTO evt_types (tenant_id, name, slug, description)
      VALUES ($1, $2, $3, $4) RETURNING *`,

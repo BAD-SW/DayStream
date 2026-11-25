@@ -6,6 +6,7 @@ import { getConfiguredAdapter } from './payments';
 import { generateReference } from './customer-payment.service';
 import { logAudit } from './audit.service';
 import * as journal from './journal.service';
+import { msg } from '../i18n';
 
 /**
  * Order refunds — partial / line-item returns against a completed order.
@@ -99,10 +100,10 @@ export async function refundOrderLines(args: {
 }): Promise<OrderRefundResult> {
   const { businessId, tenantId, orderId, lines, reason, processedBy } = args;
   const toCredit = args.refundTo === 'account_credit';
-  if (!reason || !reason.trim()) throw new OrderRefundError('A reason is required to refund', 'REASON_REQUIRED');
+  if (!reason || !reason.trim()) throw new OrderRefundError(msg('errors:orderRefund.aReasonIsRequiredToRefund'), 'REASON_REQUIRED');
   const tipCents = Number(args.tipCents) || 0;
-  if (!Number.isInteger(tipCents) || tipCents < 0) throw new OrderRefundError('Enter a tip refund of 0 or more', 'INVALID_TIP');
-  if ((!lines || lines.length === 0) && tipCents === 0) throw new OrderRefundError('Select at least one item to refund', 'NO_LINES');
+  if (!Number.isInteger(tipCents) || tipCents < 0) throw new OrderRefundError(msg('errors:orderRefund.enterATipRefundOf0'), 'INVALID_TIP');
+  if ((!lines || lines.length === 0) && tipCents === 0) throw new OrderRefundError(msg('errors:orderRefund.selectAtLeastOneItemTo'), 'NO_LINES');
 
   const client = await adminPool.connect();
   try {
@@ -114,9 +115,9 @@ export async function refundOrderLines(args: {
       [orderId, businessId],
     );
     const order = orderRows[0];
-    if (!order) throw new OrderRefundError('Order not found for this business', 'ORDER_NOT_FOUND');
+    if (!order) throw new OrderRefundError(msg('errors:orderRefund.orderNotFoundForThisBusiness'), 'ORDER_NOT_FOUND');
     if (!['completed', 'partially_refunded'].includes(order.status)) {
-      throw new OrderRefundError('Only a completed order can be refunded', 'ORDER_NOT_REFUNDABLE');
+      throw new OrderRefundError(msg('errors:orderRefund.onlyACompletedOrderCanBe'), 'ORDER_NOT_REFUNDABLE');
     }
 
     // The original charge for this order (processed card/one-time, or recorded manual).
@@ -146,20 +147,20 @@ export async function refundOrderLines(args: {
 
     for (const req of lines) {
       const item = itemById.get(req.orderItemId);
-      if (!item) throw new OrderRefundError(`Line item ${req.orderItemId} not found on this order`, 'LINE_NOT_FOUND');
+      if (!item) throw new OrderRefundError(msg('errors:orderRefund.lineItemNotFoundOnThis', { orderItemId: req.orderItemId }), 'LINE_NOT_FOUND');
       if (!REFUNDABLE_ITEM_TYPES.has(item.item_type) && !(args.allowServiceLines && (item.item_type === 'service' || item.item_type === 'add_on'))) {
         throw new OrderRefundError(
-          `${item.item_type === 'service' ? 'Services are not refundable (issue a discount instead)'
+          msg('errors:orderRefund.message', { value: item.item_type === 'service' ? 'Services are not refundable (issue a discount instead)'
             : item.item_type === 'membership' || item.item_type === 'package' ? `A ${item.item_type} cannot be refunded — cancel it instead`
             : item.item_type === 'gift_card' ? 'Gift cards are not refundable'
-            : `"${item.item_name}" is not refundable`}`,
+            : `"${item.item_name}" is not refundable` }),
           'ITEM_NOT_REFUNDABLE',
         );
       }
       const remainingQty = item.quantity - item.refunded_quantity;
       if (req.quantity < 1 || req.quantity > remainingQty) {
         throw new OrderRefundError(
-          `Cannot refund ${req.quantity} of "${item.item_name}" (${remainingQty} remaining)`,
+          msg('errors:orderRefund.cannotRefundOfRemaining', { quantity: req.quantity, item_name: item.item_name, remainingQty }),
           'INVALID_QUANTITY',
         );
       }
@@ -183,7 +184,7 @@ export async function refundOrderLines(args: {
     // The tip, as its own line: at most what is left of it.
     if (tipCents > 0) {
       const tipLeft = (Number(order.tip_amount) || 0) - (Number(order.tip_refunded_cents) || 0);
-      if (tipCents > tipLeft) throw new OrderRefundError(`Only ${(tipLeft / 100).toFixed(2)} of the tip is left to refund`, 'INVALID_TIP');
+      if (tipCents > tipLeft) throw new OrderRefundError(msg('errors:orderRefund.onlyOfTheTipIsLeft', { value: (tipLeft / 100).toFixed(2) }), 'INVALID_TIP');
       totalRefund += tipCents;
     }
     // Lines paid with a membership or package cost nothing, so refunding them moves no money:
@@ -215,8 +216,8 @@ export async function refundOrderLines(args: {
       }
       return { refundTransactionId: '', referenceNumber: '', status: 'completed', amountCents: 0, orderStatus: benefitStatus };
     }
-    if (totalRefund <= 0) throw new OrderRefundError('Nothing to refund', 'NOTHING_TO_REFUND');
-    if (toCredit && !order.customer_id) throw new OrderRefundError('Account credit needs a customer on the order', 'CUSTOMER_REQUIRED');
+    if (totalRefund <= 0) throw new OrderRefundError(msg('errors:orderRefund.nothingToRefund'), 'NOTHING_TO_REFUND');
+    if (toCredit && !order.customer_id) throw new OrderRefundError(msg('errors:orderRefund.accountCreditNeedsACustomerOn'), 'CUSTOMER_REQUIRED');
 
     // Reverse at the provider for a processed charge; manual charges are recorded only.
     let status: 'completed' | 'pending' | 'failed' = 'completed';
@@ -227,7 +228,7 @@ export async function refundOrderLines(args: {
 
     if (!toCredit && charge && charge.is_processed && charge.provider_reference) {
       const account = await resolveConnectedAccount({ ownerLevel: 'customer', businessId });
-      if (!account) throw new OrderRefundError('Business has no active payment processor connection', 'NO_CONNECTION');
+      if (!account) throw new OrderRefundError(msg('errors:orderRefund.businessHasNoActivePaymentProcessor'), 'NO_CONNECTION');
       const secrets = await getDecryptedSecrets({ ownerLevel: 'business', businessId });
       const adapter = getConfiguredAdapter(account.provider, secrets);
       try {

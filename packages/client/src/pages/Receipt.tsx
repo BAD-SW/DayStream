@@ -1,5 +1,7 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import * as checkoutApi from '../api/checkout';
 import type { Order } from '../api/checkout';
@@ -8,20 +10,8 @@ import type { ReceiptDocumentFields } from '../api/payments';
 import { BrandedDocumentView } from '../components/BrandedDocumentView';
 import { RefundOrderModal } from '../components/RefundOrderModal';
 
-// i18n-ready labels — extract to a translation file later
-const labels = {
-  back: '← Back',
-  print: 'Print',
-  done: 'Done',
-  email: 'Email Receipt',
-  emailSent: 'Receipt emailed successfully',
-  emailFailed: 'Failed to send receipt email',
-  noCustomerEmail: 'No customer email available for this order',
-  loading: 'Loading receipt...',
-  notFound: 'Order not found',
-};
-
 export function Receipt() {
+  const { t } = useTranslation('portal');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [order, setOrder] = useState<Order | null>(null);
@@ -63,7 +53,7 @@ export function Receipt() {
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch {
-      alert('No payment found for this order, or the receipt could not be produced.');
+      void showMessage({ message: t('receipt.printFailed'), tone: 'error' });
     }
   };
 
@@ -74,35 +64,35 @@ export function Receipt() {
     try {
       const { emailOrderReceipt } = await import('../api/payments');
       await emailOrderReceipt(order.id, businessId);
-      alert(labels.emailSent);
+      void showMessage({ message: t('receipt.emailSent'), tone: 'success' });
     } catch (err: any) {
-      alert(err?.response?.data?.code === 'NO_RECIPIENT'
-        ? labels.noCustomerEmail
-        : labels.emailFailed);
+      void showMessage({ message: err?.response?.data?.code === 'NO_RECIPIENT'
+        ? t('receipt.noCustomerEmail')
+        : t('receipt.emailFailed'), tone: 'error' });
     } finally {
       setEmailing(false);
     }
   };
 
-  if (loading) return <div style={styles.page}><p style={styles.loading}>{labels.loading}</p></div>;
-  if (!order) return <div style={styles.page}><p>{labels.notFound}</p></div>;
+  if (loading) return <div style={styles.page}><p style={styles.loading}>{t('receipt.loading')}</p></div>;
+  if (!order) return <div style={styles.page}><p>{t('receipt.notFound')}</p></div>;
 
   return (
     <div style={styles.page}>
       {/* Action buttons (hidden on print) */}
       <div style={styles.actions} className="no-print">
-        <Button variant="secondary" size="sm" onClick={() => navigate(-1 as any)}>{labels.back}</Button>
+        <Button variant="secondary" size="sm" onClick={() => navigate(-1 as any)}>{t('receipt.back')}</Button>
         <div style={{ display: 'flex', gap: '8px' }}>
           {(order.status === 'completed' || order.status === 'partially_refunded')
             && (order.items.some((it) => checkoutApi.REFUNDABLE_ITEM_TYPES.has(it.item_type) && it.quantity - (it.refunded_quantity || 0) > 0)
               // a tip left to refund (spec 51, gap 14)
               || (order.tip_amount || 0) - (order.tip_refunded_cents || 0) > 0) && (
-            <Button variant="destructive" size="sm" onClick={() => setShowRefund(true)}>Refund</Button>
+            <Button variant="destructive" size="sm" onClick={() => setShowRefund(true)}>{t('receipt.refund')}</Button>
           )}
-          <Button variant="secondary" size="sm" onClick={handlePrint}>{labels.print}</Button>
-          <Button variant="secondary" size="sm" onClick={handleEmail} loading={emailing}>{labels.email}</Button>
+          <Button variant="secondary" size="sm" onClick={handlePrint}>{t('receipt.print')}</Button>
+          <Button variant="secondary" size="sm" onClick={handleEmail} loading={emailing}>{t('receipt.email')}</Button>
           {/* The sale is finished: back to the Bookings screen, ready for the next customer. */}
-          <Button size="sm" onClick={() => navigate('/bookings')}>{labels.done}</Button>
+          <Button size="sm" onClick={() => navigate('/bookings')}>{t('receipt.done')}</Button>
         </div>
       </div>
 
@@ -120,7 +110,7 @@ export function Receipt() {
       {receiptFields ? (
         <BrandedDocumentView fields={receiptFields} />
       ) : (
-        <p style={styles.loading}>No receipt is available for this order.</p>
+        <p style={styles.loading}>{t('receipt.unavailable')}</p>
       )}
     </div>
   );

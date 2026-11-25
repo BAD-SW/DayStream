@@ -10,6 +10,7 @@ import { SavedQueryService, SavedQueryServiceError } from '../services/query-edi
 import { SchemaService } from '../services/query-editor/schema.service';
 import { success, error } from '../utils/response';
 import { logger } from '../middleware/logger';
+import { isMessage } from '../i18n';
 
 export const queryEditorRouter = Router();
 
@@ -196,7 +197,7 @@ queryEditorRouter.post('/execute', async (req: Request, res: Response): Promise<
       error(res, 'System is at capacity. Please retry in a moment.', 'CAPACITY_REACHED', 503);
       return;
     }
-    if (result.error.includes('context')) {
+    if ((isMessage(result.error, 'errors:tenantContext.tenantContextRequired', 'errors:admin.failedToGetContextInfo', 'errors:prospects.tenantContextRequired') || result.error.includes('context'))) {
       error(res, 'Unable to establish database context. Please try again.', 'CONTEXT_FAILED', 500);
       return;
     }

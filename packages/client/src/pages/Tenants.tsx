@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect, useCallback } from 'react';
 import { LanguageSelect } from '../components/LanguageSelect';
 import { Table } from '../design-system/components/data/Table';
@@ -186,7 +187,7 @@ export function Tenants() {
       await fetchTenants();
       setSelectedTenant((prev) => prev ? { ...prev, status: 'suspended' } : null);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to suspend tenant');
+      void showMessage({ message: err.response?.data?.message || 'Failed to suspend tenant', tone: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -200,7 +201,7 @@ export function Tenants() {
       await fetchTenants();
       setSelectedTenant((prev) => prev ? { ...prev, status: 'active' } : null);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to activate tenant');
+      void showMessage({ message: err.response?.data?.message || 'Failed to activate tenant', tone: 'error' });
     } finally {
       setActionLoading(false);
     }

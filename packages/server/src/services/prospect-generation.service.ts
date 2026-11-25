@@ -3,6 +3,7 @@ import { logger } from '../middleware/logger';
 import { getSearchCoordinates } from './h3-territory.service';
 import { searchCellRecursive, DrillAccumulator } from './google-places.service';
 import * as h3 from 'h3-js';
+import { isMessage } from '../i18n';
 
 /**
  * Prospect generation service (spec phase 10 / prospects). Generation is the COSTLY
@@ -351,7 +352,7 @@ export async function startProspectGeneration(
       status.state = 'error';
       status.error = err?.message || 'Generation failed';
       if (err?.name === 'NoTerritoryError' || err?.name === 'NoCategoriesError') status.errorCode = 'VALIDATION_ERROR';
-      else if (String(err?.message).includes('GOOGLE_PLACES_API_KEY')) status.errorCode = 'CONFIGURATION_ERROR';
+      else if ((isMessage(String(err?.message), 'errors:googlePlaces.googlePlacesApiKeyNotConfigured') || String(err?.message).includes('GOOGLE_PLACES_API_KEY'))) status.errorCode = 'CONFIGURATION_ERROR';
       else status.errorCode = 'INTERNAL_ERROR';
       logger.error(`[Prospects] Tenant ${tenantId} generation failed: ${status.error}`);
     } finally {

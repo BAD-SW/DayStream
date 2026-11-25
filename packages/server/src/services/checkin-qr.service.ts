@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * Generate a unique QR code string with a given prefix.
@@ -23,7 +24,7 @@ export async function generateBookingQrCode(tenantId: string, bookingId: string)
      WHERE b.id = $1 AND bus.tenant_id = $2`,
     [bookingId, tenantId],
   );
-  if (bookingRows.length === 0) throw new Error('Booking not found');
+  if (bookingRows.length === 0) throw new Error(msg('errors:checkinQr.bookingNotFound'));
 
   const bookingDate = new Date(bookingRows[0].start_time);
   const expiresAt = new Date(bookingDate);
@@ -158,7 +159,7 @@ export async function getBookingLinkCode(tenantId: string, bookingId: string): P
       WHERE b.id = $1 AND bus.tenant_id = $2`,
     [bookingId, tenantId],
   );
-  if (booking.length === 0) throw new Error('Booking not found');
+  if (booking.length === 0) throw new Error(msg('errors:checkinQr.bookingNotFound'));
   const expiresAt = new Date(new Date(booking[0].start_time).getTime() + 12 * 60 * 60 * 1000);
   const code = `DSCI-${crypto.randomBytes(12).toString('hex')}`;
   await adminPool.query(

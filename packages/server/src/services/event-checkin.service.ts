@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 /**
  * Check in an attendee by reference number.
@@ -12,7 +13,7 @@ export async function checkInByReference(referenceNumber: string) {
      RETURNING *`,
     [referenceNumber],
   );
-  if (!rows[0]) throw new Error('Registration not found, not confirmed, or already checked in');
+  if (!rows[0]) throw new Error(msg('errors:eventCheckin.registrationNotFoundNotConfirmedOr'));
 
   // Get tenant for audit
   const { rows: eventRows } = await adminPool.query(
@@ -43,7 +44,7 @@ export async function checkInManual(registrationId: string) {
      RETURNING *`,
     [registrationId],
   );
-  if (!rows[0]) throw new Error('Registration not found, not confirmed, or already checked in');
+  if (!rows[0]) throw new Error(msg('errors:eventCheckin.registrationNotFoundNotConfirmedOr'));
 
   const { rows: eventRows } = await adminPool.query(
     `SELECT tenant_id FROM evt_events WHERE id = $1`, [rows[0].event_id],
@@ -69,11 +70,11 @@ export async function markNoShows(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
     `SELECT end_time, tenant_id FROM evt_events WHERE id = $1`, [eventId],
   );
-  if (eventRows.length === 0) throw new Error('Event not found');
+  if (eventRows.length === 0) throw new Error(msg('errors:eventCheckin.eventNotFound'));
 
   const event = eventRows[0];
   if (new Date(event.end_time) > new Date()) {
-    throw new Error('Cannot mark no-shows before event has ended');
+    throw new Error(msg('errors:eventCheckin.cannotMarkNoShowsBeforeEvent'));
   }
 
   const { rowCount } = await adminPool.query(

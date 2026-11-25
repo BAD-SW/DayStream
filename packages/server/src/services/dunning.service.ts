@@ -302,7 +302,7 @@ async function notify(
         update_payment_link: null,              // no portal URL yet (follow-up)
         // Extra context a template may use.
         tier,                                   // friendly | warning | final
-        membership_name: attempt.plan_name,
+        membership_name: attempt.plan_name, membership_plan_id: attempt.plan_id,
         plan_name: attempt.plan_name,
         attempt_number: attempt.attempt_number,
         customer_name: cust ? [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim() : null,

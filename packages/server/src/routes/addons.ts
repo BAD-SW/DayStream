@@ -4,6 +4,7 @@ import { tenantContext } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import * as addonsService from '../services/addons.service';
+import { msg } from '../i18n';
 
 /**
  * Service add-ons (spec 51, gap 15). Add-ons are added on their service (/v1/services/:id/addons);
@@ -18,10 +19,10 @@ addonsRouter.use(tenantContext);
 addonsRouter.get('/', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:addons.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     success(res, await addonsService.businessAddons(businessId));
   } catch (err: any) {
     console.error('Failed to list add-ons', err?.message || err);
-    error(res, 'Failed to list add-ons', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:addons.failedToListAddOns'), 'INTERNAL_ERROR', 500);
   }
 });

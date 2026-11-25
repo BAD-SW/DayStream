@@ -6,6 +6,7 @@ import { requirePermission, requireTenantLevel } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { msg, isMessage } from '../i18n';
 
 export const prospectsRouter = Router();
 
@@ -102,12 +103,12 @@ prospectsRouter.get('/territories/:tenantId', requirePermission('*:*'), async (r
        FROM sys_tenants WHERE id = $1`,
       [req.params.tenantId],
     );
-    if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:prospects.tenantNotFound'), 'NOT_FOUND', 404); return; }
     const { rows: hexCount } = await adminPool.query(
       `SELECT COUNT(*)::int AS n FROM prp_tenant_territories WHERE tenant_id = $1`, [req.params.tenantId],
     );
     success(res, { ...rows[0], hexagons: hexCount[0]?.n ?? 0 });
-  } catch (err: any) { console.error('Failed to read territory', err?.message || err); error(res, 'Failed to read territory', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read territory', err?.message || err); error(res, msg('errors:prospects.failedToReadTerritory'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/territories/hydrate — Re-hydrate stored territory components
@@ -161,7 +162,7 @@ prospectsRouter.post('/territories/hydrate', requirePermission('*:*'), validate(
     success(res, { components: hydrated });
   } catch (err: any) {
     if (err?.name === 'GeoLookupUnavailableError') { error(res, err.message, 'GEO_UNAVAILABLE', 503); return; }
-    error(res, 'Failed to hydrate territory components', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:prospects.failedToHydrateTerritoryComponents'), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -210,7 +211,7 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
     } else {
       // Legacy: geocode the location string into a single component.
       const geo = await geocodePostalCode(location);
-      if (!geo) { error(res, 'Could not resolve location. Please check and try again.', 'VALIDATION_ERROR', 400); return; }
+      if (!geo) { error(res, msg('errors:prospects.couldNotResolveLocationPleaseCheck'), 'VALIDATION_ERROR', 400); return; }
       comps = [{ label: location, geojson: geo.geojson || null, lat: geo.lat, lng: geo.lng }];
       if (!geo.geojson && geo.viewport) {
         // tileTerritoryComplete handles the viewport; pass it via a single-area tile below.
@@ -224,7 +225,7 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
            WHERE id = $7 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components, territory_population`,
           [geo.lat, geo.lng, territory_radius_km, location, JSON.stringify(storedComps), population, req.params.tenantId],
         );
-        if (r0.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
+        if (r0.length === 0) { error(res, msg('errors:prospects.tenantNotFound'), 'NOT_FOUND', 404); return; }
         success(res, { ...r0[0], hexagons: tiling.hexagons.length, resolution: tiling.resolution, complete: tiling.complete, hasBoundary: tiling.hasBoundary, population });
         return;
       }
@@ -283,7 +284,7 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
        WHERE id = $7 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components, territory_population`,
       [center?.lat ?? null, center?.lng ?? null, territory_radius_km, combinedLabel, JSON.stringify(storedComps), territoryPopulation, req.params.tenantId],
     );
-    if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:prospects.tenantNotFound'), 'NOT_FOUND', 404); return; }
     success(res, {
       ...rows[0],
       hexagons: tiling.hexagons.length,
@@ -315,7 +316,7 @@ prospectsRouter.get('/territories', requirePermission('*:*'), async (_req: Reque
     const { getAllTerritories } = await import('../services/h3-territory.service');
     const territories = await getAllTerritories();
     success(res, territories);
-  } catch (err: any) { console.error('Failed to list territories', err?.message || err); error(res, 'Failed to list territories', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list territories', err?.message || err); error(res, msg('errors:prospects.failedToListTerritories'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -329,7 +330,7 @@ prospectsRouter.get('/categories', requireTenantLevel(), requirePermission('sett
     const where = includeInactive ? '' : 'WHERE active = true';
     const { rows } = await adminPool.query(`SELECT * FROM prp_category_mappings ${where} ORDER BY display_order`);
     success(res, rows);
-  } catch (err: any) { console.error('Failed to list categories', err?.message || err); error(res, 'Failed to list categories', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list categories', err?.message || err); error(res, msg('errors:prospects.failedToListCategories'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/categories — Add a category mapping
@@ -337,7 +338,7 @@ prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Reques
   try {
     const { ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy } = req.body;
     if (!ui_category_name || !google_search_strings || google_search_strings.length === 0) {
-      error(res, 'ui_category_name and google_search_strings required', 'VALIDATION_ERROR', 400); return;
+      error(res, msg('errors:prospects.uiCategoryNameAndGoogleSearch'), 'VALIDATION_ERROR', 400); return;
     }
     const { rows } = await adminPool.query(
       `INSERT INTO prp_category_mappings (ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy)
@@ -345,7 +346,7 @@ prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Reques
       [ui_category_name, google_search_strings, api_exclusion_types || [], overture_taxonomy || []],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { console.error('Failed to add category', err?.message || err); error(res, 'Failed to add category', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add category', err?.message || err); error(res, msg('errors:prospects.failedToAddCategory'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/categories/:id — Update a category mapping
@@ -360,14 +361,14 @@ prospectsRouter.put('/categories/:id', requirePermission('*:*'), async (req: Req
     if (api_exclusion_types !== undefined) { fields.push(`api_exclusion_types = $${idx++}`); params.push(api_exclusion_types); }
     if (overture_taxonomy !== undefined) { fields.push(`overture_taxonomy = $${idx++}`); params.push(overture_taxonomy); }
     if (active !== undefined) { fields.push(`active = $${idx++}`); params.push(active); }
-    if (fields.length === 0) { error(res, 'Nothing to update', 'VALIDATION_ERROR', 400); return; }
+    if (fields.length === 0) { error(res, msg('errors:prospects.nothingToUpdate'), 'VALIDATION_ERROR', 400); return; }
     params.push(req.params.id);
     const { rows } = await adminPool.query(
       `UPDATE prp_category_mappings SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`, params,
     );
-    if (rows.length === 0) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:prospects.categoryNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to update category', err?.message || err); error(res, 'Failed to update category', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update category', err?.message || err); error(res, msg('errors:prospects.failedToUpdateCategory'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/prospects/categories/:id — Delete a category mapping
@@ -375,7 +376,7 @@ prospectsRouter.delete('/categories/:id', requirePermission('*:*'), async (req: 
   try {
     await adminPool.query('DELETE FROM prp_category_mappings WHERE id = $1', [req.params.id]);
     success(res, { deleted: true });
-  } catch (err: any) { console.error('Failed to delete category', err?.message || err); error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete category', err?.message || err); error(res, msg('errors:prospects.failedToDeleteCategory'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/overture-taxonomy — The full Overture taxonomy catalog (the ~2.2k
@@ -392,7 +393,7 @@ prospectsRouter.get('/overture-taxonomy', requirePermission('*:*'), async (_req:
       overtureTaxonomyCache = JSON.parse(readFileSync(file, 'utf8'));
     }
     success(res, overtureTaxonomyCache);
-  } catch (err: any) { console.error('Failed to load Overture taxonomy', err?.message || err); error(res, 'Failed to load Overture taxonomy', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to load Overture taxonomy', err?.message || err); error(res, msg('errors:prospects.failedToLoadOvertureTaxonomy'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -407,7 +408,7 @@ prospectsRouter.get('/maps-key', requirePermission('*:*'), async (_req: Request,
     );
     const key = rows[0]?.config_data?.google_places || null;
     success(res, { key });
-  } catch (err: any) { console.error('Failed to get maps key', err?.message || err); error(res, 'Failed to get maps key', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get maps key', err?.message || err); error(res, msg('errors:prospects.failedToGetMapsKey'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/usage — Authoritative Google Places/Maps API usage for the
@@ -432,13 +433,13 @@ prospectsRouter.get('/territory-info', requireTenantLevel(), requirePermission('
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
-    if (!tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
+    if (!tenantId) { error(res, msg('errors:prospects.tenantContextRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
       'SELECT territory_address, territory_radius_km, territory_lat, territory_lng FROM sys_tenants WHERE id = $1',
       [tenantId],
     );
     success(res, rows[0] || null);
-  } catch (err: any) { console.error('Failed to get territory info', err?.message || err); error(res, 'Failed to get territory info', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get territory info', err?.message || err); error(res, msg('errors:prospects.failedToGetTerritoryInfo'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects — List prospects for the current tenant
@@ -446,7 +447,7 @@ prospectsRouter.get('/', requireTenantLevel(), requirePermission('settings:*'), 
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
-    if (!tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
+    if (!tenantId) { error(res, msg('errors:prospects.tenantContextRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const conditions = ['tenant_id = $1'];
     const params: any[] = [tenantId];
@@ -473,7 +474,7 @@ prospectsRouter.get('/', requireTenantLevel(), requirePermission('settings:*'), 
       params,
     );
     success(res, rows);
-  } catch (err: any) { console.error('Failed to list prospects', err?.message || err); error(res, 'Failed to list prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list prospects', err?.message || err); error(res, msg('errors:prospects.failedToListProspects'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects — Manually add a prospect
@@ -481,10 +482,10 @@ prospectsRouter.post('/', requireTenantLevel(), requirePermission('settings:*'),
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
-    if (!tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
+    if (!tenantId) { error(res, msg('errors:prospects.tenantContextRequired'), 'VALIDATION_ERROR', 400); return; }
 
     const { name, address, phone, website, category, notes } = req.body;
-    if (!name) { error(res, 'name required', 'VALIDATION_ERROR', 400); return; }
+    if (!name) { error(res, msg('errors:prospects.nameRequired'), 'VALIDATION_ERROR', 400); return; }
 
     // Same name at the same address (ignoring case and spacing) is the same business.
     const { rows: same } = await adminPool.query(
@@ -496,7 +497,7 @@ prospectsRouter.post('/', requireTenantLevel(), requirePermission('settings:*'),
       [tenantId, name, address || ''],
     );
     if (same[0]) {
-      res.status(409).json({ error: 'This business is already in your prospect list', code: 'DUPLICATE_PROSPECT', details: { existing_id: same[0].id } });
+      res.status(409).json({ error: msg('errors:prospects.thisBusinessIsAlreadyInYour'), code: 'DUPLICATE_PROSPECT', details: { existing_id: same[0].id } });
       return;
     }
 
@@ -506,7 +507,7 @@ prospectsRouter.post('/', requireTenantLevel(), requirePermission('settings:*'),
       [tenantId, name, address || null, phone || null, website || null, category || null, notes || null],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { console.error('Failed to add prospect', err?.message || err); error(res, 'Failed to add prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add prospect', err?.message || err); error(res, msg('errors:prospects.failedToAddProspect'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:id — Update prospect (status, notes)
@@ -524,16 +525,16 @@ prospectsRouter.put('/:id', requireTenantLevel(), requirePermission('settings:*'
     if (notes !== undefined) { fields.push(`notes = $${idx++}`); params.push(notes); }
     fields.push('updated_at = NOW()');
 
-    if (params.length === 0) { error(res, 'Nothing to update', 'VALIDATION_ERROR', 400); return; }
+    if (params.length === 0) { error(res, msg('errors:prospects.nothingToUpdate'), 'VALIDATION_ERROR', 400); return; }
 
     params.push(req.params.id, tenantId);
     const { rows } = await adminPool.query(
       `UPDATE prp_prospects SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
       params,
     );
-    if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:prospects.prospectNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to update prospect', err?.message || err); error(res, 'Failed to update prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update prospect', err?.message || err); error(res, msg('errors:prospects.failedToUpdateProspect'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:id/dismiss — Dismiss a prospect
@@ -545,9 +546,9 @@ prospectsRouter.put('/:id/dismiss', requireTenantLevel(), requirePermission('set
       `UPDATE prp_prospects SET status = 'dismissed', last_status_change = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING *`,
       [req.params.id, tenantId],
     );
-    if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:prospects.prospectNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, msg('errors:prospects.failedToDismissProspect'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -563,7 +564,7 @@ prospectsRouter.get('/:tenantId/generate/preview', requirePermission('*:*'), asy
     const categoryIds = req.query.category_ids ? String(req.query.category_ids).split(',') : null;
     const { previewProspectPlan } = await import('../services/prospect-generation.service');
     success(res, await previewProspectPlan(req.params.tenantId, categoryIds));
-  } catch (err: any) { console.error('Failed to preview prospect plan', err?.message || err); error(res, 'Failed to preview prospect plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to preview prospect plan', err?.message || err); error(res, msg('errors:prospects.failedToPreviewProspectPlan'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/:tenantId/generate — Generate/refresh a tenant's prospect list.
@@ -595,8 +596,8 @@ prospectsRouter.post('/:tenantId/generate', requirePermission('*:*'), async (req
     success(res, { started: true, engine: 'google', state: status.state, started_at: status.startedAt }, undefined, 202);
   } catch (err: any) {
     if (err?.name === 'NoTerritoryError' || err?.name === 'NoCategoriesError') { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
-    if (err.message?.includes('GOOGLE_PLACES_API_KEY')) { error(res, 'Google Places API key not configured.', 'CONFIGURATION_ERROR', 500); return; }
-    error(res, `Failed to start generation: ${err.message}`, 'INTERNAL_ERROR', 500);
+    if ((isMessage(err.message, 'errors:googlePlaces.googlePlacesApiKeyNotConfigured') || err.message?.includes('GOOGLE_PLACES_API_KEY'))) { error(res, msg('errors:prospects.googlePlacesApiKeyNotConfigured'), 'CONFIGURATION_ERROR', 500); return; }
+    error(res, msg('errors:prospects.failedToStartGeneration', { message: err.message }), 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -606,7 +607,7 @@ prospectsRouter.get('/:tenantId/generate/status', requirePermission('*:*'), asyn
     const { getGenerationStatus } = await import('../services/prospect-generation.service');
     const status = getGenerationStatus(req.params.tenantId);
     success(res, status || { state: 'idle' });
-  } catch (err: any) { console.error('Failed to get generation status', err?.message || err); error(res, 'Failed to get generation status', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get generation status', err?.message || err); error(res, msg('errors:prospects.failedToGetGenerationStatus'), 'INTERNAL_ERROR', 500); }
 });
 
 // (Legacy tenant-scoped generate/preview routes were removed — generation is now
@@ -629,7 +630,7 @@ prospectsRouter.get('/:tenantId/territory-info', requirePermission('*:*'), async
       [req.params.tenantId],
     );
     success(res, rows[0] || null);
-  } catch (err: any) { console.error('Failed to get territory info', err?.message || err); error(res, 'Failed to get territory info', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get territory info', err?.message || err); error(res, msg('errors:prospects.failedToGetTerritoryInfo'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/:tenantId/prospects — list a tenant's prospects (+ filters).
@@ -654,21 +655,21 @@ prospectsRouter.get('/:tenantId/prospects', requirePermission('*:*'), async (req
       `SELECT * FROM prp_prospects WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`, params,
     );
     success(res, rows);
-  } catch (err: any) { console.error('Failed to list prospects', err?.message || err); error(res, 'Failed to list prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list prospects', err?.message || err); error(res, msg('errors:prospects.failedToListProspects'), 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/:tenantId/prospects — manually add a prospect for a tenant.
 prospectsRouter.post('/:tenantId/prospects', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const { name, address, phone, website, category, notes } = req.body;
-    if (!name) { error(res, 'name required', 'VALIDATION_ERROR', 400); return; }
+    if (!name) { error(res, msg('errors:prospects.nameRequired'), 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
       `INSERT INTO prp_prospects (tenant_id, name, address, phone, website, category, notes, source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual') RETURNING *`,
       [req.params.tenantId, name, address || null, phone || null, website || null, category || null, notes || null],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { console.error('Failed to add prospect', err?.message || err); error(res, 'Failed to add prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add prospect', err?.message || err); error(res, msg('errors:prospects.failedToAddProspect'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:tenantId/prospects/:id — update a tenant's prospect (status/notes).
@@ -681,14 +682,14 @@ prospectsRouter.put('/:tenantId/prospects/:id', requirePermission('*:*'), async 
     if (status !== undefined) { fields.push(`status = $${idx++}`); params.push(status); fields.push(`last_status_change = NOW()`); }
     if (notes !== undefined) { fields.push(`notes = $${idx++}`); params.push(notes); }
     fields.push('updated_at = NOW()');
-    if (params.length === 0) { error(res, 'Nothing to update', 'VALIDATION_ERROR', 400); return; }
+    if (params.length === 0) { error(res, msg('errors:prospects.nothingToUpdate'), 'VALIDATION_ERROR', 400); return; }
     params.push(req.params.id, req.params.tenantId);
     const { rows } = await adminPool.query(
       `UPDATE prp_prospects SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`, params,
     );
-    if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:prospects.prospectNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to update prospect', err?.message || err); error(res, 'Failed to update prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update prospect', err?.message || err); error(res, msg('errors:prospects.failedToUpdateProspect'), 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:tenantId/prospects/:id/dismiss — dismiss a tenant's prospect.
@@ -699,9 +700,9 @@ prospectsRouter.put('/:tenantId/prospects/:id/dismiss', requirePermission('*:*')
        WHERE id = $1 AND tenant_id = $2 RETURNING *`,
       [req.params.id, req.params.tenantId],
     );
-    if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
+    if (rows.length === 0) { error(res, msg('errors:prospects.prospectNotFound'), 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, msg('errors:prospects.failedToDismissProspect'), 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/prospects/:tenantId/prospects — SYSTEM ADMIN: hard-delete ALL prospects for
@@ -716,7 +717,7 @@ prospectsRouter.delete('/:tenantId/prospects', requirePermission('*:*'), async (
     );
     logger.info(`[Prospects] System admin hard-deleted ${rowCount ?? 0} prospect(s) for tenant ${req.params.tenantId}`);
     success(res, { deleted: rowCount ?? 0 });
-  } catch (err: any) { console.error('Failed to clear prospects', err?.message || err); error(res, 'Failed to clear prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to clear prospects', err?.message || err); error(res, msg('errors:prospects.failedToClearProspects'), 'INTERNAL_ERROR', 500); }
 });
 
 /** `ids` query value (comma-separated uuids) → list, or undefined when absent. */
@@ -782,12 +783,12 @@ async function buildProspectsCsv(tenantId: string, status?: string, category?: s
 prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    if (!authReq.tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
+    if (!authReq.tenantId) { error(res, msg('errors:prospects.tenantContextRequired'), 'VALIDATION_ERROR', 400); return; }
     const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true', exportIds(req.query.ids));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
-  } catch (err: any) { console.error('Failed to export prospects', err?.message || err); error(res, 'Failed to export prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to export prospects', err?.message || err); error(res, msg('errors:prospects.failedToExportProspects'), 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/:tenantId/prospects/export — SYSTEM ADMIN: export a tenant's prospects.
@@ -797,5 +798,5 @@ prospectsRouter.get('/:tenantId/prospects/export', requirePermission('*:*'), asy
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
-  } catch (err: any) { console.error('Failed to export prospects', err?.message || err); error(res, 'Failed to export prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to export prospects', err?.message || err); error(res, msg('errors:prospects.failedToExportProspects'), 'INTERNAL_ERROR', 500); }
 });

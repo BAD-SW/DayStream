@@ -183,7 +183,7 @@ async function sendSettledChargeReceipt(row: any): Promise<void> {
         currency: row.currency,
         payment_method: row.payment_method ?? 'card',
         payment_date: row.settled_at ?? new Date().toISOString(),
-        membership_name: enr.plan_name ?? null,
+        membership_name: enr.plan_name ?? null, membership_plan_id: enr.plan_id ?? null,
         customer_name: [enr.first_name, enr.last_name].filter(Boolean).join(' ').trim(),
         customer_email: enr.email,
       },

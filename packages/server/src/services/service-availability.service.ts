@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 interface CreateRuleInput {
   serviceId: string;
@@ -23,22 +24,22 @@ export async function createRule(input: CreateRuleInput) {
   // Validate rule type fields
   if (input.ruleType === 'recurring') {
     if (!input.daysOfWeek || input.daysOfWeek.length === 0) {
-      throw new Error('Recurring rules require days_of_week');
+      throw new Error(msg('errors:serviceAvailability.recurringRulesRequireDaysOfWeek'));
     }
     if (!input.startTime || !input.endTime) {
-      throw new Error('Recurring rules require start_time and end_time');
+      throw new Error(msg('errors:serviceAvailability.recurringRulesRequireStartTimeAnd'));
     }
   }
 
   if (input.ruleType === 'seasonal') {
     if (!input.effectiveFrom || !input.effectiveTo) {
-      throw new Error('Seasonal rules require effective_from and effective_to');
+      throw new Error(msg('errors:serviceAvailability.seasonalRulesRequireEffectiveFromAnd'));
     }
   }
 
   if (input.ruleType === 'block') {
     if ((!input.blockedDates || input.blockedDates.length === 0) && !input.effectiveFrom) {
-      throw new Error('Block rules require blocked_dates or an effective date range');
+      throw new Error(msg('errors:serviceAvailability.blockRulesRequireBlockedDatesOr'));
     }
   }
 

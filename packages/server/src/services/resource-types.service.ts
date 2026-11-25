@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * List resource types for a business.
@@ -66,7 +67,7 @@ export async function deleteResourceType(id: string, tenantId: string) {
   const { rows: used } = await adminPool.query(
     `SELECT id FROM res_resources WHERE resource_type_id = $1 LIMIT 1`, [id],
   );
-  if (used.length > 0) throw new Error('Cannot delete type with existing resources');
+  if (used.length > 0) throw new Error(msg('errors:resourceTypes.cannotDeleteTypeWithExistingResources'));
 
   const { rowCount } = await adminPool.query(
     `DELETE FROM res_types WHERE id = $1 AND tenant_id = $2 AND is_system = false`,

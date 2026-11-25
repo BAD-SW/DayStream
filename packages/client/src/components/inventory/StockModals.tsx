@@ -4,6 +4,9 @@ import { Button } from '../../design-system/components/actions/Button';
 import * as inventoryApi from '../../api/inventory';
 import type { AdjustReason } from '../../api/inventory';
 import { formatCurrency } from '../../utils/currency';
+import { formatNumber } from '../../utils/format';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Change stock (Set count / Add / Remove) and reorder level windows for one stock item at one
@@ -16,9 +19,9 @@ export interface StockItemLine {
 }
 
 const toCents = (s: string): number | null => (s.trim() === '' ? null : Math.max(0, Math.round(parseFloat(s) * 100) || 0));
-const title = (productName: string | undefined, l: StockItemLine) => {
+const title = (t: TFunction, productName: string | undefined, l: StockItemLine) => {
   const what = [productName, l.variant_name].filter(Boolean).join(' · ');
-  return [what, l.location_name].filter(Boolean).join(' at ');
+  return what && l.location_name ? t('stock.titleAt', { what, location: l.location_name }) : what || l.location_name || '';
 };
 const errorText = (e: unknown, fallback: string) =>
   (e as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
@@ -36,6 +39,7 @@ export function ChangeStockModal({ line, productId, productName, businessId, def
   line: StockItemLine; productId: string; productName?: string; businessId: string; defaultCost: number | null;
   onClose: () => void; onDone: () => void;
 }) {
+  const { t } = useTranslation('inventory');
   const [mode, setMode] = useState<'set' | 'add' | 'remove'>('set');
   const [qty, setQty] = useState(String(line.on_hand));
   const [reason, setReason] = useState<AdjustReason | ''>('');
@@ -59,51 +63,51 @@ export function ChangeStockModal({ line, productId, productName, businessId, def
         reason: mode === 'set' ? undefined : (reason as AdjustReason), unit_cost_cents: incoming ? toCents(cost) : null, note: note || null,
       });
       onDone();
-    } catch (e2) { setErr(errorText(e2, 'Could not change the stock.')); }
+    } catch (e2) { setErr(errorText(e2, t('stock.changeFailed'))); }
     finally { setSaving(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Change stock: ${title(productName, line)}`} size="sm"
+    <Modal open onClose={onClose} title={t('stock.changeTitle', { title: title(t, productName, line) })} size="sm"
       footer={<>
-        <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-        <Button onClick={() => submit()} disabled={!valid} loading={saving}>Save</Button>
+        <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button onClick={() => submit()} disabled={!valid} loading={saving}>{t('common:save')}</Button>
       </>}>
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-        <p style={s.muted}>On hand now: <strong>{line.on_hand}</strong></p>
+        <p style={s.muted}>{t('stock.onHandNow')} <strong>{line.on_hand}</strong></p>
         <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
-          <Button type="button" size="sm" variant={mode === 'set' ? 'primary' : 'secondary'} onClick={() => pickMode('set')}>Set count</Button>
-          <Button type="button" size="sm" variant={mode === 'add' ? 'primary' : 'secondary'} onClick={() => pickMode('add')}>Add</Button>
-          <Button type="button" size="sm" variant={mode === 'remove' ? 'primary' : 'secondary'} onClick={() => pickMode('remove')}>Remove</Button>
+          <Button type="button" size="sm" variant={mode === 'set' ? 'primary' : 'secondary'} onClick={() => pickMode('set')}>{t('stock.setCount')}</Button>
+          <Button type="button" size="sm" variant={mode === 'add' ? 'primary' : 'secondary'} onClick={() => pickMode('add')}>{t('stock.add')}</Button>
+          <Button type="button" size="sm" variant={mode === 'remove' ? 'primary' : 'secondary'} onClick={() => pickMode('remove')}>{t('stock.remove')}</Button>
         </div>
         <div style={s.group}>
-          <label style={s.label}>{mode === 'set' ? 'Counted on hand *' : mode === 'add' ? 'Quantity to add *' : 'Quantity to remove *'}</label>
+          <label style={s.label}>{mode === 'set' ? t('stock.countedOnHand') : mode === 'add' ? t('stock.quantityToAdd') : t('stock.quantityToRemove')}</label>
           <input style={s.input} type="number" min={0} step={1} max={mode === 'remove' ? line.on_hand : undefined} value={qty}
             onChange={(e) => setQty(mode === 'remove' && Number(e.target.value) > line.on_hand ? String(line.on_hand) : e.target.value)} autoFocus />
         </div>
         {mode !== 'set' && (
           <div style={s.group}>
-            <label style={s.label}>Reason *</label>
+            <label style={s.label}>{t('stock.reasonRequired')}</label>
             <select style={s.input} value={reason} onChange={(e) => setReason(e.target.value as AdjustReason | '')}>
-              <option value="">Choose…</option>
+              <option value="">{t('stock.choose')}</option>
               {inventoryApi.ADJUST_REASONS
                 .filter((r) => (mode === 'add' ? ['found', 'correction'] : ['damaged', 'lost', 'used_in_service', 'correction']).includes(r.value))
-                .map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                .map((r) => <option key={r.value} value={r.value}>{t(r.label)}</option>)}
             </select>
           </div>
         )}
         {incoming && (
           <div style={s.group}>
-            <label style={s.label}>Cost of each</label>
+            <label style={s.label}>{t('stock.costOfEach')}</label>
             <input style={s.input} type="number" step="0.01" min="0" value={cost} onChange={(e) => setCost(e.target.value)}
-              placeholder={defaultCost != null ? `Cost price ${formatCurrency(defaultCost)} if empty` : 'Optional'} />
+              placeholder={defaultCost != null ? t('stock.costIfEmpty', { amount: formatCurrency(defaultCost) }) : t('stock.optional')} />
           </div>
         )}
         <div style={s.group}>
-          <label style={s.label}>Note</label>
-          <input style={s.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+          <label style={s.label}>{t('stock.note')}</label>
+          <input style={s.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder={t('stock.optional')} />
         </div>
-        {valid && <p style={s.muted}>On hand after: <strong>{after}</strong></p>}
+        {valid && <p style={s.muted}>{t('stock.onHandAfter')} <strong>{after}</strong></p>}
         {err && <p style={s.error}>{err}</p>}
       </form>
     </Modal>
@@ -113,6 +117,7 @@ export function ChangeStockModal({ line, productId, productName, businessId, def
 export function ReorderModal({ line, productId, productName, businessId, onClose, onDone }: {
   line: StockItemLine; productId: string; productName?: string; businessId: string; onClose: () => void; onDone: () => void;
 }) {
+  const { t } = useTranslation('inventory');
   const [level, setLevel] = useState(line.reorder_level == null ? '' : String(line.reorder_level));
   const [qty, setQty] = useState(line.reorder_qty == null ? '' : String(line.reorder_qty));
   const [saving, setSaving] = useState(false);
@@ -130,26 +135,26 @@ export function ReorderModal({ line, productId, productName, businessId, onClose
         reorder_level: level.trim() === '' ? null : Number(level), reorder_qty: qty.trim() === '' ? null : Number(qty),
       });
       onDone();
-    } catch (e2) { setErr(errorText(e2, 'Could not save the reorder level.')); }
+    } catch (e2) { setErr(errorText(e2, t('stock.reorderSaveFailed'))); }
     finally { setSaving(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Reorder: ${title(productName, line)}`} size="sm"
+    <Modal open onClose={onClose} title={t('stock.reorderTitle', { title: title(t, productName, line) })} size="sm"
       footer={<>
-        <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-        <Button onClick={() => submit()} disabled={!valid} loading={saving}>Save</Button>
+        <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button onClick={() => submit()} disabled={!valid} loading={saving}>{t('common:save')}</Button>
       </>}>
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
         <div style={s.group}>
-          <label style={s.label}>Reorder at</label>
-          <input style={s.input} type="number" min={0} step={1} value={level} onChange={(e) => setLevel(e.target.value)} placeholder="No reorder level" autoFocus />
-          <span style={s.hint}>Shown as low stock when on hand is this or fewer.</span>
+          <label style={s.label}>{t('stock.reorderAt')}</label>
+          <input style={s.input} type="number" min={0} step={1} value={level} onChange={(e) => setLevel(e.target.value)} placeholder={t('stock.noReorderLevel')} autoFocus />
+          <span style={s.hint}>{t('stock.reorderHelp')}</span>
         </div>
         <div style={s.group}>
-          <label style={s.label}>Reorder quantity</label>
-          <input style={s.input} type="number" min={1} step={1} value={qty} onChange={(e) => setQty(e.target.value)} placeholder="Optional" />
-          <span style={s.hint}>How many to order when it runs low.</span>
+          <label style={s.label}>{t('stock.reorderQuantity')}</label>
+          <input style={s.input} type="number" min={1} step={1} value={qty} onChange={(e) => setQty(e.target.value)} placeholder={t('stock.optional')} />
+          <span style={s.hint}>{t('stock.reorderQuantityHelp')}</span>
         </div>
         {err && <p style={s.error}>{err}</p>}
       </form>
@@ -163,7 +168,7 @@ function locationsOf(lines: StockItemLine[]) {
   for (const l of lines) if (!seen.has(l.location_id)) seen.set(l.location_id, l.location_name);
   return [...seen].map(([id, name]) => ({ id, name }));
 }
-const optionName = (l: StockItemLine, productName?: string) => l.variant_name || productName || 'This product';
+const optionName = (t: TFunction, l: StockItemLine, productName?: string) => l.variant_name || productName || t('stock.thisProduct');
 const tableStyles: Record<string, React.CSSProperties> = {
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' },
   th: { textAlign: 'left', padding: 'var(--space-xs) var(--space-sm)', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontWeight: 600 },
@@ -178,6 +183,7 @@ const tableStyles: Record<string, React.CSSProperties> = {
 export function CountModal({ lines, productId, productName, businessId, onClose, onDone }: {
   lines: StockItemLine[]; productId: string; productName?: string; businessId: string; onClose: () => void; onDone: () => void;
 }) {
+  const { t } = useTranslation('inventory');
   const locations = locationsOf(lines);
   const [locationId, setLocationId] = useState(locations[0]?.id || '');
   const [counted, setCounted] = useState<Record<string, string>>({});
@@ -199,33 +205,33 @@ export function CountModal({ lines, productId, productName, businessId, onClose,
         });
       }
       onDone();
-    } catch (e) { setErr(errorText(e, 'Could not save the count.')); }
+    } catch (e) { setErr(errorText(e, t('stock.countFailed'))); }
     finally { setSaving(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Count${productName ? `: ${productName}` : ''}`} size="md"
+    <Modal open onClose={onClose} title={productName ? t('stock.countTitleNamed', { name: productName }) : t('stock.countTitle')} size="md"
       footer={<>
-        <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit} loading={saving} disabled={changes.length === 0}>Save count</Button>
+        <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button onClick={submit} loading={saving} disabled={changes.length === 0}>{t('stock.saveCount')}</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
         {locations.length > 1 && (
           <div style={s.group}>
-            <label style={s.label}>Location</label>
+            <label style={s.label}>{t('stock.location')}</label>
             <select style={s.input} value={locationId} onChange={(e) => { setLocationId(e.target.value); setCounted({}); }}>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
         )}
-        <p style={s.muted}>Enter what you count. On hand becomes the counted number; anything left empty is not changed.</p>
+        <p style={s.muted}>{t('stock.countHelp')}</p>
         <table style={tableStyles.table}>
           <thead>
             <tr>
-              <th style={tableStyles.th}>Option</th>
-              <th style={{ ...tableStyles.th, textAlign: 'right' }}>On hand</th>
-              <th style={{ ...tableStyles.th, textAlign: 'right' }}>Counted</th>
-              <th style={{ ...tableStyles.th, textAlign: 'right' }}>Difference</th>
+              <th style={tableStyles.th}>{t('stock.option')}</th>
+              <th style={{ ...tableStyles.th, textAlign: 'right' }}>{t('stock.onHand')}</th>
+              <th style={{ ...tableStyles.th, textAlign: 'right' }}>{t('stock.counted')}</th>
+              <th style={{ ...tableStyles.th, textAlign: 'right' }}>{t('stock.difference')}</th>
             </tr>
           </thead>
           <tbody>
@@ -234,15 +240,15 @@ export function CountModal({ lines, productId, productName, businessId, onClose,
               const diff = v === '' ? null : Number(v) - l.on_hand;
               return (
                 <tr key={keyOf(l)}>
-                  <td style={tableStyles.td}>{optionName(l, productName)}</td>
+                  <td style={tableStyles.td}>{optionName(t, l, productName)}</td>
                   <td style={{ ...tableStyles.td, textAlign: 'right' }}>{l.on_hand}</td>
                   <td style={{ ...tableStyles.td, textAlign: 'right' }}>
                     <input style={tableStyles.num} type="number" min={0} step={1} inputMode="numeric" autoFocus={i === 0}
-                      aria-label={`Counted ${optionName(l, productName)}`} value={counted[keyOf(l)] ?? ''}
+                      aria-label={t('stock.countedAria', { option: optionName(t, l, productName) })} value={counted[keyOf(l)] ?? ''}
                       onChange={(e) => setCounted((p) => ({ ...p, [keyOf(l)]: e.target.value.replace(/[^0-9]/g, '') }))} />
                   </td>
                   <td style={{ ...tableStyles.td, textAlign: 'right', fontWeight: 600, color: !diff ? 'var(--color-text-secondary)' : diff < 0 ? 'var(--color-error)' : 'var(--color-success)' }}>
-                    {diff == null ? '' : diff > 0 ? `+${diff}` : diff}
+                    {diff == null ? '' : formatNumber(diff, { signDisplay: 'exceptZero' })}
                   </td>
                 </tr>
               );
@@ -250,8 +256,8 @@ export function CountModal({ lines, productId, productName, businessId, onClose,
           </tbody>
         </table>
         <div style={s.group}>
-          <label style={s.label}>Note</label>
-          <input style={s.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="Optional, e.g. Month-end count" />
+          <label style={s.label}>{t('stock.note')}</label>
+          <input style={s.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder={t('stock.optionalExample')} />
         </div>
         {err && <p style={s.error}>{err}</p>}
       </div>
@@ -263,6 +269,7 @@ export function CountModal({ lines, productId, productName, businessId, onClose,
 export function TransferModal({ lines, productId, productName, businessId, onClose, onDone }: {
   lines: StockItemLine[]; productId: string; productName?: string; businessId: string; onClose: () => void; onDone: () => void;
 }) {
+  const { t } = useTranslation('inventory');
   const locations = locationsOf(lines);
   const firstWithStock = lines.find((l) => l.on_hand > 0)?.location_id || locations[0]?.id || '';
   const [fromId, setFromId] = useState(firstWithStock);
@@ -285,28 +292,28 @@ export function TransferModal({ lines, productId, productName, businessId, onClo
         lines: moving.map((l) => ({ merchandise_id: productId, variant_id: l.variant_id, qty: qty[keyOf(l)] })),
       });
       onDone();
-    } catch (e) { setErr(errorText(e, 'Could not move the stock.')); }
+    } catch (e) { setErr(errorText(e, t('stock.moveFailed'))); }
     finally { setSaving(false); }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Move stock${productName ? `: ${productName}` : ''}`} size="md"
+    <Modal open onClose={onClose} title={productName ? t('stock.moveTitleNamed', { name: productName }) : t('stock.moveTitle')} size="md"
       footer={<>
-        <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit} loading={saving} disabled={!toId || toId === fromId || units === 0}>Move {units || ''}</Button>
+        <Button variant="secondary" type="button" onClick={onClose}>{t('common:cancel')}</Button>
+        <Button onClick={submit} loading={saving} disabled={!toId || toId === fromId || units === 0}>{t('stock.move')} {units || ''}</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
           <div style={s.group}>
-            <label style={s.label}>From</label>
+            <label style={s.label}>{t('stock.from')}</label>
             <select style={s.input} value={fromId} onChange={(e) => { setFromId(e.target.value); setQty({}); if (e.target.value === toId) setToId(''); }}>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
           <div style={s.group}>
-            <label style={s.label}>To</label>
+            <label style={s.label}>{t('stock.to')}</label>
             <select style={s.input} value={toId} onChange={(e) => setToId(e.target.value)}>
-              <option value="">Choose…</option>
+              <option value="">{t('stock.choose')}</option>
               {locations.filter((l) => l.id !== fromId).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
@@ -314,21 +321,21 @@ export function TransferModal({ lines, productId, productName, businessId, onClo
         <table style={tableStyles.table}>
           <thead>
             <tr>
-              <th style={tableStyles.th}>Option</th>
-              <th style={{ ...tableStyles.th, textAlign: 'right' }}>On hand here</th>
-              {toId && <th style={{ ...tableStyles.th, textAlign: 'right' }}>At destination</th>}
-              <th style={{ ...tableStyles.th, textAlign: 'right' }}>Move</th>
+              <th style={tableStyles.th}>{t('stock.option')}</th>
+              <th style={{ ...tableStyles.th, textAlign: 'right' }}>{t('stock.onHandHere')}</th>
+              {toId && <th style={{ ...tableStyles.th, textAlign: 'right' }}>{t('stock.atDestination')}</th>}
+              <th style={{ ...tableStyles.th, textAlign: 'right' }}>{t('stock.move')}</th>
             </tr>
           </thead>
           <tbody>
             {from.map((l) => (
               <tr key={keyOf(l)}>
-                <td style={tableStyles.td}>{optionName(l, productName)}</td>
+                <td style={tableStyles.td}>{optionName(t, l, productName)}</td>
                 <td style={{ ...tableStyles.td, textAlign: 'right' }}>{l.on_hand}</td>
                 {toId && <td style={{ ...tableStyles.td, textAlign: 'right' }}>{onHandAt(toId, l.variant_id)}</td>}
                 <td style={{ ...tableStyles.td, textAlign: 'right' }}>
                   <input style={tableStyles.num} type="number" min={0} max={l.on_hand} step={1} disabled={l.on_hand === 0}
-                    aria-label={`Move ${optionName(l, productName)}`} value={qty[keyOf(l)] ? String(qty[keyOf(l)]) : ''}
+                    aria-label={t('stock.moveAria', { option: optionName(t, l, productName) })} value={qty[keyOf(l)] ? String(qty[keyOf(l)]) : ''}
                     onChange={(e) => {
                       const n = parseInt(e.target.value, 10) || 0;
                       setQty((p) => ({ ...p, [keyOf(l)]: Math.min(Math.max(0, n), l.on_hand) }));
@@ -339,8 +346,8 @@ export function TransferModal({ lines, productId, productName, businessId, onClo
           </tbody>
         </table>
         <div style={s.group}>
-          <label style={s.label}>Note</label>
-          <input style={s.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+          <label style={s.label}>{t('stock.note')}</label>
+          <input style={s.input} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder={t('stock.optional')} />
         </div>
         {err && <p style={s.error}>{err}</p>}
       </div>

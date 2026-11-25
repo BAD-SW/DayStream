@@ -8,6 +8,7 @@ import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as leads from '../services/leads.service';
 import { parseColumnFilters } from '../utils/column-filters';
+import { msg } from '../i18n';
 
 /**
  * Leads (THE-17): the Marketing → Leads list and the business's lead stages.
@@ -24,9 +25,9 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The business named in the query, if it belongs to the caller's organisation. */
 async function businessOf(req: Request, res: Response): Promise<string | null> {
   const businessId = req.query.business_id as string;
-  if (!businessId || !uuid.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return null; }
+  if (!businessId || !uuid.test(businessId)) { error(res, msg('errors:leads.businessIdRequired'), 'VALIDATION_ERROR', 400); return null; }
   const { rows } = await adminPool.query('SELECT 1 FROM sys_businesses WHERE id = $1 AND tenant_id = $2', [businessId, (req as AuthenticatedRequest).tenantId]);
-  if (!rows[0]) { error(res, 'Business not found', 'NOT_FOUND', 404); return null; }
+  if (!rows[0]) { error(res, msg('errors:leads.businessNotFound'), 'NOT_FOUND', 404); return null; }
   return businessId;
 }
 
@@ -36,7 +37,7 @@ function fail(res: Response, err: any, what: string) {
     return;
   }
   console.error(`[leads] ${what} failed:`, err?.message || err);
-  error(res, `Failed to ${what}`, 'INTERNAL_ERROR', 500);
+  error(res, msg('errors:leads.failedTo', { what }), 'INTERNAL_ERROR', 500);
 }
 
 // --- Stages (Settings → Leads) ---
@@ -67,7 +68,7 @@ leadsRouter.put('/stages/order', requirePermission('settings:*'), validate(Joi.o
 leadsRouter.put('/stages/:id', requirePermission('settings:*'), validate(stageSchema), async (req, res) => {
   try {
     const businessId = await businessOf(req, res); if (!businessId) return;
-    if (!uuid.test(req.params.id)) { error(res, 'Lead stage not found', 'STAGE_NOT_FOUND', 404); return; }
+    if (!uuid.test(req.params.id)) { error(res, msg('errors:leads.leadStageNotFound'), 'STAGE_NOT_FOUND', 404); return; }
     success(res, await leads.renameStage(businessId, req.params.id, req.body.name));
   } catch (err) { fail(res, err, 'rename a lead stage'); }
 });
@@ -77,7 +78,7 @@ leadsRouter.delete('/stages/:id', requirePermission('settings:*'), async (req, r
   try {
     const businessId = await businessOf(req, res); if (!businessId) return;
     const moveTo = req.query.move_to as string | undefined;
-    if (!uuid.test(req.params.id) || (moveTo && !uuid.test(moveTo))) { error(res, 'Lead stage not found', 'STAGE_NOT_FOUND', 404); return; }
+    if (!uuid.test(req.params.id) || (moveTo && !uuid.test(moveTo))) { error(res, msg('errors:leads.leadStageNotFound'), 'STAGE_NOT_FOUND', 404); return; }
     success(res, await leads.deleteStage(businessId, req.params.id, moveTo, (req as AuthenticatedRequest).user.sub));
   } catch (err) { fail(res, err, 'delete a lead stage'); }
 });
@@ -101,7 +102,7 @@ leadsRouter.get('/', requirePermission('customers:read'), async (req, res) => {
     const q = req.query;
     const owner = q.owner as string | undefined;
     const stageId = q.stage_id as string | undefined;
-    if (stageId && !uuid.test(stageId)) { error(res, 'Unknown stage', 'VALIDATION_ERROR', 400); return; }
+    if (stageId && !uuid.test(stageId)) { error(res, msg('errors:leads.unknownStage'), 'VALIDATION_ERROR', 400); return; }
     const result = await leads.listLeads(businessId, {
       columns: parseColumnFilters(q.cf),
       stage_id: stageId,
@@ -154,7 +155,7 @@ const patchSchema = Joi.object({
 leadsRouter.patch('/:id', requirePermission('customers:*'), validate(patchSchema), async (req, res) => {
   try {
     const businessId = await businessOf(req, res); if (!businessId) return;
-    if (!uuid.test(req.params.id)) { error(res, 'Lead not found', 'NOT_FOUND', 404); return; }
+    if (!uuid.test(req.params.id)) { error(res, msg('errors:leads.leadNotFound'), 'NOT_FOUND', 404); return; }
     const authReq = req as AuthenticatedRequest;
     const b = req.body;
     success(res, await leads.updateLead(businessId, authReq.tenantId, authReq.user.sub, req.params.id, {

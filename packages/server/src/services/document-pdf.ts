@@ -1,5 +1,6 @@
 import sharp from 'sharp';
-import { formatCurrency, DETAILS_TABLE_TOKEN } from '@daystream/shared';
+import { formatCurrency, DETAILS_TABLE_TOKEN, languageLocale } from '@daystream/shared';
+import { msgIn } from '../i18n';
 import type { DocumentDetailsTable } from '@daystream/shared';
 import { selectTemplate, buildTokensForBusiness, substitute } from './document-branding-resolver.service';
 
@@ -67,6 +68,8 @@ export function htmlToPlainText(html: string): string {
 /** The resolved branding chrome for a document PDF, ready to draw. */
 export interface ResolvedPdfBranding {
   template: DocumentBrandingTemplate | null;
+  /** The customer's language (Phase 44): the template, the table labels and the amounts follow it. */
+  language: string | null;
   primary: string;
   secondary: string;
   logo: Buffer | null;
@@ -100,10 +103,14 @@ export async function resolvePdfBranding(
   data: Record<string, unknown>,
   detailsTable: DocumentDetailsTable | null = null,
 ): Promise<ResolvedPdfBranding> {
-  const template = await selectTemplate(businessId, artifactType, null);
-  const tokens = await buildTokensForBusiness(businessId, data);
+  // The customer's language, when the document is for a customer (data.customer_id).
+  const customerId = typeof data.customer_id === 'string' ? data.customer_id : null;
+  const language = await (await import('./recipient-language.service')).customerLanguage(customerId).catch(() => null);
+  const template = await selectTemplate(businessId, artifactType, language);
+  const tokens = await buildTokensForBusiness(businessId, data, language);
   return {
     template,
+    language,
     primary: safeColor(template?.colorPrimary, '#1A1A1A'),
     secondary: safeColor(template?.colorSecondary, '#C9A96E'),
     logo: await fetchLogo(template?.logoUrl),
@@ -149,9 +156,9 @@ export function renderTemplateDocumentPdf(branding: ResolvedPdfBranding): Promis
     doc.rect(0, 0, pageWidth, bandHeight).fill(primary);
     if (logo) {
       try { doc.image(logo, pad, 24, { fit: [200, 48] }); }
-      catch { doc.fillColor('#ffffff').fontSize(22).text(businessName || 'Document', pad, 34, { width: contentWidth }); }
+      catch { doc.fillColor('#ffffff').fontSize(22).text(businessName || msgIn(branding.language, 'email:document'), pad, 34, { width: contentWidth }); }
     } else {
-      doc.fillColor('#ffffff').fontSize(22).text(businessName || 'Document', pad, 34, { width: contentWidth });
+      doc.fillColor('#ffffff').fontSize(22).text(businessName || msgIn(branding.language, 'email:document'), pad, 34, { width: contentWidth });
     }
 
     // --- Body area ---
@@ -177,7 +184,7 @@ export function renderTemplateDocumentPdf(branding: ResolvedPdfBranding): Promis
       // A table goes between segments (i.e. wherever the marker appeared).
       if (i < segments.length - 1 && detailsTable) {
         y += 12;
-        y = drawDetailsTable(doc, detailsTable, pad, y, contentWidth, primary, secondary);
+        y = drawDetailsTable(doc, detailsTable, pad, y, contentWidth, primary, secondary, branding.language);
       }
     }
 
@@ -201,20 +208,20 @@ export function renderTemplateDocumentPdf(branding: ResolvedPdfBranding): Promis
 /** Draw a Description/Qty/Amount table (+ Total) at `y`; returns the new `y`. */
 function drawDetailsTable(
   doc: PdfDoc, table: DocumentDetailsTable, pad: number, startY: number, width: number,
-  primary: string, secondary: string,
+  primary: string, secondary: string, language: string | null = null,
 ): number {
   const left = pad;
   const qtyX = pad + width - 180;
   const amtX = pad + width - 90;
   let y = startY;
 
-  const money = (cents: number) => formatCurrency(cents, table.currency, 'en-US');
+  const money = (cents: number) => formatCurrency(cents, table.currency, languageLocale(language));
 
   // Header row (primary color) + rule.
   doc.fontSize(9).fillColor(primary);
-  doc.text('DESCRIPTION', left, y, { width: qtyX - left - 8 });
-  doc.text('QTY', qtyX, y, { width: 50, align: 'right' });
-  doc.text('AMOUNT', amtX, y, { width: 90, align: 'right' });
+  doc.text(msgIn(language, 'email:table.description').toUpperCase(), left, y, { width: qtyX - left - 8 });
+  doc.text(msgIn(language, 'email:table.qty').toUpperCase(), qtyX, y, { width: 50, align: 'right' });
+  doc.text(msgIn(language, 'email:table.amount').toUpperCase(), amtX, y, { width: 90, align: 'right' });
   doc.fillColor('#000');
   y += 14;
   doc.moveTo(left, y).lineTo(pad + width, y).lineWidth(1).strokeColor(primary).stroke().strokeColor('#000');
@@ -236,7 +243,7 @@ function drawDetailsTable(
   doc.moveTo(qtyX, y).lineTo(pad + width, y).lineWidth(2).strokeColor(secondary).stroke().strokeColor('#000');
   y += 8;
   doc.fontSize(11).fillColor('#1a1a1a');
-  doc.text('Total', qtyX, y, { width: 50, align: 'right' });
+  doc.text(msgIn(language, 'email:table.total'), qtyX, y, { width: 50, align: 'right' });
   doc.text(money(table.totalCents), amtX, y, { width: 90, align: 'right' });
   return y + 18;
 }
@@ -253,9 +260,9 @@ export function drawBrandedHeader(
 ): void {
   if (branding.logo) {
     try { doc.image(branding.logo, startX, doc.y, { fit: [180, 56] }); doc.moveDown(); doc.y = Math.max(doc.y, 56 + 50); }
-    catch { doc.fontSize(20).fillColor(branding.primary).text(identity.name || 'Document').fillColor('#000'); }
+    catch { doc.fontSize(20).fillColor(branding.primary).text(identity.name || msgIn(branding.language, 'email:document')).fillColor('#000'); }
   } else {
-    doc.fontSize(20).fillColor(branding.primary).text(identity.name || 'Document').fillColor('#000');
+    doc.fontSize(20).fillColor(branding.primary).text(identity.name || msgIn(branding.language, 'email:document')).fillColor('#000');
   }
   doc.moveDown(0.2);
   doc.fontSize(9).fillColor('#555');

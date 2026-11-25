@@ -9,6 +9,7 @@ import * as segmentsService from './customer-segments.service';
 import { getCustomerCreditBalance } from './account-credit.service';
 import { deleteCustomerFolders } from './storage-cleanup.service';
 import { DEFAULT_LANGUAGE } from '@daystream/shared';
+import { msg } from '../i18n';
 
 interface CreateCustomerInput {
   businessId: string;
@@ -364,7 +365,7 @@ export async function runBulkAction(
 
   if (action === 'add_tag' || action === 'remove_tag') {
     const { rows: tag } = await adminPool.query('SELECT id, name FROM cus_tags WHERE id = $1 AND business_id = $2', [payload.tag_id, businessId]);
-    if (!tag[0]) throw new Error('Tag not found');
+    if (!tag[0]) throw new Error(msg('errors:customer.tagNotFound'));
     if (action === 'add_tag') {
       const { rows } = await adminPool.query(
         `INSERT INTO cus_customer_tags (customer_id, tag_id, assigned_by)
@@ -391,7 +392,7 @@ export async function runBulkAction(
     await logBulk(rows.map((r) => r.id), businessId, 'profile_change', ownerName ? `Owner: ${ownerName}` : 'Owner removed', userId);
     affected = rows.length;
   } else if (action === 'change_stage') {
-    if (!payload.stage || !LIFECYCLE_STAGES.includes(payload.stage)) throw new Error('Unknown stage');
+    if (!payload.stage || !LIFECYCLE_STAGES.includes(payload.stage)) throw new Error(msg('errors:customer.unknownStage'));
     affected = 0;
     for (const id of ids) {
       const r = await transitionLifecycle(id, businessId, payload.stage, 'Bulk change by staff', userId);
@@ -399,7 +400,7 @@ export async function runBulkAction(
     }
   } else if (action === 'add_to_list') {
     const added = await segmentsService.addMembers(payload.segment_id || '', businessId, ids, userId);
-    if (added === null) throw new Error('Fixed list not found');
+    if (added === null) throw new Error(msg('errors:customer.fixedListNotFound'));
     affected = added;
   } else if (action === 'archive') {
     const { rows } = await adminPool.query(
@@ -436,7 +437,7 @@ export async function runBulkAction(
     await logAudit({ tenantId, userId, action: 'customer.bulk_delete', resourceType: 'customer', details: { businessId, selected: ids.length, affected, skipped } });
     return { affected, skipped };
   } else {
-    throw new Error('Unknown action');
+    throw new Error(msg('errors:customer.unknownAction'));
   }
 
   await logAudit({ tenantId, userId, action: `customer.bulk_${action}`, resourceType: 'customer', details: { businessId, selected: ids.length, affected, payload } });
@@ -459,7 +460,7 @@ async function assertOwner(ownerUserId: string | null, tenantId: string): Promis
     `SELECT first_name, last_name FROM usr_users WHERE id = $1 AND tenant_id = $2 AND status = 'active' AND persona <> 'customer'`,
     [ownerUserId, tenantId],
   );
-  if (!rows[0]) throw new Error('Owner must be an active staff member of this business');
+  if (!rows[0]) throw new Error(msg('errors:customer.ownerMustBeAnActiveStaff'));
   return `${rows[0].first_name} ${rows[0].last_name}`.trim();
 }
 
@@ -498,21 +499,21 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
       `SELECT id FROM sys_locations WHERE id = $1 AND business_id = $2 AND status = 'active'`,
       [updates.home_location_id, businessId],
     );
-    if (!loc[0]) throw Object.assign(new Error('The home location must be one of this business\'s active locations'), { code: 'INVALID_LOCATION' });
+    if (!loc[0]) throw Object.assign(new Error(msg('errors:customer.theHomeLocationMustBeOne')), { code: 'INVALID_LOCATION' });
   }
   if (typeof updates.email === 'string') updates.email = updates.email.trim().toLowerCase();
 
   const nextEmail = 'email' in updates ? updates.email : customer.email;
   const nextPhone = 'phone' in updates ? updates.phone : customer.phone;
   if (!nextEmail && !nextPhone) {
-    throw Object.assign(new Error('An email address or a phone number is required'), { code: 'CONTACT_POINT_REQUIRED' });
+    throw Object.assign(new Error(msg('errors:customer.anEmailAddressOrAPhone')), { code: 'CONTACT_POINT_REQUIRED' });
   }
   if (updates.email && updates.email !== (customer.email || '').toLowerCase()) {
     const { rows: taken } = await adminPool.query(
       `SELECT id FROM cus_customers WHERE business_id = $1 AND LOWER(email) = $2 AND id <> $3 AND status <> 'merged' LIMIT 1`,
       [businessId, updates.email, id],
     );
-    if (taken[0]) throw Object.assign(new Error('Another person in this business already has this email'), { code: 'EMAIL_IN_USE', existingId: taken[0].id });
+    if (taken[0]) throw Object.assign(new Error(msg('errors:customer.anotherPersonInThisBusinessAlready')), { code: 'EMAIL_IN_USE', existingId: taken[0].id });
   }
   if ('owner_user_id' in updates && updates.owner_user_id) await assertOwner(updates.owner_user_id, customer.tenant_id);
 

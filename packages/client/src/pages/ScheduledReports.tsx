@@ -1,10 +1,20 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as reportsApi from '../api/reports';
+import { formatDate } from '../utils/format';
+
+// Stored report types and frequencies, shown through reports:scheduled.type.<value> and .frequency.<value>.
+const REPORT_TYPES = ['revenue', 'bookings', 'memberships', 'staff', 'customers', 'financial'];
+const FREQUENCIES = ['daily', 'weekly', 'monthly'];
 
 export function ScheduledReports() {
+  const { t } = useTranslation('reports');
+  const typeLabel = (v: string) => (REPORT_TYPES.includes(v) ? t(`scheduled.type.${v}`) : v);
+  const frequencyLabel = (v: string) => (FREQUENCIES.includes(v) ? t(`scheduled.frequency.${v}`) : v);
   const navigate = useNavigate();
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,64 +35,57 @@ export function ScheduledReports() {
       setReports([...reports, created]);
       setShowCreate(false);
       setForm({ name: '', report_type: 'revenue', frequency: 'weekly', recipients: '' });
-    } catch { alert('Failed to create scheduled report'); }
+    } catch { void showMessage({ message: t('scheduled.createFailed'), tone: 'error' }); }
   };
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/reports')}>← Back to Reports</button>
+      <button style={styles.back} onClick={() => navigate('/reports')}>{t('view.backArrow')}</button>
       <div style={styles.header}>
-        <h1 style={styles.title}>Scheduled Reports</h1>
-        <Button onClick={() => setShowCreate(!showCreate)}>{showCreate ? 'Cancel' : 'New Schedule'}</Button>
+        <h1 style={styles.title}>{t('scheduled.title')}</h1>
+        <Button onClick={() => setShowCreate(!showCreate)}>{showCreate ? t('common:cancel') : t('scheduled.new')}</Button>
       </div>
 
       {showCreate && (
         <form onSubmit={handleCreate} style={styles.card}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Name *</label>
+            <label style={styles.label}>{t('scheduled.name')}</label>
             <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
             <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Report Type</label>
+              <label style={styles.label}>{t('scheduled.reportType')}</label>
               <select style={styles.input} value={form.report_type} onChange={(e) => setForm({ ...form, report_type: e.target.value })}>
-                <option value="revenue">Revenue</option>
-                <option value="bookings">Bookings</option>
-                <option value="memberships">Memberships</option>
-                <option value="staff">Staff</option>
-                <option value="customers">Customers</option>
-                <option value="financial">Financial</option>
+                {REPORT_TYPES.map((v) => <option key={v} value={v}>{t(`scheduled.typeOption.${v}`)}</option>)}
               </select>
             </div>
             <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Frequency</label>
+              <label style={styles.label}>{t('scheduled.frequencyLabel')}</label>
               <select style={styles.input} value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })}>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
+                {FREQUENCIES.map((v) => <option key={v} value={v}>{t(`scheduled.frequencyOption.${v}`)}</option>)}
               </select>
             </div>
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Recipients (comma-separated emails)</label>
+            <label style={styles.label}>{t('scheduled.recipients')}</label>
             <input style={styles.input} value={form.recipients} onChange={(e) => setForm({ ...form, recipients: e.target.value })} />
           </div>
-          <Button type="submit">Create Schedule</Button>
+          <Button type="submit">{t('scheduled.create')}</Button>
         </form>
       )}
 
-      {loading ? <p style={styles.loading}>Loading...</p> : reports.length === 0 ? (
-        <p style={styles.loading}>No scheduled reports configured.</p>
+      {loading ? <p style={styles.loading}>{t('common:loading')}</p> : reports.length === 0 ? (
+        <p style={styles.loading}>{t('scheduled.empty')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
           {reports.map((r: any) => (
             <div key={r.id} style={styles.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>{r.name}</span>
-                <Badge variant={r.active !== false ? 'success' : 'neutral'}>{r.active !== false ? 'Active' : 'Inactive'}</Badge>
+                <Badge variant={r.active !== false ? 'success' : 'neutral'}>{r.active !== false ? t('scheduled.active') : t('scheduled.inactive')}</Badge>
               </div>
               <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                {r.report_type} · {r.frequency}{r.next_run ? ` · Next: ${new Date(r.next_run).toLocaleDateString()}` : ''}
+                {typeLabel(r.report_type)} · {frequencyLabel(r.frequency)}{r.next_run ? ` · ${t('scheduled.next', { date: formatDate(r.next_run) })}` : ''}
               </div>
             </div>
           ))}

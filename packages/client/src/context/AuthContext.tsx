@@ -9,6 +9,8 @@ interface User {
   role: string;
   tenant_id?: string;
   business_id?: string;
+  /** The language saved on the account (Phase 44); null when not chosen, so the device's applies. */
+  preferred_language?: string | null;
 }
 
 interface AuthState {
@@ -18,6 +20,8 @@ interface AuthState {
   featureFlags: Record<string, boolean>;
   login: (tenantId: string, email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Record a language just saved on the account (by the menu bar). */
+  setUserLanguage: (language: string) => void;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -57,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // The token carries no name/email; fill them in so the top bar can show who is signed in.
           apiClient.get('/v1/profile').then((res) => {
             const p = res.data.data;
-            if (p) setUser((u) => (u ? { ...u, email: p.email ?? u.email, first_name: p.first_name ?? u.first_name, last_name: p.last_name ?? u.last_name } : u));
+            if (p) setUser((u) => (u ? { ...u, email: p.email ?? u.email, first_name: p.first_name ?? u.first_name, last_name: p.last_name ?? u.last_name, preferred_language: p.preferred_language ?? null } : u));
           }).catch(() => { /* non-critical */ });
         } else {
           localStorage.removeItem('access_token');
@@ -102,6 +106,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadFeatureFlags();
   }
 
+  function setUserLanguage(language: string) {
+    setUser((u) => (u ? { ...u, preferred_language: language } : u));
+  }
+
   function logout() {
     const refreshToken = localStorage.getItem('refresh_token');
     const accessToken = localStorage.getItem('access_token');
@@ -127,7 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, featureFlags, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, featureFlags, login, logout, setUserLanguage }}>
       {children}
     </AuthContext.Provider>
   );

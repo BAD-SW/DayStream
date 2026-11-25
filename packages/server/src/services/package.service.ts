@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 // --- Interfaces ---
 
@@ -216,8 +217,8 @@ interface PurchaseInput {
 export async function purchasePackage(input: PurchaseInput) {
   // Get package to determine expiration
   const pkg = await getPackageById(input.packageId, input.businessId);
-  if (!pkg) throw new Error('Package not found');
-  if (pkg.status !== 'active' && !input.paid) throw new Error('Package is not available for purchase');
+  if (!pkg) throw new Error(msg('errors:package.packageNotFound'));
+  if (pkg.status !== 'active' && !input.paid) throw new Error(msg('errors:package.packageIsNotAvailableForPurchase'));
 
   // Check new customers only restriction
   if (pkg.new_customers_only && !input.paid) {
@@ -226,7 +227,7 @@ export async function purchasePackage(input: PurchaseInput) {
       [input.customerId, input.businessId],
     );
     if (history.length > 0) {
-      throw new Error('This intro package is only available to new customers');
+      throw new Error(msg('errors:package.thisIntroPackageIsOnlyAvailable'));
     }
     // Also check for completed appointments
     const { rows: bookings } = await adminPool.query(
@@ -234,7 +235,7 @@ export async function purchasePackage(input: PurchaseInput) {
       [input.customerId, input.businessId],
     );
     if (bookings.length > 0) {
-      throw new Error('This intro package is only available to new customers');
+      throw new Error(msg('errors:package.thisIntroPackageIsOnlyAvailable'));
     }
   }
 
@@ -333,11 +334,11 @@ export async function redeemPackageItem(input: RedeemInput) {
      WHERE pp.id = $1 AND pp.status = 'active'`,
     [input.purchaseId],
   );
-  if (purchaseRows.length === 0) throw new Error('Purchase not found or inactive');
+  if (purchaseRows.length === 0) throw new Error(msg('errors:package.purchaseNotFoundOrInactive'));
   const purchase = purchaseRows[0];
 
   if (purchase.expires_at && new Date(purchase.expires_at) < new Date()) {
-    throw new Error('Package has expired');
+    throw new Error(msg('errors:package.packageHasExpired'));
   }
 
   // Get the package item to check redemption type and limits
@@ -345,7 +346,7 @@ export async function redeemPackageItem(input: RedeemInput) {
     'SELECT * FROM pkg_package_items WHERE id = $1 AND package_id = $2',
     [input.packageItemId, purchase.package_id],
   );
-  if (itemRows.length === 0) throw new Error('Package item not found');
+  if (itemRows.length === 0) throw new Error(msg('errors:package.packageItemNotFound'));
   const item = itemRows[0];
 
   // Check remaining balance
@@ -353,9 +354,9 @@ export async function redeemPackageItem(input: RedeemInput) {
 
   if (item.redemption_type === 'minutes') {
     const minutesToRedeem = input.minutesRedeemed || 0;
-    if (minutesToRedeem <= 0) throw new Error('minutes_redeemed is required for time-pool items');
+    if (minutesToRedeem <= 0) throw new Error(msg('errors:package.minutesRedeemedIsRequiredForTime'));
     if (minutesToRedeem > remaining.remaining) {
-      throw new Error(`Insufficient minutes remaining. Available: ${remaining.remaining}, Requested: ${minutesToRedeem}`);
+      throw new Error(msg('errors:package.insufficientMinutesRemainingAvailableRequested', { remaining: remaining.remaining, minutesToRedeem }));
     }
 
     const { rows } = await adminPool.query(
@@ -368,7 +369,7 @@ export async function redeemPackageItem(input: RedeemInput) {
     // Sessions-based
     const qty = input.quantityRedeemed || 1;
     if (qty > remaining.remaining) {
-      throw new Error(`Insufficient sessions remaining. Available: ${remaining.remaining}, Requested: ${qty}`);
+      throw new Error(msg('errors:package.insufficientSessionsRemainingAvailableRequested', { remaining: remaining.remaining, qty }));
     }
 
     const { rows } = await adminPool.query(
@@ -389,7 +390,7 @@ export async function getRemainingBalance(purchaseId: string, packageItemId: str
     'SELECT * FROM pkg_package_items WHERE id = $1',
     [packageItemId],
   );
-  if (itemRows.length === 0) throw new Error('Package item not found');
+  if (itemRows.length === 0) throw new Error(msg('errors:package.packageItemNotFound'));
   const item = itemRows[0];
 
   if (item.redemption_type === 'minutes') {

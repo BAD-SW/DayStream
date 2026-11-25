@@ -10,6 +10,7 @@ import { adminPool } from '../db/pool';
 import { SUPPORTED_LANGUAGES } from '@daystream/shared';
 import * as forms from '../services/forms.service';
 import { countOutstandingForBookings } from '../services/form-status.service';
+import { msg } from '../i18n';
 
 /**
  * Forms a business builds (spec 51, gap 1). Any staff member can read them (they pick a form to
@@ -50,12 +51,12 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 formsRouter.get('/', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!businessId || !UUID_RE.test(businessId)) { error(res, msg('errors:forms.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownBusiness(req, businessId))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     // Chart templates are clinical: listed only for roles that may use charts.
     const kind = req.query.kind === 'chart' ? 'chart' : 'form';
     if (kind === 'chart' && !(await hasClinicalAccess((req as AuthenticatedRequest).user))) {
-      error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return;
+      error(res, msg('errors:forms.insufficientPermissions'), 'FORBIDDEN', 403); return;
     }
     success(res, await forms.listForms(businessId, kind));
   } catch (e) { fail(res, e, 'Failed to list forms'); }
@@ -66,8 +67,8 @@ formsRouter.get('/', requirePermission('customers:read'), async (req: Request, r
 formsRouter.get('/outstanding', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!businessId || !UUID_RE.test(businessId)) { error(res, msg('errors:forms.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownBusiness(req, businessId))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const ids = String(req.query.booking_ids ?? '').split(',').map((x) => x.trim()).filter((x) => UUID_RE.test(x));
     success(res, await countOutstandingForBookings(businessId, ids));
   } catch (e) { fail(res, e, 'Failed to check forms'); }
@@ -78,11 +79,11 @@ formsRouter.get('/outstanding', requirePermission('customers:read'), async (req:
 formsRouter.get('/system', requirePermission('settings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!businessId || !UUID_RE.test(businessId)) { error(res, msg('errors:forms.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownBusiness(req, businessId))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const kind = req.query.kind === 'chart' ? 'chart' : 'form';
     if (kind === 'chart' && !(await hasClinicalAccess((req as AuthenticatedRequest).user))) {
-      error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return;
+      error(res, msg('errors:forms.insufficientPermissions'), 'FORBIDDEN', 403); return;
     }
     const { listSystemForms } = await import('../services/system-forms.service');
     success(res, await listSystemForms(kind, { activeOnly: true }));
@@ -95,11 +96,11 @@ const fromSystemSchema = Joi.object({ business_id: Joi.string().uuid().required(
 formsRouter.post('/from-system/:id', requirePermission('settings:*'), validate(fromSystemSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    if (!(await ownBusiness(req, req.body.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownBusiness(req, req.body.business_id))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const { getSystemForm } = await import('../services/system-forms.service');
     const sys = await getSystemForm(req.params.id);
-    if (!sys || !sys.isActive) { error(res, 'System form not found', 'NOT_FOUND', 404); return; }
-    if (sys.kind === 'chart' && !(await hasClinicalAccess(authReq.user))) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+    if (!sys || !sys.isActive) { error(res, msg('errors:forms.systemFormNotFound'), 'NOT_FOUND', 404); return; }
+    if (sys.kind === 'chart' && !(await hasClinicalAccess(authReq.user))) { error(res, msg('errors:forms.insufficientPermissions'), 'FORBIDDEN', 403); return; }
     const created = await forms.createForm({
       tenantId: authReq.tenantId, businessId: req.body.business_id, createdBy: authReq.user.sub,
       kind: sys.kind, name: `Copy of ${sys.name.replace(/^Starter:\s*/, '')}`.slice(0, 200),
@@ -114,10 +115,10 @@ formsRouter.post('/from-system/:id', requirePermission('settings:*'), validate(f
 formsRouter.get('/:id', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!businessId || !UUID_RE.test(businessId)) { error(res, msg('errors:forms.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownBusiness(req, businessId))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const form = await forms.getForm(businessId, req.params.id);
-    if (!form || form.status === 'archived') { error(res, 'Form not found', 'NOT_FOUND', 404); return; }
+    if (!form || form.status === 'archived') { error(res, msg('errors:forms.formNotFound'), 'NOT_FOUND', 404); return; }
     success(res, form);
   } catch (e) { fail(res, e, 'Failed to load form'); }
 });
@@ -150,7 +151,7 @@ formsRouter.post('/', requirePermission('settings:*'), validate(createSchema), a
   try {
     const authReq = req as AuthenticatedRequest;
     const b = req.body;
-    if (!(await ownBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownBusiness(req, b.business_id))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const created = await forms.createForm({
       tenantId: authReq.tenantId,
       businessId: b.business_id,
@@ -174,7 +175,7 @@ formsRouter.put('/:id', requirePermission('settings:*'), validate(updateSchema),
   try {
     const authReq = req as AuthenticatedRequest;
     const b = req.body;
-    if (!(await ownBusiness(req, b.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownBusiness(req, b.business_id))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const updated = await forms.updateForm(b.business_id, req.params.id, {
       name: b.name,
       language: b.language,
@@ -193,7 +194,7 @@ const businessOnly = Joi.object({ business_id: Joi.string().uuid().required() })
 formsRouter.delete('/:id', requirePermission('settings:*'), validate(businessOnly), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    if (!(await ownBusiness(req, req.body.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownBusiness(req, req.body.business_id))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     await forms.archiveForm(req.body.business_id, req.params.id, authReq.user.sub, authReq.tenantId);
     success(res, { archived: true });
   } catch (e) { fail(res, e, 'Failed to delete form'); }
@@ -203,7 +204,7 @@ formsRouter.delete('/:id', requirePermission('settings:*'), validate(businessOnl
 formsRouter.post('/:id/duplicate', requirePermission('settings:*'), validate(businessOnly), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    if (!(await ownBusiness(req, req.body.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownBusiness(req, req.body.business_id))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const copy = await forms.duplicateForm(req.body.business_id, req.params.id, authReq.user.sub, authReq.tenantId);
     success(res, copy, undefined, 201);
   } catch (e) { fail(res, e, 'Failed to duplicate form'); }
@@ -218,7 +219,7 @@ const languageSchema = Joi.object({
 formsRouter.post('/:id/language-versions', requirePermission('settings:*'), validate(languageSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    if (!(await ownBusiness(req, req.body.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await ownBusiness(req, req.body.business_id))) { error(res, msg('errors:forms.businessNotFound'), 'NOT_FOUND', 404); return; }
     const created = await forms.addLanguageVersion(
       req.body.business_id, req.params.id, req.body.language, authReq.user.sub, authReq.tenantId,
     );

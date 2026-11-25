@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { newAppointmentPath, editAppointmentPath } from './AppointmentPage';
 import { useCheckInFormsPrompt } from '../components/forms/useCheckInFormsPrompt';
 import { FormsToCompleteModal } from '../components/forms/FormsToCompleteModal';
@@ -9,6 +10,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
 import { NoShowModal } from '../components/booking/NoShowFee';
 import { formatCurrency } from '../utils/currency';
+import { formatDateTime, formatTime } from '../utils/format';
 import * as bookingsApi from '../api/bookings';
 import type { Booking } from '../api/bookings';
 import { useContextManager } from '../context/ContextManager';
@@ -18,6 +20,7 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
 };
 
 export function Bookings() {
+  const { t } = useTranslation('portal');
   const navigate = useNavigate();
   // The message of a booking just saved on the New / Edit Appointment screen.
   const savedMessage = (useLocation().state as { toast?: string } | null)?.toast || '';
@@ -90,10 +93,10 @@ export function Bookings() {
     try {
       const out = await bookingsApi.customerCancelBooking(b.id, businessId);
       setNotice({ ok: true, text: out.refund
-        ? `Appointment cancelled. ${formatCurrency(out.refund.amount)} ${out.refund.to === 'credit' ? 'was added to your account credit' : 'will be refunded to your card'}.`
-        : 'Appointment cancelled.' });
+        ? t(out.refund.to === 'credit' ? 'bookings.notice.cancelledCredit' : 'bookings.notice.cancelledCard', { amount: formatCurrency(out.refund.amount) })
+        : t('bookings.notice.cancelled') });
       fetchBookings();
-    } catch (e: any) { setNotice({ ok: false, text: e?.response?.data?.error || 'The appointment could not be cancelled.' }); }
+    } catch (e: any) { setNotice({ ok: false, text: e?.response?.data?.error || t('bookings.notice.cancelFailed') }); }
   };
 
   const fetchBookings = useCallback(async () => {
@@ -153,12 +156,12 @@ export function Bookings() {
     const values = await bookingsApi.getBookingColumnValues(businessId, key, tableFilters);
     return values.map((v) => ({
       value: v.value, count: v.count,
-      label: key === 'status' ? v.value.replace('_', ' ')
-        : key === 'customer_first_name' ? (v.label || 'Walk-in')
-        : key === 'staff_first_name' ? (v.label || 'No staff member')
+      label: key === 'status' ? t(`bookings.status.${v.value}`, { defaultValue: v.value.replace('_', ' ') })
+        : key === 'customer_first_name' ? (v.label || t('bookings.walkIn'))
+        : key === 'staff_first_name' ? (v.label || t('bookings.noStaff'))
         : v.label || v.value,
     }));
-  }, [businessId, tableFilters]);
+  }, [businessId, tableFilters, t]);
 
   // Forms the customer still has to complete are shown before checking in; staff can always check in anyway.
   const { requestCheckIn, prompt: formsPrompt } = useCheckInFormsPrompt(businessId);
@@ -176,11 +179,11 @@ export function Bookings() {
       if (action === 'confirm') await bookingsApi.confirmBooking(booking.id, businessId);
       else if (action === 'cancel') await bookingsApi.cancelBooking(booking.id, businessId);
       else if (action === 'check-in-now') await bookingsApi.checkInBooking(booking.id, businessId);
-      else if (action === 'check-in-anyway') await bookingsApi.checkInBooking(booking.id, businessId, { reason: overrideFor?.reason || 'Checked in by staff' });
+      else if (action === 'check-in-anyway') await bookingsApi.checkInBooking(booking.id, businessId, { reason: overrideFor?.reason || 'Checked in by staff' /* i18n-ignore: recorded on the check-in, not shown here */ });
       else if (action === 'start') await bookingsApi.startBooking(booking.id, businessId);
       else if (action === 'ready') {
         const out = await bookingsApi.readyBooking(booking.id, businessId);
-        setNotice({ ok: true, text: out.emailed ? 'The customer has been told, on their screen and by email.' : 'The customer has been told on their screen. They have no email address on file.' });
+        setNotice({ ok: true, text: out.emailed ? t('bookings.notice.readyEmailed') : t('bookings.notice.readyNoEmail') });
       }
       else if (action === 'reset') await bookingsApi.resetBooking(booking.id, businessId);
       else if (action === 'checkout') { navigate(`/checkout?appointment=${booking.id}`); return; }
@@ -189,10 +192,10 @@ export function Bookings() {
     } catch (e: any) {
       // The check-in rules refused (too early or late): staff decide whether to check in anyway.
       if (action === 'check-in-now' && e?.response?.data?.code === 'CHECK_IN_REFUSED') {
-        setOverrideFor({ booking: full, reason: e.response.data.error || 'Outside the check-in rules' });
+        setOverrideFor({ booking: full, reason: e.response.data.error || t('bookings.outsideRules') });
         return;
       }
-      setNotice({ ok: false, text: errorText(e, 'That did not work. Please try again.') });
+      setNotice({ ok: false, text: errorText(e, t('bookings.notice.actionFailed')) });
     }
   };
 
@@ -201,41 +204,41 @@ export function Bookings() {
 
   const waitedFor = (since: string) => {
     const mins = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60000));
-    return mins < 1 ? 'Just arrived' : mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${mins % 60} min`;
+    return mins < 1 ? t('bookings.waited.justArrived') : mins < 60 ? t('bookings.waited.minutes', { n: mins }) : t('bookings.waited.hours', { h: Math.floor(mins / 60), m: mins % 60 });
   };
   const allColumns = [
-    { key: 'booking_reference', header: 'Ref', width: '120px', sortable: true },
+    { key: 'booking_reference', header: t('bookings.col.ref'), width: '120px', sortable: true },
     {
-      key: 'customer_first_name', header: 'Customer', sortable: true,
-      render: (_: any, row: Booking) => row.customer_first_name ? `${row.customer_first_name} ${row.customer_last_name}` : (row as any).walk_in_name || 'Walk-in',
+      key: 'customer_first_name', header: t('bookings.col.customer'), sortable: true,
+      render: (_: any, row: Booking) => row.customer_first_name ? `${row.customer_first_name} ${row.customer_last_name}` : (row as any).walk_in_name || t('bookings.walkIn'),
     },
-    { key: 'service_name', header: 'Service', sortable: true, render: (v: string, row: Booking) => (row.addon_names
+    { key: 'service_name', header: t('bookings.col.service'), sortable: true, render: (v: string, row: Booking) => (row.addon_names
       // with add-ons: a plus after the service; the add-ons show on hover and to screen readers
-      ? <span title={`Add-ons: ${row.addon_names}`} aria-label={`${v}, with add-ons: ${row.addon_names}`}>{v} +</span>
+      ? <span title={t('bookings.addOnsTitle', { names: row.addon_names })} aria-label={t('bookings.addOnsAria', { service: v, names: row.addon_names })}>{v} +</span>
       : v) },
     {
-      key: 'start_time', header: 'Date/Time', sortable: true, filter: 'date' as const,
-      render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone }),
+      key: 'start_time', header: t('bookings.col.dateTime'), sortable: true, filter: 'date' as const,
+      render: (val: string) => formatDateTime(val, businessTimezone, { dateStyle: 'short', timeStyle: 'short' }),
     },
     {
-      key: 'status', header: 'Status', sortable: true,
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
+      key: 'status', header: t('bookings.col.status'), sortable: true,
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{t(`bookings.status.${val}`, { defaultValue: val.replace('_', ' ') })}</Badge>,
     },
     {
-      key: 'staff_first_name', header: 'Staff', sortable: true,
+      key: 'staff_first_name', header: t('bookings.col.staff'), sortable: true,
       render: (_: any, row: Booking) => row.staff_first_name ? `${row.staff_first_name} ${row.staff_last_name}` : '—',
     },
     {
       key: 'actions', header: '', filter: false as const,
       render: (_: any, row: Booking) => (
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-          {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
-          {row.status === 'confirmed' && <ActionBtn label="Check-in" onClick={() => handleAction('check-in', row)} />}
-          {row.status === 'confirmed' && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
-          {row.status === 'confirmed' && row.customer_id && <ActionBtn label="No-show" danger={isLate(row)} onClick={() => setPendingNoShow(row)} />}
-          {row.status === 'checked_in' && <ActionBtn label="Start" onClick={() => handleAction('start', row)} />}
-          {(row.status === 'checked_in' || row.status === 'in_progress') && <ActionBtn label="Check-out" onClick={() => handleAction('checkout', row)} />}
-          {row.status === 'checked_in' && <ActionBtn label="Reset" onClick={() => handleAction('reset', row)} />}
+          {row.status === 'pending' && <ActionBtn label={t('common:confirm')} onClick={() => handleAction('confirm', row)} />}
+          {row.status === 'confirmed' && <ActionBtn label={t('bookings.action.checkIn')} onClick={() => handleAction('check-in', row)} />}
+          {row.status === 'confirmed' && <ActionBtn label={t('common:cancel')} onClick={() => handleAction('cancel', row)} />}
+          {row.status === 'confirmed' && row.customer_id && <ActionBtn label={t('bookings.action.noShow')} danger={isLate(row)} onClick={() => setPendingNoShow(row)} />}
+          {row.status === 'checked_in' && <ActionBtn label={t('bookings.action.start')} onClick={() => handleAction('start', row)} />}
+          {(row.status === 'checked_in' || row.status === 'in_progress') && <ActionBtn label={t('bookings.action.checkOut')} onClick={() => handleAction('checkout', row)} />}
+          {row.status === 'checked_in' && <ActionBtn label={t('bookings.action.reset')} onClick={() => handleAction('reset', row)} />}
         </div>
       ),
     },
@@ -243,7 +246,7 @@ export function Bookings() {
   const customerActions = {
     key: 'actions', header: '', filter: false as const,
     render: (_: any, row: Booking) => customerMayCancel(row)
-      ? <ActionBtn label="Cancel" onClick={() => setToCancel(row)} />
+      ? <ActionBtn label={t('common:cancel')} onClick={() => setToCancel(row)} />
       : null,
   };
   const columns = isCustomer
@@ -253,67 +256,67 @@ export function Bookings() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>{isCustomer ? 'My Bookings' : 'Appointments'}</h1>
+        <h1 style={styles.title}>{isCustomer ? t('bookings.title.customer') : t('bookings.title.staff')}</h1>
         {savedMessage && <span role="status" style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success)' }}>{savedMessage}</span>}
         <div style={{ display: isCustomer ? 'none' : 'flex', gap: 'var(--space-sm)' }}>
           {/* Calendar | List (THE-23 4.1): the same switch as on the calendar */}
-          <div role="group" aria-label="Calendar or list" style={styles.seg}>
-            <button type="button" aria-pressed={false} onClick={() => navigate('/bookings/calendar')} style={styles.segBtn}>Calendar</button>
-            <button type="button" aria-pressed={true} style={{ ...styles.segBtn, background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', cursor: 'default' }}>List</button>
+          <div role="group" aria-label={t('bookings.calendarOrList')} style={styles.seg}>
+            <button type="button" aria-pressed={false} onClick={() => navigate('/bookings/calendar')} style={styles.segBtn}>{t('bookings.calendar')}</button>
+            <button type="button" aria-pressed={true} style={{ ...styles.segBtn, background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', cursor: 'default' }}>{t('bookings.list')}</button>
           </div>
-          <button style={styles.navBtn} onClick={() => navigate(newAppointmentPath({}, '/bookings/list'))}>New Appointment</button>
-          <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>New Sale</button>
-          <button style={styles.navBtn} onClick={() => navigate('/orders')}>Orders</button>
+          <button style={styles.navBtn} onClick={() => navigate(newAppointmentPath({}, '/bookings/list'))}>{t('bookings.newAppointment')}</button>
+          <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>{t('bookings.newSale')}</button>
+          <button style={styles.navBtn} onClick={() => navigate('/orders')}>{t('bookings.orders')}</button>
         </div>
       </div>
 
       {isCustomer && cancelSettings && (
         <p style={styles.policy}>
           {cancelSettings.customer_cancel_enabled
-            ? `You can cancel an appointment here up to ${cancelSettings.customer_cancel_hours} hours before it starts. A visit you paid in advance is returned ${cancelSettings.cancel_refund_to === 'credit' ? 'as account credit' : 'to your card'}.`
-            : 'To cancel an appointment, please contact the business.'}
+            ? t('bookings.policy.enabled', { count: cancelSettings.customer_cancel_hours, where: t(cancelSettings.cancel_refund_to === 'credit' ? 'bookings.refund.credit' : 'bookings.refund.card') })
+            : t('bookings.policy.disabled')}
         </p>
       )}
       {notice && (
         <p style={{ ...styles.policy, color: notice.ok ? 'var(--color-success)' : 'var(--color-error)' }} role="status">
           {notice.text}
-          {notice.orderId && <> <button type="button" style={styles.actionBtn} onClick={() => navigate(`/checkout?order=${notice.orderId}`)}>Collect now</button></>}
+          {notice.orderId && <> <button type="button" style={styles.actionBtn} onClick={() => navigate(`/checkout?order=${notice.orderId}`)}>{t('bookings.notice.collectNow')}</button></>}
         </p>
       )}
 
       {!isCustomer && (
         <section aria-labelledby="waiting-title" style={{ ...styles.pane, ...styles.waitPane }}>
           <div style={styles.paneHead}>
-            <h2 id="waiting-title" style={styles.paneTitle}>Waiting list{waiting.length > 0 ? ` (${waiting.length})` : ''}</h2>
-            <span style={styles.paneHint}>Customers who have checked in and are waiting to be seen</span>
+            <h2 id="waiting-title" style={styles.paneTitle}>{waiting.length > 0 ? t('bookings.waiting.titleCount', { n: waiting.length }) : t('bookings.waiting.title')}</h2>
+            <span style={styles.paneHint}>{t('bookings.waiting.hint')}</span>
           </div>
           {waiting.length === 0 ? (
-            <p style={{ ...styles.empty, paddingTop: 'var(--space-xl)' }}>Nobody is waiting.</p>
+            <p style={{ ...styles.empty, paddingTop: 'var(--space-xl)' }}>{t('bookings.waiting.nobody')}</p>
           ) : (
             <ul style={styles.waitList}>
               {waiting.map((w) => (
                 <li key={w.id} style={styles.waitRow} onClick={() => navigate(editAppointmentPath(w.id, '/bookings/list'))}>
                   <div style={styles.waitMain}>
                     <strong>{w.customer_name}</strong>
-                    <span style={styles.waitMeta}>{w.service_name}{w.staff_name ? ` with ${w.staff_name}` : ''}</span>
+                    <span style={styles.waitMeta}>{w.staff_name ? t('bookings.waiting.withStaff', { service: w.service_name, staff: w.staff_name }) : w.service_name}</span>
                   </div>
                   <div style={styles.waitTags}>
-                    <span style={styles.waitTime} title={`Checked in ${new Date(w.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}`}>
-                      Waiting {waitedFor(w.checked_in_at)}
+                    <span style={styles.waitTime} title={t('bookings.waiting.checkedInAt', { time: formatTime(w.checked_in_at, businessTimezone, { hour: '2-digit' }) })}>
+                      {t('bookings.waiting.waiting', { time: waitedFor(w.checked_in_at) })}
                     </span>
                     {w.forms_outstanding > 0 && w.customer_id && (
-                      <button type="button" style={styles.formsBtn} aria-label={`Complete forms for ${w.customer_name}`}
+                      <button type="button" style={styles.formsBtn} aria-label={t('bookings.waiting.completeFormsFor', { name: w.customer_name })}
                         onClick={(e) => { e.stopPropagation(); setFormsFor(w); }}>
-                        {`${w.forms_outstanding} form${w.forms_outstanding === 1 ? '' : 's'} to complete`}
+                        {t('bookings.waiting.forms', { count: w.forms_outstanding })}
                       </button>
                     )}
-                    {w.ready_at && <Badge variant="success">Told to come in</Badge>}
+                    {w.ready_at && <Badge variant="success">{t('bookings.waiting.toldToCome')}</Badge>}
                   </div>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                    <ActionBtn label={w.ready_at ? 'Tell again' : 'Ready for you'} onClick={() => handleAction('ready', w)} />
-                    <ActionBtn label="Start" onClick={() => handleAction('start', w)} />
-                    <ActionBtn label="Check-out" onClick={() => handleAction('checkout', w)} />
-                    <ActionBtn label="Reset" onClick={() => handleAction('reset', w)} />
+                    <ActionBtn label={w.ready_at ? t('bookings.action.tellAgain') : t('bookings.action.readyForYou')} onClick={() => handleAction('ready', w)} />
+                    <ActionBtn label={t('bookings.action.start')} onClick={() => handleAction('start', w)} />
+                    <ActionBtn label={t('bookings.action.checkOut')} onClick={() => handleAction('checkout', w)} />
+                    <ActionBtn label={t('bookings.action.reset')} onClick={() => handleAction('reset', w)} />
                   </div>
                 </li>
               ))}
@@ -325,23 +328,23 @@ export function Bookings() {
       <section aria-labelledby="appointments-title" style={isCustomer ? undefined : { ...styles.pane, ...styles.apptPane }}>
         {!isCustomer && (
           <div style={styles.paneHead}>
-            <h2 id="appointments-title" style={styles.paneTitle}>Appointments</h2>
+            <h2 id="appointments-title" style={styles.paneTitle}>{t('bookings.title.staff')}</h2>
             <div style={styles.range}>
-              <label style={styles.rangeLabel}>From
+              <label style={styles.rangeLabel}>{t('bookings.range.from')}
                 <input type="date" style={styles.dateInput} value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} />
               </label>
-              <label style={styles.rangeLabel}>To
+              <label style={styles.rangeLabel}>{t('bookings.range.to')}
                 <input type="date" style={styles.dateInput} value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} />
               </label>
               <button type="button" style={styles.actionBtn} onClick={() => {
                 const d = new Intl.DateTimeFormat('en-CA', { timeZone: businessTimezone }).format(new Date());
                 setDateFrom(d); setDateTo(d);
-              }}>Today</button>
-              <button type="button" style={styles.actionBtn} onClick={() => { setDateFrom(''); setDateTo(''); }}>All dates</button>
+              }}>{t('bookings.range.today')}</button>
+              <button type="button" style={styles.actionBtn} onClick={() => { setDateFrom(''); setDateTo(''); }}>{t('bookings.range.allDates')}</button>
             </div>
           </div>
         )}
-      <Table columns={columns} data={bookings} loading={loading} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(editAppointmentPath(row.id, '/bookings/list'))}
+      <Table columns={columns} data={bookings} loading={loading} emptyMessage={t('bookings.empty')} mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(editAppointmentPath(row.id, '/bookings/list'))}
         filters={tableFilters} onFiltersChange={setTableFilters} filterOptions={filterOptions}
         onLoadMore={loadMore} hasMore={bookings.length < total} loadingMore={loadingMore} />
       </section>
@@ -355,10 +358,10 @@ export function Bookings() {
 
       <ConfirmDialog
         open={!!overrideFor}
-        title="Check in anyway?"
-        message={overrideFor ? `${overrideFor.reason}. Check ${overrideFor.booking.customer_first_name || 'this customer'} in anyway? The reason is kept on the check-in record.` : ''}
-        confirmLabel="Check in anyway"
-        cancelLabel="Not now"
+        title={t('bookings.override.title')}
+        message={overrideFor ? t('bookings.override.message', { reason: overrideFor.reason, name: overrideFor.booking.customer_first_name || t('bookings.override.thisCustomer') }) : ''}
+        confirmLabel={t('bookings.override.confirm')}
+        cancelLabel={t('bookings.override.cancel')}
         variant="primary"
         onClose={() => setOverrideFor(null)}
         onConfirm={() => { if (overrideFor) { const b = overrideFor.booking; handleAction('check-in-anyway', b); setOverrideFor(null); } }}
@@ -373,10 +376,10 @@ export function Bookings() {
 
       <ConfirmDialog
         open={!!toCancel}
-        title="Cancel this appointment?"
-        message={toCancel ? `${toCancel.service_name}, ${new Date(toCancel.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: businessTimezone })}.` : ''}
-        confirmLabel="Cancel appointment"
-        cancelLabel="Keep it"
+        title={t('bookings.cancel.title')}
+        message={toCancel ? t('bookings.cancel.message', { service: toCancel.service_name, when: formatDateTime(toCancel.start_time, businessTimezone) }) : ''}
+        confirmLabel={t('bookings.cancel.confirm')}
+        cancelLabel={t('bookings.cancel.keep')}
         variant="destructive"
         onClose={() => setToCancel(null)}
         onConfirm={() => { if (toCancel) customerCancel(toCancel); }}
@@ -390,9 +393,10 @@ export function Bookings() {
 const LATE_MINUTES = 15;
 
 function ActionBtn({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
+  const { t } = useTranslation('portal');
   return (
     <button onClick={(e) => { e.stopPropagation(); onClick(); }} style={danger ? { ...styles.actionBtn, ...styles.lateBtn } : styles.actionBtn}
-      title={danger ? `More than ${LATE_MINUTES} minutes late` : undefined}>
+      title={danger ? t('bookings.lateTitle', { n: LATE_MINUTES }) : undefined}>
       {label}
     </button>
   );

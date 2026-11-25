@@ -5,6 +5,7 @@ import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as inbox from '../services/inbox.service';
 import * as segments from '../services/customer-segments.service';
+import { msg } from '../i18n';
 
 /**
  * Inbox (THE-18). Staff routes need an Inbox role (owner, manager, front desk) in the business;
@@ -18,7 +19,7 @@ inboxRouter.use(tenantContext);
 function fail(res: Response, err: any, what: string) {
   if (err instanceof inbox.InboxError) { error(res, err.message, err.code, err.status); return; }
   console.error(`Inbox: ${what}`, err?.message || err);
-  error(res, `Failed to ${what}`, 'INTERNAL_ERROR', 500);
+  error(res, msg('errors:inbox.failedTo', { what }), 'INTERNAL_ERROR', 500);
 }
 
 /** The business of the request, if the caller may work in it. */
@@ -40,10 +41,10 @@ async function businessOf(req: Request): Promise<string | null> {
 async function requireInbox(req: Request, res: Response, next: NextFunction) {
   try {
     const businessId = await businessOf(req);
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!businessId) { error(res, msg('errors:inbox.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const role = await inbox.inboxRoleOfUser((req as AuthenticatedRequest).user.sub);
     const perms = (req as AuthenticatedRequest).user.permissions || [];
-    if (role === 'staff' && !perms.includes('*:*')) { error(res, 'The Inbox is for owners, managers and front desk', 'FORBIDDEN', 403); return; }
+    if (role === 'staff' && !perms.includes('*:*')) { error(res, msg('errors:inbox.theInboxIsForOwnersManagers'), 'FORBIDDEN', 403); return; }
     (req as any).businessId = businessId;
     (req as any).inboxRole = role;
     next();
@@ -53,7 +54,7 @@ async function requireInbox(req: Request, res: Response, next: NextFunction) {
 /** Owners and managers change the Inbox settings. */
 function requireManager(req: Request, res: Response, next: NextFunction) {
   const role = (req as any).inboxRole as inbox.InboxRole;
-  if (role !== 'owner' && role !== 'manager') { error(res, 'Only owners and managers can change the Inbox settings', 'FORBIDDEN', 403); return; }
+  if (role !== 'owner' && role !== 'manager') { error(res, msg('errors:inbox.onlyOwnersAndManagersCanChange'), 'FORBIDDEN', 403); return; }
   next();
 }
 
@@ -79,7 +80,7 @@ inboxRouter.get('/customer/messages', async (req: Request, res: Response) => {
 inboxRouter.post('/customer/messages', async (req: Request, res: Response) => {
   try {
     const me = await ownCustomerIn(req);
-    if (!me) { error(res, 'You are not a customer of this business', 'NOT_FOUND', 404); return; }
+    if (!me) { error(res, msg('errors:inbox.youAreNotACustomerOf'), 'NOT_FOUND', 404); return; }
     success(res, await inbox.receiveMessage({ businessId: me.businessId, customerId: me.customerId, channel: 'in_app', body: req.body.body }), undefined, 201);
   } catch (err: any) { fail(res, err, 'send the message'); }
 });
@@ -127,7 +128,7 @@ inboxRouter.get('/conversations/:id', requireInbox, async (req: Request, res: Re
   try {
     const businessId = (req as any).businessId;
     const conv = await inbox.getConversation(req.params.id, businessId);
-    if (!conv) { error(res, 'Conversation not found', 'NOT_FOUND', 404); return; }
+    if (!conv) { error(res, msg('errors:inbox.conversationNotFound'), 'NOT_FOUND', 404); return; }
     // Opening it reads it (unless asked not to, e.g. after "mark unread").
     if (conv.unread && req.query.peek !== 'true') { await inbox.setUnread(conv.id, businessId, false); conv.unread = false; }
     success(res, conv);

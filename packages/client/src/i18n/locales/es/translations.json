@@ -1,0 +1,19 @@
+{
+  "dialog.title": "Traducciones: {{name}}",
+  "defaultLanguage": "Idioma predeterminado",
+  "column.language": "Idioma",
+  "column.translation": "Traducción",
+  "field.name": "Nombre",
+  "field.short_description": "Breve descripción",
+  "field.description": "Descripción",
+  "state.outOfDate": "Obsoleto",
+  "translate.button": "Traducir",
+  "translate.into": "Traducir a {{language}}",
+  "replace.message": "La fila {{language}} ya contiene texto. ¿Quieres reemplazarla con la traducción de Google?",
+  "discard.message": "Tienes traducciones que no se han guardado. ¿Descartarlas?",
+  "empty": "Esta empresa aún no ofrece otros idiomas. Añade idiomas en la configuración de la empresa y luego traduce aquí.",
+  "needsSave": "Primero guarda este registro y luego tradúcelo.",
+  "error.load": "No se pudieron cargar las traducciones.",
+  "error.translate": "No se pudo realizar la traducción.",
+  "error.save": "No se pudieron guardar las traducciones."
+}

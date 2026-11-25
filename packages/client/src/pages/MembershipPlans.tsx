@@ -1,3 +1,4 @@
+import { showMessage } from '../design-system/components/feedback/dialogs';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
@@ -5,12 +6,10 @@ import { Button } from '../design-system/components/actions/Button';
 import * as membershipsApi from '../api/memberships';
 import type { MembershipPlan } from '../api/memberships';
 import { formatCurrency } from '../utils/currency';
-
-const TYPE_LABELS: Record<string, string> = {
-  unlimited: 'Unlimited', credit: 'Credit', hybrid: 'Hybrid', punch_card: 'Punch Card', intro_package: 'Intro',
-};
+import { useTranslation } from 'react-i18next';
 
 export function MembershipPlans() {
+  const { t } = useTranslation('offerings');
   const navigate = useNavigate();
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +44,7 @@ export function MembershipPlans() {
         await membershipsApi.updatePlan(plan.id, businessId, { status: 'active' });
         setPlans(plans.map((p) => p.id === plan.id ? { ...p, status: 'active' } : p));
       }
-    } catch { alert('Failed to update plan status'); }
+    } catch { void showMessage({ message: t('membershipPlans.statusFailed'), tone: 'error' }); }
   };
 
   const resetForm = () => {
@@ -103,7 +102,7 @@ export function MembershipPlans() {
       setEditingPlan(null);
       resetForm();
     } catch (err: any) {
-      setCreateError(err.response?.data?.error || 'Failed to save plan');
+      setCreateError(err.response?.data?.error || t('membershipPlans.saveFailed'));
     } finally {
       setCreating(false);
     }
@@ -112,108 +111,108 @@ export function MembershipPlans() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <button style={styles.back} onClick={() => navigate('/memberships')}>← Memberships</button>
+        <button style={styles.back} onClick={() => navigate('/memberships')}>{t('membershipPlans.back')}</button>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={styles.title}>Membership Plans</h1>
-          <Button onClick={() => showCreate ? (setShowCreate(false), setEditingPlan(null)) : openCreate()}>{showCreate ? 'Cancel' : 'Create Plan'}</Button>
+          <h1 style={styles.title}>{t('membershipPlans.title')}</h1>
+          <Button onClick={() => showCreate ? (setShowCreate(false), setEditingPlan(null)) : openCreate()}>{showCreate ? t('common:cancel') : t('memberships.createPlan')}</Button>
         </div>
       </div>
 
       {showCreate && (
         <div style={styles.createForm}>
-          <h3 style={{ margin: '0 0 16px 0', color: 'var(--color-text)' }}>{editingPlan ? 'Edit Plan' : 'New Plan'}</h3>
+          <h3 style={{ margin: '0 0 16px 0', color: 'var(--color-text)' }}>{editingPlan ? t('membershipPlans.edit') : t('membershipPlans.new')}</h3>
           {createError && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-base)' }}>{createError}</p>}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' as const, gap: '12px' }}>
             <div style={styles.formRow}>
               <div style={styles.formField}>
-                <label style={styles.label}>Name *</label>
-                <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="e.g. Gold Monthly" />
+                <label style={styles.label}>{t('shared.nameRequired')}</label>
+                <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder={t('membershipPlans.exampleName')} />
               </div>
               <div style={styles.formField}>
-                <label style={styles.label}>Type *</label>
+                <label style={styles.label}>{t('membershipPlans.typeRequired')}</label>
                 <select style={styles.input} value={form.plan_type} onChange={(e) => setForm({ ...form, plan_type: e.target.value })}>
-                  <option value="unlimited">Unlimited</option>
-                  <option value="credit">Credit-based</option>
-                  <option value="hybrid">Hybrid</option>
-                  <option value="punch_card">Punch Card</option>
-                  <option value="intro_package">Intro Package</option>
+                  <option value="unlimited">{t('membershipPlans.planType.unlimited')}</option>
+                  <option value="credit">{t('membershipPlans.creditBased')}</option>
+                  <option value="hybrid">{t('membershipPlans.planType.hybrid')}</option>
+                  <option value="punch_card">{t('membershipPlans.planType.punch_card')}</option>
+                  <option value="intro_package">{t('membershipPlans.introPackage')}</option>
                 </select>
                 <div style={styles.typeHelper}>
-                  {form.plan_type === 'unlimited' && <span>Flat fee for unlimited access to services during the billing cycle.</span>}
-                  {form.plan_type === 'credit' && <span>Customer receives a set number of credits per cycle to book services.</span>}
-                  {form.plan_type === 'hybrid' && <span>Unlimited access to some services, credit-based for others.</span>}
-                  {form.plan_type === 'punch_card' && <span>Pre-paid fixed number of sessions. No recurring billing — expires after use or time limit.</span>}
-                  {form.plan_type === 'intro_package' && <span>One-time introductory offer for new customers. Limited sessions with an expiration.</span>}
+                  {form.plan_type === 'unlimited' && <span>{t('membershipPlans.help.unlimited')}</span>}
+                  {form.plan_type === 'credit' && <span>{t('membershipPlans.help.credit')}</span>}
+                  {form.plan_type === 'hybrid' && <span>{t('membershipPlans.help.hybrid')}</span>}
+                  {form.plan_type === 'punch_card' && <span>{t('membershipPlans.help.punch_card')}</span>}
+                  {form.plan_type === 'intro_package' && <span>{t('membershipPlans.help.intro_package')}</span>}
                 </div>
               </div>
             </div>
             <div style={styles.formField}>
-              <label style={styles.label}>Description</label>
-              <input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Brief description of what's included" />
+              <label style={styles.label}>{t('shared.description')}</label>
+              <input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('membershipPlans.briefDescription')} />
             </div>
             <div style={styles.formRow}>
               <div style={styles.formField}>
-                <label style={styles.label}>Price *</label>
+                <label style={styles.label}>{t('shared.priceRequired')}</label>
                 <input style={styles.input} type="number" step="0.01" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required placeholder="0.00" />
               </div>
               <div style={styles.formField}>
-                <label style={styles.label}>Billing Cycle *</label>
+                <label style={styles.label}>{t('memberships.billingCycleRequired')}</label>
                 <select style={styles.input} value={form.billing_cycle} onChange={(e) => setForm({ ...form, billing_cycle: e.target.value })}>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="annually">Annually</option>
-                  <option value="one_time">One-time</option>
+                  <option value="monthly">{t('shared.billing.monthly')}</option>
+                  <option value="quarterly">{t('shared.billing.quarterly')}</option>
+                  <option value="annually">{t('shared.billing.annually')}</option>
+                  <option value="one_time">{t('membershipPlans.oneTime')}</option>
                 </select>
               </div>
             </div>
             {(form.plan_type === 'credit' || form.plan_type === 'hybrid') && (
               <div style={styles.formField}>
-                <label style={styles.label}>Credits per Cycle</label>
-                <input style={styles.input} type="number" min="1" value={form.credits_per_cycle} onChange={(e) => setForm({ ...form, credits_per_cycle: e.target.value })} placeholder="e.g. 10" />
+                <label style={styles.label}>{t('membershipPlans.creditsPerCycle')}</label>
+                <input style={styles.input} type="number" min="1" value={form.credits_per_cycle} onChange={(e) => setForm({ ...form, credits_per_cycle: e.target.value })} placeholder={t('pricing.exampleTen')} />
               </div>
             )}
             {(form.plan_type === 'punch_card' || form.plan_type === 'intro_package') && (
               <div style={styles.formRow}>
                 <div style={styles.formField}>
-                  <label style={styles.label}>Total Sessions</label>
-                  <input style={styles.input} type="number" min="1" value={form.total_sessions} onChange={(e) => setForm({ ...form, total_sessions: e.target.value })} placeholder="e.g. 10" />
+                  <label style={styles.label}>{t('membershipPlans.totalSessions')}</label>
+                  <input style={styles.input} type="number" min="1" value={form.total_sessions} onChange={(e) => setForm({ ...form, total_sessions: e.target.value })} placeholder={t('pricing.exampleTen')} />
                 </div>
                 <div style={styles.formField}>
-                  <label style={styles.label}>Expiration (days)</label>
-                  <input style={styles.input} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} placeholder="e.g. 90" />
+                  <label style={styles.label}>{t('pricing.expirationDays')}</label>
+                  <input style={styles.input} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} placeholder={t('membershipPlans.exampleNinety')} />
                 </div>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); setEditingPlan(null); }}>Cancel</Button>
-              <Button type="submit" loading={creating}>{editingPlan ? 'Save Changes' : 'Create Plan'}</Button>
+              <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); setEditingPlan(null); }}>{t('common:cancel')}</Button>
+              <Button type="submit" loading={creating}>{editingPlan ? t('membershipPlans.saveChanges') : t('memberships.createPlan')}</Button>
             </div>
           </form>
         </div>
       )}
 
-      {loading && <p style={styles.empty}>Loading...</p>}
+      {loading && <p style={styles.empty}>{t('common:loading')}</p>}
 
       <div style={styles.planGrid}>
         {plans.map((plan) => (
           <div key={plan.id} style={styles.planCard} onClick={() => openEdit(plan)}>
             <h3 style={styles.planName}>{plan.name}</h3>
-            <Badge variant={plan.status === 'active' ? 'success' : 'neutral'}>{plan.status}</Badge>
-            <Badge variant="neutral">{TYPE_LABELS[plan.plan_type] || plan.plan_type}</Badge>
-            <div style={styles.planPrice}>{formatCurrency(plan.price)}<span style={styles.cycle}>/{plan.billing_cycle}</span></div>
-            {plan.credits_per_cycle && <p style={styles.planDetail}>{plan.credits_per_cycle} credits/cycle</p>}
-            {plan.total_sessions && <p style={styles.planDetail}>{plan.total_sessions} sessions</p>}
+            <Badge variant={plan.status === 'active' ? 'success' : 'neutral'}>{t(`shared.status.${plan.status}`, { defaultValue: plan.status })}</Badge>
+            <Badge variant="neutral">{t(`membershipPlans.planType.${plan.plan_type}`, { defaultValue: plan.plan_type })}</Badge>
+            <div style={styles.planPrice}>{formatCurrency(plan.price)}<span style={styles.cycle}>/{t(`shared.frequency.${plan.billing_cycle}`, { defaultValue: plan.billing_cycle })}</span></div>
+            {plan.credits_per_cycle && <p style={styles.planDetail}>{t('membershipPlans.creditsPerCycleBadge', { count: Number(plan.credits_per_cycle) })}</p>}
+            {plan.total_sessions && <p style={styles.planDetail}>{t('membershipPlans.sessionsBadge', { count: Number(plan.total_sessions) })}</p>}
             <button
               style={{ marginTop: '8px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 'var(--font-size-xs)', cursor: 'pointer', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family)' }}
               onClick={(e) => { e.stopPropagation(); handleArchiveToggle(plan); }}
             >
-              {plan.status === 'active' ? 'Archive' : 'Activate'}
+              {plan.status === 'active' ? t('shared.archive') : t('shared.activate')}
             </button>
           </div>
         ))}
       </div>
 
-      {!loading && plans.length === 0 && <p style={styles.empty}>No plans configured yet.</p>}
+      {!loading && plans.length === 0 && <p style={styles.empty}>{t('membershipPlans.empty')}</p>}
     </div>
   );
 }

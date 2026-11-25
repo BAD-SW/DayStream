@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SearchInputProps {
   placeholder?: string;
@@ -7,7 +8,9 @@ interface SearchInputProps {
   debounceMs?: number;
 }
 
-export function SearchInput({ placeholder = 'Search...', value: controlledValue, onChange, debounceMs = 300 }: SearchInputProps) {
+export function SearchInput({ placeholder, value: controlledValue, onChange, debounceMs = 300 }: SearchInputProps) {
+  const { t } = useTranslation('common');
+  const shownPlaceholder = placeholder ?? t('search.placeholder');
   const [localValue, setLocalValue] = useState(controlledValue || '');
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -33,12 +36,12 @@ export function SearchInput({ placeholder = 'Search...', value: controlledValue,
         type="text"
         value={localValue}
         onChange={(e) => handleChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={shownPlaceholder}
         style={inputStyle}
-        aria-label={placeholder}
+        aria-label={shownPlaceholder}
       />
       {localValue && (
-        <button onClick={handleClear} style={clearStyle} aria-label="Clear search">✕</button>
+        <button onClick={handleClear} style={clearStyle} aria-label={t('search.clear')}>✕</button>
       )}
     </div>
   );

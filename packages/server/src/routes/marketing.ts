@@ -10,6 +10,7 @@ import * as sequencesService from '../services/marketing-sequences.service';
 import * as analyticsService from '../services/marketing-analytics.service';
 import * as consentService from '../services/marketing-consent.service';
 import * as funnelsService from '../services/marketing-funnels.service';
+import { msg } from '../i18n';
 
 export const marketingRouter = Router();
 
@@ -20,37 +21,37 @@ export const marketingRouter = Router();
 marketingRouter.get('/funnels/:slug', async (req: Request, res: Response) => {
   try {
     const tenantId = req.query.tenant_id as string;
-    if (!tenantId) { error(res, 'tenant_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!tenantId) { error(res, msg('errors:marketing.tenantIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const funnel = await funnelsService.getFunnelBySlug(tenantId, req.params.slug, req.query.business_id as string | undefined);
-    if (!funnel) { error(res, 'Funnel not found', 'NOT_FOUND', 404); return; }
+    if (!funnel) { error(res, msg('errors:marketing.funnelNotFound'), 'NOT_FOUND', 404); return; }
     await funnelsService.incrementPageViews(funnel.id);
     // The public page gets what it shows, not the record's internals.
     success(res, {
       name: funnel.name, slug: funnel.slug, headline: funnel.headline, description: funnel.description,
       image_path: funnel.image_path, form_fields: funnel.form_fields, cta_text: funnel.cta_text,
     });
-  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 marketingRouter.post('/funnels/:slug/submit', async (req: Request, res: Response) => {
   try {
     const tenantId = req.query.tenant_id as string;
-    if (!tenantId) { error(res, 'tenant_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!tenantId) { error(res, msg('errors:marketing.tenantIdRequired'), 'VALIDATION_ERROR', 400); return; }
     const funnel = await funnelsService.getFunnelBySlug(tenantId, req.params.slug, req.query.business_id as string | undefined);
-    if (!funnel) { error(res, 'Funnel not found', 'NOT_FOUND', 404); return; }
+    if (!funnel) { error(res, msg('errors:marketing.funnelNotFound'), 'NOT_FOUND', 404); return; }
     const result = await funnelsService.submitForm(funnel.id, req.body || {});
     success(res, { received: true, enrolled: !!result.enrollmentId }, undefined, 201);
   } catch (err: any) {
     if (err?.code === 'INVALID_FORM' || err?.name === 'ContactPointRequiredError') { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
     console.error('Form submission failed', err?.message || err);
-    error(res, 'Submission failed', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:marketing.submissionFailed'), 'INTERNAL_ERROR', 500);
   }
 });
 
 marketingRouter.post('/unsubscribe', async (req: Request, res: Response) => {
   try {
     const { tenant_id, customer_id, channel, category } = req.body;
-    if (!tenant_id || !customer_id || !channel) { error(res, 'Missing fields', 'VALIDATION_ERROR', 400); return; }
+    if (!tenant_id || !customer_id || !channel) { error(res, msg('errors:marketing.missingFields'), 'VALIDATION_ERROR', 400); return; }
     // The person must belong to the organisation (and business) the link names. Without this,
     // anyone could switch off messages for any person whose id they had.
     const uuid = /^[0-9a-f-]{36}$/i;
@@ -60,10 +61,10 @@ marketingRouter.post('/unsubscribe', async (req: Request, res: Response) => {
         WHERE c.id = $1 AND b.tenant_id = $2 AND ($3::uuid IS NULL OR c.business_id = $3)`,
       [customer_id, tenant_id, business && uuid.test(business) ? business : null],
     ) : { rows: [] };
-    if (own.length === 0) { error(res, 'This unsubscribe link is not valid', 'NOT_FOUND', 404); return; }
+    if (own.length === 0) { error(res, msg('errors:marketing.thisUnsubscribeLinkIsNotValid'), 'NOT_FOUND', 404); return; }
     await consentService.processUnsubscribe(tenant_id, customer_id, channel, category);
     success(res, { unsubscribed: true });
-  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -97,7 +98,7 @@ marketingRouter.use(async (req: Request, res: Response, next) => {
     const authReq = req as AuthenticatedRequest;
     const businessId = (req.query.business_id || req.body?.business_id) as string | undefined;
     if (!businessId || !UUID_RE.test(businessId)) {
-      error(res, 'Choose a business first: marketing belongs to a business', 'BUSINESS_REQUIRED', 400);
+      error(res, msg('errors:marketing.chooseABusinessFirstMarketingBelongs'), 'BUSINESS_REQUIRED', 400);
       return;
     }
     const { rows } = await adminPool.query(
@@ -107,7 +108,7 @@ marketingRouter.use(async (req: Request, res: Response, next) => {
       [businessId, authReq.tenantId, authReq.user.sub],
     );
     if (!rows[0] || (rows[0].user_business && rows[0].user_business !== businessId)) {
-      error(res, 'You do not have access to this business', 'FORBIDDEN', 403);
+      error(res, msg('errors:marketing.youDoNotHaveAccessTo'), 'FORBIDDEN', 403);
       return;
     }
     (req as any).marketingBusinessId = businessId;
@@ -120,68 +121,68 @@ marketingRouter.use(async (req: Request, res: Response, next) => {
         `SELECT 1 FROM ${table} WHERE id = $1 AND tenant_id = $2 AND (business_id = $3${shared})`,
         [record[2], authReq.tenantId, businessId],
       );
-      if (!owned[0]) { error(res, 'Not found', 'NOT_FOUND', 404); return; }
+      if (!owned[0]) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; }
     }
     const person = req.path.match(/^\/preferences\/([^/]+)/);
     if (person) {
       const { rows: owned } = UUID_RE.test(person[1])
         ? await adminPool.query('SELECT 1 FROM cus_customers WHERE id = $1 AND business_id = $2', [person[1], businessId])
         : { rows: [] as any[] };
-      if (!owned[0]) { error(res, 'Not found', 'NOT_FOUND', 404); return; }
+      if (!owned[0]) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; }
     }
     next();
   } catch (err: any) {
     console.error('Failed', err?.message || err);
-    error(res, 'Failed', 'INTERNAL_ERROR', 500);
+    error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500);
   }
 });
 
 // --- Templates ---
 marketingRouter.get('/templates', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const data = await templatesService.getTemplates(authReq.tenantId, req.query.channel as string, bizOf(req)); success(res, data); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/templates', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const t = await templatesService.createTemplate(authReq.tenantId, { ...req.body, businessId: bizOf(req) }); success(res, t, undefined, 201); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.get('/templates/:id', requirePermission('marketing:read'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const t = await templatesService.getTemplateById(req.params.id, authReq.tenantId); if (!t) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, t); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const t = await templatesService.getTemplateById(req.params.id, authReq.tenantId); if (!t) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, t); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.put('/templates/:id', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const t = await templatesService.updateTemplate(req.params.id, authReq.tenantId, req.body); if (!t) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, t); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const t = await templatesService.updateTemplate(req.params.id, authReq.tenantId, req.body); if (!t) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, t); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/templates/:id/preview', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const r = await templatesService.renderTemplate(req.params.id, authReq.tenantId, req.body); success(res, r); }
   catch (err: any) { error(res, err.message || 'Failed', 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.delete('/templates/:id', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const d = await templatesService.deleteTemplate(req.params.id, authReq.tenantId); if (!d) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, { deleted: true }); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const d = await templatesService.deleteTemplate(req.params.id, authReq.tenantId); if (!d) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, { deleted: true }); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // --- Campaigns ---
 marketingRouter.get('/campaigns', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const r = await campaignsService.getCampaigns(authReq.tenantId, { businessId: bizOf(req), channel: req.query.channel as string, status: req.query.status as string, page: req.query.page ? parseInt(req.query.page as string, 10) : 1, limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 25 }); success(res, r.campaigns, { page: r.page, limit: r.limit, total: r.total }); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/campaigns', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const c = await campaignsService.createCampaign(authReq.tenantId, { ...req.body, createdBy: authReq.user.sub, businessId: bizOf(req) }); success(res, c, undefined, 201); }
-  catch (err: any) { if (err?.code === 'CROSS_BUSINESS') { error(res, err.message, 'VALIDATION_ERROR', 400); return; } error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { if (err?.code === 'CROSS_BUSINESS') { error(res, err.message, 'VALIDATION_ERROR', 400); return; } error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.get('/campaigns/:id', requirePermission('marketing:read'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const c = await campaignsService.getCampaignById(req.params.id, authReq.tenantId); if (!c) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, c); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const c = await campaignsService.getCampaignById(req.params.id, authReq.tenantId); if (!c) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, c); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.put('/campaigns/:id', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const c = await campaignsService.updateCampaign(req.params.id, authReq.tenantId, req.body); if (!c) { error(res, 'Not found or not editable', 'NOT_FOUND', 404); return; } success(res, c); }
-  catch (err: any) { if (err?.code === 'CROSS_BUSINESS') { error(res, err.message, 'VALIDATION_ERROR', 400); return; } error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const c = await campaignsService.updateCampaign(req.params.id, authReq.tenantId, req.body); if (!c) { error(res, msg('errors:marketing.notFoundOrNotEditable'), 'NOT_FOUND', 404); return; } success(res, c); }
+  catch (err: any) { if (err?.code === 'CROSS_BUSINESS') { error(res, err.message, 'VALIDATION_ERROR', 400); return; } error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/campaigns/:id/schedule', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const at = Date.parse(req.body.scheduled_at || ''); if (Number.isNaN(at) || at <= Date.now()) { error(res, 'Choose a date and time in the future', 'VALIDATION_ERROR', 400); return; } const c = await campaignsService.scheduleCampaign(req.params.id, authReq.tenantId, req.body.scheduled_at); if (!c) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, c); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const at = Date.parse(req.body.scheduled_at || ''); if (Number.isNaN(at) || at <= Date.now()) { error(res, msg('errors:marketing.chooseADateAndTimeIn'), 'VALIDATION_ERROR', 400); return; } const c = await campaignsService.scheduleCampaign(req.params.id, authReq.tenantId, req.body.scheduled_at); if (!c) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, c); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/campaigns/:id/send', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const c = await campaignsService.sendCampaign(req.params.id, authReq.tenantId); success(res, c); }
@@ -189,45 +190,45 @@ marketingRouter.post('/campaigns/:id/send', requirePermission('marketing:*'), as
 });
 marketingRouter.post('/campaigns/:id/test', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const r = await campaignsService.sendTestEmail(req.params.id, authReq.tenantId, req.body.email); success(res, r); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.get('/campaigns/:id/analytics', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const a = await analyticsService.getCampaignAnalytics(req.params.id); success(res, a); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.get('/campaigns/:id/recipients', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const r = await analyticsService.getRecipientList(req.params.id, { status: req.query.status as string, page: req.query.page ? parseInt(req.query.page as string, 10) : 1 }); success(res, r.recipients, { page: r.page, limit: r.limit, total: r.total }); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // --- Sequences ---
 marketingRouter.get('/sequences/templates', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const t = await sequencesService.getSequenceTemplates(authReq.tenantId); success(res, t); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.get('/sequences', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const r = await sequencesService.getSequences(authReq.tenantId, { businessId: bizOf(req), status: req.query.status as string, page: req.query.page ? parseInt(req.query.page as string, 10) : 1 }); success(res, r.sequences, { page: r.page, limit: r.limit, total: r.total }); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/sequences', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.createSequence(authReq.tenantId, { ...req.body, businessId: bizOf(req) }); success(res, s, undefined, 201); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.get('/sequences/:id', requirePermission('marketing:read'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.getSequenceById(req.params.id, authReq.tenantId); if (!s) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, s); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.getSequenceById(req.params.id, authReq.tenantId); if (!s) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, s); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.put('/sequences/:id', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.updateSequence(req.params.id, authReq.tenantId, req.body); if (!s) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, s); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.updateSequence(req.params.id, authReq.tenantId, req.body); if (!s) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, s); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/sequences/:id/activate', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.activateSequence(req.params.id, authReq.tenantId); if (!s) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, s); }
-  catch (err: any) { if (err?.code === 'SEQUENCE_INVALID') { error(res, err.message, 'SEQUENCE_INVALID', 400); return; } console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.activateSequence(req.params.id, authReq.tenantId); if (!s) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, s); }
+  catch (err: any) { if (err?.code === 'SEQUENCE_INVALID') { error(res, err.message, 'SEQUENCE_INVALID', 400); return; } console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/sequences/:id/pause', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.pauseSequence(req.params.id, authReq.tenantId); if (!s) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, s); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.pauseSequence(req.params.id, authReq.tenantId); if (!s) { error(res, msg('errors:marketing.notFound'), 'NOT_FOUND', 404); return; } success(res, s); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/sequences/:id/validate', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const v = await sequencesService.validateSequence(req.params.id, authReq.tenantId); success(res, v); }
@@ -235,31 +236,31 @@ marketingRouter.post('/sequences/:id/validate', requirePermission('marketing:rea
 });
 marketingRouter.get('/sequences/:id/enrollments', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const r = await sequencesService.getEnrollments(req.params.id, { status: req.query.status as string }); success(res, r.enrollments, { total: r.total }); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // --- Consent ---
 marketingRouter.get('/preferences/:customerId', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const p = await consentService.getPreferences(authReq.tenantId, req.params.customerId); success(res, p); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.put('/preferences/:customerId', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const p = await consentService.updatePreferences(authReq.tenantId, req.params.customerId, req.body.preferences || []); success(res, p); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // --- Funnels (admin) ---
 marketingRouter.get('/funnels', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const f = await funnelsService.getFunnels(authReq.tenantId, bizOf(req)); success(res, f); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/funnels', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const f = await funnelsService.createFunnel(authReq.tenantId, { ...req.body, businessId: bizOf(req) }); success(res, f, undefined, 201); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.get('/funnels/:id/analytics', requirePermission('marketing:read'), async (req: Request, res: Response) => {
   try { const a = await funnelsService.getFunnelAnalytics(req.params.id); success(res, a); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, msg('errors:marketing.failed'), 'INTERNAL_ERROR', 500); }
 });
 
 // --- Webhooks ---

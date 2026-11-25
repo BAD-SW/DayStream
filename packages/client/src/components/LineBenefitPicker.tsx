@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import * as checkoutApi from '../api/checkout';
 import * as bookingsApi from '../api/bookings';
@@ -14,6 +15,7 @@ import { describeBenefit } from './booking/BenefitChooser';
 export function LineBenefitPicker({ order, itemId, businessId, onChanged, onClose }: {
   order: Order; itemId: string; businessId: string; onChanged: (o: Order) => void; onClose: () => void;
 }) {
+  const { t } = useTranslation('checkout');
   const [options, setOptions] = useState<BenefitOption[] | null>(null);
   const [choice, setChoice] = useState<BenefitRef | null>(null);
   const [current, setCurrent] = useState<BenefitRef | null>(null);
@@ -27,37 +29,37 @@ export function LineBenefitPicker({ order, itemId, businessId, onChanged, onClos
       setOptions(r.options);
       const now = r.use ? bookingsApi.refOf(r.use) : null;
       setCurrent(now); setChoice(now);
-    }).catch(() => { if (!off) setErr('The memberships and packages could not be loaded.'); });
+    }).catch(() => { if (!off) setErr(t('lineBenefit.loadFailed')); });
     return () => { off = true; };
   }, [order.id, itemId, businessId]);
 
   const apply = async () => {
     setBusy(true); setErr('');
     try { onChanged(await checkoutApi.setLineBenefit(order.id, itemId, businessId, choice)); onClose(); }
-    catch (e) { setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'It could not be changed.'); }
+    catch (e) { setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error || t('lineBenefit.changeFailed')); }
     finally { setBusy(false); }
   };
 
   const unchanged = (choice === null && current === null) || bookingsApi.sameRef(choice, current);
   return (
-    <div style={s.box} role="radiogroup" aria-label="Pay this line with">
-      {!options && !err && <span style={s.hint}>Loading…</span>}
-      {options && options.length === 0 && <span style={s.hint}>The customer has no membership or package for this.</span>}
+    <div style={s.box} role="radiogroup" aria-label={t('lineBenefit.payWith')}>
+      {!options && !err && <span style={s.hint}>{t('lineBenefit.loading')}</span>}
+      {options && options.length === 0 && <span style={s.hint}>{t('lineBenefit.none')}</span>}
       {options?.map((o) => (
         <label key={`${o.kind}:${o.source_id}:${o.item_id}`} style={{ ...s.row, opacity: o.covers ? 1 : 0.55 }}>
           <input type="radio" name={`line-benefit-${itemId}`} disabled={!o.covers || busy} checked={bookingsApi.sameRef(o, choice)}
             onChange={() => setChoice({ kind: o.kind, source_id: o.source_id, item_id: o.item_id })} />
-          <span><strong>{o.name}</strong> <span style={s.hint}>{o.kind === 'membership' ? 'Membership' : 'Package'} · {o.covers ? describeBenefit(o) : o.reason}</span></span>
+          <span><strong>{o.name}</strong> <span style={s.hint}>{t(o.kind === 'membership' ? 'lineBenefit.membershipDetail' : 'lineBenefit.packageDetail', { detail: o.covers ? describeBenefit(o) : o.reason })}</span></span>
         </label>
       ))}
       <label style={s.row}>
         <input type="radio" name={`line-benefit-${itemId}`} disabled={busy} checked={choice === null} onChange={() => setChoice(null)} />
-        <span>Pay normally</span>
+        <span>{t('lineBenefit.payNormally')}</span>
       </label>
       {err && <span role="alert" style={{ ...s.hint, color: 'var(--color-error)' }}>{err}</span>}
       <div style={s.actions}>
-        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button size="sm" onClick={apply} loading={busy} disabled={unchanged || !options}>Apply</Button>
+        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>{t('common:cancel')}</Button>
+        <Button size="sm" onClick={apply} loading={busy} disabled={unchanged || !options}>{t('lineBenefit.apply')}</Button>
       </div>
     </div>
   );

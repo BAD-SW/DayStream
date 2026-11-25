@@ -1,0 +1,19 @@
+{
+  "dialog.title": "Translations: {{name}}",
+  "defaultLanguage": "Default language",
+  "column.language": "Language",
+  "column.translation": "Translation",
+  "field.name": "Name",
+  "field.short_description": "Short description",
+  "field.description": "Description",
+  "state.outOfDate": "Out of date",
+  "translate.button": "Translate",
+  "translate.into": "Translate into {{language}}",
+  "replace.message": "The {{language}} row already has text. Replace it with Google's translation?",
+  "discard.message": "You have translations that are not saved. Discard them?",
+  "empty": "This business has no other languages yet. Add languages in the business settings, then translate here.",
+  "needsSave": "Save this record first, then translate it.",
+  "error.load": "The translations could not be loaded.",
+  "error.translate": "The translation could not be made.",
+  "error.save": "The translations could not be saved."
+}

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './middleware';
 import { logger } from '../middleware/logger';
+import { msg } from '../i18n';
 
 /**
  * Match a user permission against a required permission.
@@ -43,7 +44,7 @@ export function requirePermission(...permissions: string[]) {
     const authReq = req as AuthenticatedRequest;
 
     if (!authReq.user) {
-      res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+      res.status(401).json({ error: msg('errors:permissions.notAuthenticated'), code: 'NOT_AUTHENTICATED' });
       return;
     }
 
@@ -59,7 +60,7 @@ export function requirePermission(...permissions: string[]) {
         required: permissions,
         userPermissions,
       });
-      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      res.status(403).json({ error: msg('errors:permissions.insufficientPermissions'), code: 'FORBIDDEN' });
       return;
     }
 
@@ -75,7 +76,7 @@ export function requireAnyPermission(...permissions: string[]) {
     const authReq = req as AuthenticatedRequest;
 
     if (!authReq.user) {
-      res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+      res.status(401).json({ error: msg('errors:permissions.notAuthenticated'), code: 'NOT_AUTHENTICATED' });
       return;
     }
 
@@ -91,7 +92,7 @@ export function requireAnyPermission(...permissions: string[]) {
         required: permissions,
         userPermissions,
       });
-      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      res.status(403).json({ error: msg('errors:permissions.insufficientPermissions'), code: 'FORBIDDEN' });
       return;
     }
 
@@ -114,11 +115,11 @@ export function requireTenantLevel() {
   return (req: Request, res: Response, next: NextFunction): void => {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.user) {
-      res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+      res.status(401).json({ error: msg('errors:permissions.notAuthenticated'), code: 'NOT_AUTHENTICATED' });
       return;
     }
     if (!isSystemRole(authReq.user.role) && !isTenantRole(authReq.user.role)) {
-      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      res.status(403).json({ error: msg('errors:permissions.insufficientPermissions'), code: 'FORBIDDEN' });
       return;
     }
     next();

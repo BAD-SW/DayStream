@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   kioskCheckIn, kioskForms, kioskStartForm, kioskStatus, selfCheckInError,
 } from '../api/selfCheckIn';
@@ -6,6 +7,8 @@ import type { SelfVisit, UpcomingAppointment } from '../api/selfCheckIn';
 import { SelfFormsList } from '../components/forms/SelfFormsList';
 import { checkInTextFor, fillCheckInTexts } from '@daystream/shared';
 import type { CheckInText } from '@daystream/shared';
+import { PublicLanguageBar } from '../components/PublicLanguageBar';
+import { formatDateTime, formatTime } from '../utils/format';
 
 /**
  * The front-desk check-in screen (spec 51, design 1.11a): a full-screen page for a tablet.
@@ -68,6 +71,8 @@ function initialToken(): string | null {
 }
 
 export function Kiosk() {
+  // tr: the screen's own fixed text. t (below): the check-in wording from the business or platform, shown as it is.
+  const { t: tr } = useTranslation('checkin');
   const [token, setToken] = useState<string | null>(initialToken);
   const [visit, setVisit] = useState<SelfVisit | null>(null);
   const [input, setInput] = useState('');
@@ -86,7 +91,9 @@ export function Kiosk() {
   // The entry screen's wording, in the business's language (the kiosk status carries it).
   const [entryTexts, setEntryTexts] = useState<CheckInText | null>(null);
   const [businessName, setBusinessName] = useState('');
-  useEffect(() => { document.title = kioskName ? `Kiosk · ${kioskName}` : 'Kiosk'; }, [kioskName]);
+  // The business's languages, for the language menu (Phase 44, requirement 8); every language until known.
+  const [languages, setLanguages] = useState<string[] | undefined>(undefined);
+  useEffect(() => { document.title = kioskName ? tr('kiosk.titleNamed', { name: kioskName }) : tr('kiosk.title'); }, [kioskName, tr]);
 
   useEffect(() => {
     if (!token) return;
@@ -100,6 +107,7 @@ export function Kiosk() {
         setKioskName(info.device_name);
         if (info.texts) setEntryTexts(info.texts);
         setBusinessName(info.business_name ?? '');
+        setLanguages(info.languages);
         setAvailability('on');
       } catch (err) {
         if (stale) return;
@@ -207,14 +215,14 @@ export function Kiosk() {
   };
 
   // Wording: the identified customer's language once known, otherwise the business's; the built-in wording until it arrives.
-  const visitTime = visit ? new Date(visit.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: visit.timezone }) : '';
+  const visitTime = visit ? formatTime(visit.start_time, visit.timezone) : '';
   const t = visit
     ? fillCheckInTexts(visit.texts, { first_name: visit.first_name, service_name: visit.service_name, business_name: visit.business_name, time: visitTime })
     : fillCheckInTexts(entryTexts ?? checkInTextFor(null), { business_name: businessName });
 
   if (!token) {
     return (
-      <Screen>
+      <Screen languages={languages}>
         <h1 style={s.title}>{t.kioskNotSetUpTitle}</h1>
         <p style={s.text}>{t.kioskNotSetUpBody}</p>
       </Screen>
@@ -224,7 +232,7 @@ export function Kiosk() {
   // Not switched on (or not yet known): never show the entry form, so no one types details that go nowhere.
   if (!visit && !upcoming && availability !== 'on') {
     return (
-      <Screen>
+      <Screen languages={languages}>
         {availability === 'checking'
           ? <p style={s.text} role="status">{t.loading}</p>
           : <>
@@ -237,14 +245,14 @@ export function Kiosk() {
 
   if (upcoming) {
     return (
-      <Screen>
+      <Screen languages={languages}>
         <h1 style={s.title}>{t.kioskNothingToday}</h1>
         <p style={s.text}>{upcoming.length === 1 ? t.kioskNothingTodayOne : t.kioskNothingTodayMany}</p>
-        <ul style={s.upcoming} aria-label="Your other appointments">
+        <ul style={s.upcoming} aria-label={tr('kiosk.otherAppointments')}>
           {upcoming.map((a, i) => (
             <li key={i} style={s.upcomingRow}>
               <strong>{a.service_name}</strong>
-              <span>{new Date(a.start_time).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: a.timezone })}</span>
+              <span>{formatDateTime(a.start_time, a.timezone, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>
             </li>
           ))}
         </ul>
@@ -257,7 +265,7 @@ export function Kiosk() {
   if (visit) {
     const todo = visit.forms.some((f) => f.status !== 'done');
     return (
-      <Screen>
+      <Screen languages={languages}>
         <h1 style={s.title}>{t.kioskWelcomeName}</h1>
         {visit.ready && !visit.started && <p role="alert" style={s.ready}>{t.ready}</p>}
         {visit.started && <p role="status" style={s.text}>{t.started}</p>}
@@ -273,7 +281,7 @@ export function Kiosk() {
   }
 
   return (
-    <Screen>
+    <Screen languages={languages}>
       <h1 style={s.title}>{t.kioskWelcome}</h1>
       <p style={s.text}>{t.kioskPrompt}</p>
       <form onSubmit={submit} style={s.form} noValidate>
@@ -293,9 +301,10 @@ export function Kiosk() {
   );
 }
 
-function Screen({ children }: { children: React.ReactNode }) {
+function Screen({ children, languages }: { children: React.ReactNode; languages?: readonly string[] }) {
   return (
     <div style={s.page}>
+      <PublicLanguageBar languages={languages} />
       <main style={s.card}>{children}</main>
     </div>
   );
@@ -303,7 +312,7 @@ function Screen({ children }: { children: React.ReactNode }) {
 
 const s: Record<string, React.CSSProperties> = {
   ready: { margin: 0, padding: 'var(--space-md)', borderRadius: '12px', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', fontSize: '1.75rem', fontWeight: 700, lineHeight: 1.3 },
-  page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-background)', fontFamily: 'var(--font-family)', padding: 'var(--space-lg)', boxSizing: 'border-box' },
+  page: { position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-background)', fontFamily: 'var(--font-family)', padding: 'var(--space-lg)', paddingTop: 'calc(var(--space-xl) + var(--space-lg))', boxSizing: 'border-box' },
   card: { width: '100%', maxWidth: '720px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px', padding: 'var(--space-xl)', boxSizing: 'border-box', textAlign: 'center' },
   title: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-h1, 2rem)', fontWeight: 700, color: 'var(--color-text)' },
   text: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-lg, 1.125rem)', color: 'var(--color-text)', lineHeight: 1.5 },

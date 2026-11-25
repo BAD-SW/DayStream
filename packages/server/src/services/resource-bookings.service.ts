@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { isResourceAvailable } from './resource-availability.service';
+import { msg } from '../i18n';
 
 /**
  * List bookings for a resource within a date range.
@@ -46,7 +47,7 @@ export async function createResourceBooking(input: {
     } catch (err: any) {
       if (err.code === '55P03') { // lock_not_available
         await client.query('ROLLBACK');
-        throw new Error('Resource is being booked by another request, please retry');
+        throw new Error(msg('errors:resourceBookings.resourceIsBeingBookedByAnother'));
       }
       throw err;
     }
@@ -54,7 +55,7 @@ export async function createResourceBooking(input: {
     // Check availability (capacity check)
     const { rows: resRows } = await client.query(
       `SELECT capacity FROM res_resources WHERE id = $1`, [input.resourceId]);
-    if (resRows.length === 0) { await client.query('ROLLBACK'); throw new Error('Resource not found'); }
+    if (resRows.length === 0) { await client.query('ROLLBACK'); throw new Error(msg('errors:resourceBookings.resourceNotFound')); }
 
     const { rows: overlap } = await client.query(
       `SELECT COUNT(*)::int AS count FROM res_bookings
@@ -64,7 +65,7 @@ export async function createResourceBooking(input: {
 
     if (overlap[0].count >= resRows[0].capacity) {
       await client.query('ROLLBACK');
-      throw new Error('Resource at capacity for this time slot');
+      throw new Error(msg('errors:resourceBookings.resourceAtCapacityForThisTime'));
     }
 
     // Insert booking

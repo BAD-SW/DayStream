@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 export interface Location {
   id: string;
@@ -263,7 +264,7 @@ export async function deactivateLocation(id: string, businessId: string, userId:
   if (!target) return false;
 
   if (target.is_primary && activeLocations.length <= 1) {
-    throw new Error('Cannot deactivate the only active location');
+    throw new Error(msg('errors:location.cannotDeactivateTheOnlyActiveLocation'));
   }
 
   // Bookings are tied to a location through the room or equipment they use. A location whose
@@ -275,7 +276,7 @@ export async function deactivateLocation(id: string, businessId: string, userId:
     [id],
   );
   if (ahead[0].n > 0) {
-    throw Object.assign(new Error(`This location still has ${ahead[0].n} upcoming booking(s). Move or cancel them first.`), { code: 'HAS_FUTURE_BOOKINGS' });
+    throw Object.assign(new Error(msg('errors:location.thisLocationStillHasUpcomingBooking', { n: ahead[0].n })), { code: 'HAS_FUTURE_BOOKINGS' });
   }
 
   const { rowCount } = await adminPool.query(

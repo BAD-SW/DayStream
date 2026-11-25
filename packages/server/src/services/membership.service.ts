@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 // --- Interfaces ---
 
@@ -304,9 +305,9 @@ export function calculateNextBillingDate(startDate: string, frequency: string): 
 export async function enrollCustomer(input: EnrollInput) {
   // Get plan to determine billing frequency
   const plan = await getPlanById(input.planId, input.businessId);
-  if (!plan) throw new Error('Plan not found');
+  if (!plan) throw new Error(msg('errors:membership.planNotFound'));
   if (plan.status !== 'active') {
-    throw Object.assign(new Error(`This plan is ${plan.status} and cannot be sold`), { code: 'PLAN_NOT_ACTIVE' });
+    throw Object.assign(new Error(msg('errors:membership.thisPlanIsAndCannotBe', { status: plan.status })), { code: 'PLAN_NOT_ACTIVE' });
   }
 
   // A customer MAY hold several memberships at once (a business can offer multiple
@@ -323,7 +324,7 @@ export async function enrollCustomer(input: EnrollInput) {
   );
   if (existing.length > 0) {
     throw Object.assign(
-      new Error('Customer is already enrolled in this membership plan.'),
+      new Error(msg('errors:membership.customerIsAlreadyEnrolledInThis')),
       { code: 'ALREADY_ENROLLED_IN_PLAN' },
     );
   }
@@ -409,7 +410,7 @@ export async function setEnrollmentPaymentMethod(
     [enrollmentId, businessId],
   );
   const enr = enrRows[0];
-  if (!enr) throw Object.assign(new Error('Enrollment not found'), { code: 'ENROLLMENT_NOT_FOUND' });
+  if (!enr) throw Object.assign(new Error(msg('errors:membership.enrollmentNotFound')), { code: 'ENROLLMENT_NOT_FOUND' });
 
   if (paymentMethodId) {
     const { rows: pmRows } = await adminPool.query(
@@ -417,9 +418,9 @@ export async function setEnrollmentPaymentMethod(
       [paymentMethodId, businessId],
     );
     const pm = pmRows[0];
-    if (!pm || pm.status !== 'active') throw Object.assign(new Error('Payment method not found'), { code: 'METHOD_NOT_FOUND' });
+    if (!pm || pm.status !== 'active') throw Object.assign(new Error(msg('errors:membership.paymentMethodNotFound')), { code: 'METHOD_NOT_FOUND' });
     if (pm.owner_level !== 'customer' || pm.customer_id !== enr.customer_id) {
-      throw Object.assign(new Error('That payment method does not belong to this customer'), { code: 'METHOD_NOT_CUSTOMER' });
+      throw Object.assign(new Error(msg('errors:membership.thatPaymentMethodDoesNotBelong')), { code: 'METHOD_NOT_CUSTOMER' });
     }
   }
 
@@ -542,17 +543,17 @@ export async function changePlan(enrollmentId: string, businessId: string, newPl
      WHERE e.id = $1 AND e.business_id = $2 AND e.status = 'active'`,
     [enrollmentId, businessId],
   );
-  if (enrollRows.length === 0) throw new Error('Enrollment not found or not active');
+  if (enrollRows.length === 0) throw new Error(msg('errors:membership.enrollmentNotFoundOrNotActive'));
   const enrollment = enrollRows[0];
 
-  if (enrollment.plan_id === newPlanId) throw new Error('Already on this plan');
+  if (enrollment.plan_id === newPlanId) throw new Error(msg('errors:membership.alreadyOnThisPlan'));
 
   // Load new plan
   const { rows: newPlanRows } = await adminPool.query(
     'SELECT id, price, name FROM mbr_plans WHERE id = $1 AND business_id = $2',
     [newPlanId, businessId],
   );
-  if (newPlanRows.length === 0) throw new Error('New plan not found');
+  if (newPlanRows.length === 0) throw new Error(msg('errors:membership.newPlanNotFound'));
   const newPlan = newPlanRows[0];
 
   const oldPrice = enrollment.current_price;
@@ -617,13 +618,13 @@ export async function recordUsage(enrollmentId: string, planItemId: string, quan
     [enrollmentId, planItemId],
   );
 
-  if (rows.length === 0) throw new Error('No usage record found for current period');
+  if (rows.length === 0) throw new Error(msg('errors:membership.noUsageRecordFoundForCurrent'));
 
   const usage = rows[0];
   const newUsed = usage.quantity_used + quantity;
 
   if (newUsed > usage.quantity_allowed) {
-    throw new Error(`Usage would exceed allowed quantity. Used: ${usage.quantity_used}, Allowed: ${usage.quantity_allowed}, Requested: ${quantity}`);
+    throw new Error(msg('errors:membership.usageWouldExceedAllowedQuantityUsed', { quantity_used: usage.quantity_used, quantity_allowed: usage.quantity_allowed, quantity }));
   }
 
   const { rows: updated } = await adminPool.query(

@@ -1,6 +1,7 @@
 import { pool, adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import { logAudit } from './audit.service';
+import { msg } from '../i18n';
 
 interface CacheEntry {
   value: unknown;
@@ -66,7 +67,7 @@ export async function setConfig(
     [key],
   );
   if (defRows.length === 0) {
-    throw new Error(`Configuration key "${key}" does not exist`);
+    throw new Error(msg('errors:config.configurationKeyDoesNotExist', { key }));
   }
 
   const stringValue = String(value);

@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { adminPool } from '../db/pool';
+import { msg } from '../i18n';
 
 /**
  * Retail inventory (spec 51, gap 7; design 7). In-person sales only.
@@ -24,7 +25,7 @@ const NIL = '00000000-0000-0000-0000-000000000000';
 
 async function tenantOf(db: Db, businessId: string): Promise<string> {
   const { rows } = await db.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
-  if (!rows[0]) throw new StockError('Business not found', 'INVALID');
+  if (!rows[0]) throw new StockError(msg('errors:inventory.businessNotFound'), 'INVALID');
   return rows[0].tenant_id;
 }
 
@@ -60,7 +61,7 @@ export async function move(client: PoolClient, k: StockKey, m: {
   orderId?: string | null; orderItemId?: string | null; note?: string | null; userId?: string | null;
   transferId?: string | null; poLineId?: string | null;
 }): Promise<{ onHand: number; avgCostCents: number; movementId: string; unitCostCents: number }> {
-  if (!Number.isInteger(m.qty) || m.qty === 0) throw new StockError('A stock change needs a whole, non-zero quantity.', 'INVALID');
+  if (!Number.isInteger(m.qty) || m.qty === 0) throw new StockError(msg('errors:inventory.aStockChangeNeedsAWhole'), 'INVALID');
   const { row, tenantId } = await lockedRow(client, k);
   const after = row.on_hand + m.qty;
   if (after < 0) {
@@ -211,7 +212,7 @@ export async function primaryLocation(businessId: string, db: Db = adminPool): P
 /** Where an order's stock comes from: its location, else the business's primary location. */
 export async function orderLocation(orderId: string, db: Db = adminPool): Promise<{ businessId: string; locationId: string | null }> {
   const { rows } = await db.query('SELECT business_id, location_id FROM fin_orders WHERE id = $1', [orderId]);
-  if (!rows[0]) throw new StockError('Order not found', 'INVALID');
+  if (!rows[0]) throw new StockError(msg('errors:inventory.orderNotFound'), 'INVALID');
   return { businessId: rows[0].business_id, locationId: rows[0].location_id || await primaryLocation(rows[0].business_id, db) };
 }
 
@@ -250,7 +251,7 @@ export async function takeForSale(orderId: string, userId: string): Promise<void
       [orderId],
     );
     if (lines.length === 0) return;
-    if (!locationId) throw new StockError('This business has no location to sell stock from.', 'INVALID');
+    if (!locationId) throw new StockError(msg('errors:inventory.thisBusinessHasNoLocationTo'), 'INVALID');
     for (const l of lines) {
       const qty = l.quantity - l.taken;
       if (qty <= 0) continue;
@@ -260,7 +261,7 @@ export async function takeForSale(orderId: string, userId: string): Promise<void
       } catch (e) {
         if (e instanceof StockError) {
           const name = l.variant_name ? `${l.item_name} (${l.variant_name})` : l.item_name;
-          throw new StockError(`${name}: ${e.message} Reduce the quantity on this line.`, e.code);
+          throw new StockError(msg('errors:inventory.reduceTheQuantityOnThisLine', { name, message: e.message }), e.code);
         }
         throw e;
       }
@@ -282,7 +283,7 @@ export async function checkOrderFits(orderId: string): Promise<void> {
   );
   if (lines.length === 0) return;
   const { businessId, locationId } = await orderLocation(orderId);
-  if (!locationId) throw new StockError('This business has no location to sell stock from.', 'INVALID');
+  if (!locationId) throw new StockError(msg('errors:inventory.thisBusinessHasNoLocationTo'), 'INVALID');
   for (const l of lines) {
     const have = await onHand({ businessId, locationId, merchandiseId: l.item_id, variantId: l.variant_id });
     if (l.qty > have) {
@@ -393,10 +394,10 @@ export type AdjustReason = (typeof ADJUST_REASONS)[number];
 export async function changeStock(args: StockKey & {
   mode: 'set' | 'add' | 'remove'; qty: number; reason?: AdjustReason; unitCostCents?: number | null; note?: string | null; userId: string;
 }): Promise<{ onHand: number; avgCostCents: number }> {
-  if (!Number.isInteger(args.qty) || args.qty < 0) throw new StockError('Enter a whole number of 0 or more.', 'INVALID');
-  if (!(await isTracked(args.merchandiseId))) throw new StockError('Stock is not tracked for this product. Turn on Track stock first.', 'NOT_TRACKED');
-  if (args.mode !== 'set' && !args.reason) throw new StockError('Choose a reason.', 'INVALID');
-  if (args.reason && !ADJUST_REASONS.includes(args.reason)) throw new StockError('Choose a valid reason.', 'INVALID');
+  if (!Number.isInteger(args.qty) || args.qty < 0) throw new StockError(msg('errors:inventory.enterAWholeNumberOf0'), 'INVALID');
+  if (!(await isTracked(args.merchandiseId))) throw new StockError(msg('errors:inventory.stockIsNotTrackedForThis'), 'NOT_TRACKED');
+  if (args.mode !== 'set' && !args.reason) throw new StockError(msg('errors:inventory.chooseAReason'), 'INVALID');
+  if (args.reason && !ADJUST_REASONS.includes(args.reason)) throw new StockError(msg('errors:inventory.chooseAValidReason'), 'INVALID');
   return inTx(async (c) => {
     const { row } = await lockedRow(c, args);
     // The first count of an item at a location is its opening stock.
@@ -475,16 +476,16 @@ export async function transfer(args: {
   businessId: string; fromLocationId: string; toLocationId: string; note?: string | null; userId: string;
   lines: Array<{ merchandiseId: string; variantId: string | null; qty: number }>;
 }): Promise<{ id: string }> {
-  if (args.fromLocationId === args.toLocationId) throw new StockError('Choose two different locations.', 'INVALID');
+  if (args.fromLocationId === args.toLocationId) throw new StockError(msg('errors:inventory.chooseTwoDifferentLocations'), 'INVALID');
   // one line per item
   const merged = new Map<string, { merchandiseId: string; variantId: string | null; qty: number }>();
   for (const l of args.lines) {
-    if (!Number.isInteger(l.qty) || l.qty <= 0) throw new StockError('Enter a whole number of 1 or more for each item.', 'INVALID');
+    if (!Number.isInteger(l.qty) || l.qty <= 0) throw new StockError(msg('errors:inventory.enterAWholeNumberOf1'), 'INVALID');
     const key = `${l.merchandiseId}:${l.variantId || ''}`;
     const prev = merged.get(key);
     merged.set(key, { ...l, qty: (prev?.qty ?? 0) + l.qty });
   }
-  if (merged.size === 0) throw new StockError('Add at least one item to move.', 'INVALID');
+  if (merged.size === 0) throw new StockError(msg('errors:inventory.addAtLeastOneItemTo'), 'INVALID');
   return inTx(async (c) => {
     const tenantId = await tenantOf(c, args.businessId);
     const { rows } = await c.query(
@@ -498,14 +499,14 @@ export async function transfer(args: {
         `SELECT m.name, m.track_stock, v.name AS variant_name FROM prd_merchandise m
            LEFT JOIN prd_merchandise_variants v ON v.id = $2 AND v.merchandise_id = m.id
           WHERE m.id = $1 AND m.business_id = $3`, [l.merchandiseId, l.variantId, args.businessId]);
-      if (!nm[0] || (l.variantId && !nm[0].variant_name)) throw new StockError('One of the items is not a product of this business.', 'INVALID');
-      if (!nm[0].track_stock) throw new StockError(`${nm[0].name}: stock is not tracked.`, 'NOT_TRACKED');
+      if (!nm[0] || (l.variantId && !nm[0].variant_name)) throw new StockError(msg('errors:inventory.oneOfTheItemsIsNot'), 'INVALID');
+      if (!nm[0].track_stock) throw new StockError(msg('errors:inventory.stockIsNotTracked', { name: nm[0].name }), 'NOT_TRACKED');
       const base = { businessId: args.businessId, merchandiseId: l.merchandiseId, variantId: l.variantId };
       let out: { onHand: number; avgCostCents: number };
       try {
         out = await move(c, { ...base, locationId: args.fromLocationId }, { qty: -l.qty, reason: 'transfer_out', transferId, userId: args.userId, note: args.note });
       } catch (e) {
-        if (e instanceof StockError) throw new StockError(`${itemName(nm[0].name, nm[0].variant_name)}: ${e.message}`, e.code);
+        if (e instanceof StockError) throw new StockError(msg('errors:inventory.message', { value: itemName(nm[0].name, nm[0].variant_name), message: e.message }), e.code);
         throw e;
       }
       await move(c, { ...base, locationId: args.toLocationId }, { qty: l.qty, reason: 'transfer_in', unitCostCents: out.avgCostCents, transferId, userId: args.userId, note: args.note });

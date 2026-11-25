@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import { getCancelSettings, setCancelSettings, CancelKind } from '../services/customer-cancellation.service';
+import { msg } from '../i18n';
 
 /**
  * Customer cancellation settings (THE-20), separate for events and for appointments.
@@ -28,15 +29,15 @@ async function businessOfTenant(req: Request, businessId: string): Promise<boole
 cancellationSettingsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
-    if (!businessId || !/^[0-9a-f-]{36}$/i.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    if (!(await businessOfTenant(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!businessId || !/^[0-9a-f-]{36}$/i.test(businessId)) { error(res, msg('errors:cancellationSettings.businessIdRequired'), 'VALIDATION_ERROR', 400); return; }
+    if (!(await businessOfTenant(req, businessId))) { error(res, msg('errors:cancellationSettings.businessNotFound'), 'NOT_FOUND', 404); return; }
     const { rows: biz } = await adminPool.query('SELECT timezone FROM sys_businesses WHERE id = $1', [businessId]);
     success(res, {
       events: await getCancelSettings(businessId, 'events'),
       appointments: await getCancelSettings(businessId, 'appointments'),
       timezone: biz[0]?.timezone || 'UTC',
     });
-  } catch (err: any) { console.error('Failed to read cancellation settings', err?.message || err); error(res, 'Failed to read cancellation settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read cancellation settings', err?.message || err); error(res, msg('errors:cancellationSettings.failedToReadCancellationSettings'), 'INTERNAL_ERROR', 500); }
 });
 
 const putSchema = Joi.object({
@@ -54,7 +55,7 @@ const putSchema = Joi.object({
 cancellationSettingsRouter.put('/', requirePermission('settings:*'), validate(putSchema), async (req: Request, res: Response) => {
   try {
     const { business_id: businessId, kind, ...values } = req.body;
-    if (!(await businessOfTenant(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    if (!(await businessOfTenant(req, businessId))) { error(res, msg('errors:cancellationSettings.businessNotFound'), 'NOT_FOUND', 404); return; }
     success(res, await setCancelSettings(businessId, kind, values));
-  } catch (err: any) { console.error('Failed to save cancellation settings', err?.message || err); error(res, 'Failed to save cancellation settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save cancellation settings', err?.message || err); error(res, msg('errors:cancellationSettings.failedToSaveCancellationSettings'), 'INTERNAL_ERROR', 500); }
 });

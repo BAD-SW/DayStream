@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatDay } from '../utils/format';
 import { Button } from '../design-system/components/actions/Button';
 import { ListEmpty } from '../design-system/components/data/ListRow';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
@@ -6,6 +8,7 @@ import './WeekGrid.css';
 import * as resourcesApi from '../api/resources';
 
 export function ResourceCalendar() {
+  const { t } = useTranslation('calendar');
   const [timeline, setTimeline] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(() => {
@@ -33,28 +36,28 @@ export function ResourceCalendar() {
     d.setDate(d.getDate() + i);
     return d.toISOString().split('T')[0];
   });
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  
 
   return (
     <div>
       <PageHeader
-        title="Resource Calendar"
+        title={t('resourceCalendar.title')}
         actions={<div className="wg-nav">
-          <Button variant="ghost" onClick={prevWeek}>← Prev</Button>
+          <Button variant="ghost" onClick={prevWeek}>{t('weekCalendar.prev')}</Button>
           <span className="wg-range">{startDate} — {endDate}</span>
-          <Button variant="ghost" onClick={nextWeek}>Next →</Button>
+          <Button variant="ghost" onClick={nextWeek}>{t('weekCalendar.next')}</Button>
         </div>}
       />
 
-      {loading ? <ListEmpty>Loading...</ListEmpty> : (
+      {loading ? <ListEmpty>{t('weekCalendar.loading')}</ListEmpty> : (
         <div className="wg-scroll">
           <table className="wg-table">
             <thead>
               <tr>
-                <th className="wg-first">Resource</th>
-                {days.map((d, i) => (
+                <th className="wg-first">{t('resourceCalendar.resource')}</th>
+                {days.map((d) => (
                   <th key={d}>
-                    {dayLabels[i]}<span className="wg-date">{d.slice(5)}</span>
+                    {formatDay(d, { weekday: 'short' })}<span className="wg-date">{d.slice(5)}</span>
                   </th>
                 ))}
               </tr>
@@ -71,14 +74,14 @@ export function ResourceCalendar() {
                     const booked = dayBookings.length > 0;
                     return (
                       <td key={day} className={`wg-cell wg-cell--${booked ? 'booked' : 'available'}`}>
-                        {booked ? `${dayBookings.length} booking${dayBookings.length > 1 ? 's' : ''}` : 'Available'}
+                        {booked ? t('weekCalendar.booking', { count: dayBookings.length }) : t('weekCalendar.available')}
                       </td>
                     );
                   })}
                 </tr>
               ))}
               {timeline.length === 0 && (
-                <tr><td colSpan={8} className="wg-empty">No resources</td></tr>
+                <tr><td colSpan={8} className="wg-empty">{t('resourceCalendar.noResources')}</td></tr>
               )}
             </tbody>
           </table>

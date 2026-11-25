@@ -1,10 +1,13 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
+import i18n, { currentLocale } from '../i18n';
+import { formatDay } from '../utils/format';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { newAppointmentPath, editAppointmentPath } from './AppointmentPage';
 import * as bookingsApi from '../api/bookings';
 import { CustomerPicker, ServicePicker, OptionChips, ParticipantsField, useBookableServices, useCombos } from '../components/booking/AppointmentWindow';
 import type { AppointmentPrefill, SvcItem } from '../components/booking/AppointmentWindow';
-import { dayLabel, initials } from '../utils/zonedTime';
+import { initials } from '../utils/zonedTime';
 import '../components/booking/AppointmentWindow.css';
 import '../components/booking/Calendar.css';
 
@@ -150,6 +153,7 @@ export function QuickFilterBar({
   onChange: (next: ServiceFilterSelection) => void;
   colorMap: Map<string, string>;
 }) {
+  const { t } = useTranslation('calendar');
   // One line of pills: All always at the left, then as many services as fit, paged with ‹ › (CAL-23)
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -169,13 +173,13 @@ export function QuickFilterBar({
   const shown = chunks[pg].map((i) => services[i]);
   const hiddenSelected = selected === 'all' ? 0 : [...selected].filter((id) => !shown.some((s) => s.id === id)).length;
   return (
-    <div ref={ref} className="spills" role="group" aria-label="Filter by service">
-      <button type="button" className="spill" onClick={() => onChange('all')} aria-pressed={selected === 'all'}>All</button>
+    <div ref={ref} className="spills" role="group" aria-label={t('cal.filterByService')}>
+      <button type="button" className="spill" onClick={() => onChange('all')} aria-pressed={selected === 'all'}>{t('cal.all')}</button>
       {pages > 1 && (
         <span className="spg">
-          <button type="button" className="nav" disabled={pg === 0} onClick={() => setPage(pg - 1)} aria-label="Previous services">‹</button>
+          <button type="button" className="nav" disabled={pg === 0} onClick={() => setPage(pg - 1)} aria-label={t('appt.previousServices')}>‹</button>
           <small>{pg + 1}/{pages}</small>
-          <button type="button" className="nav" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)} aria-label="Next services">›</button>
+          <button type="button" className="nav" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)} aria-label={t('appt.nextServices')}>›</button>
         </span>
       )}
       {shown.map((svc) => (
@@ -183,7 +187,7 @@ export function QuickFilterBar({
           <span className="sdot" style={{ ['--sc' as any]: cv(colorMap.get(svc.id) || SERVICE_COLOR_VARS[0]) }} />{svc.name}
         </button>
       ))}
-      {hiddenSelected > 0 && <small className="mk-hint">+{hiddenSelected} selected on other pages</small>}
+      {hiddenSelected > 0 && <small className="mk-hint">{t('cal.hiddenSelected', { count: hiddenSelected })}</small>}
     </div>
   );
 }
@@ -192,8 +196,9 @@ export function QuickFilterBar({
  *  rendered for bookings on a multi-capacity resource, where "how many of this booking" is
  *  actually informative (a plain 1-person booking doesn't need a badge saying "1"). */
 export function ParticipantCountBadge({ count, capacity }: { count: number | null | undefined; capacity: number | null | undefined }) {
+  const { t } = useTranslation('calendar');
   if (count == null || capacity == null || capacity <= 1) return null;
-  return <span style={styles.participantBadge}>{count} {count === 1 ? 'person' : 'people'}</span>;
+  return <span style={styles.participantBadge}>{t('cal.peopleCount', { count })}</span>;
 }
 
 // ============================================================
@@ -204,11 +209,11 @@ export function ParticipantCountBadge({ count, capacity }: { count: number | nul
 
 export type PaymentStatus = 'paid' | 'partial' | 'unpaid';
 
-const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
-  paid: 'Paid',
-  partial: 'Partially paid',
-  unpaid: 'Unpaid',
-};
+/** A date shown in the language's own day and month names (the business's calendar day). */
+const dayLabel = (date: string, o: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) => formatDay(date, o);
+
+/** A payment status, shown through calendar:cal.payment.<value>; anything else reads as unpaid. */
+const paymentStatusLabel = (s: string | undefined) => i18n.t(`calendar:cal.payment.${s === 'paid' || s === 'partial' ? s : 'unpaid'}`) as string;
 
 interface ResourceBlock {
   start_time: string;
@@ -228,13 +233,14 @@ export function filterBlocksToDay(blocks: ResourceBlock[], dateStr: string, time
 // ============================================================
 
 export function ResourceBlockOverlay({ blocks, timezone, hourRange = DEFAULT_HOUR_RANGE }: { blocks: ResourceBlock[]; timezone: string; hourRange?: HourRange }) {
+  const { t } = useTranslation('calendar');
   if (blocks.length === 0) return null;
   return (
     <>
       {blocks.map((b, i) => {
         const pos = getTimeRangePosition(b.start_time, b.end_time, timezone, hourRange);
         if (!pos) return null;
-        const label = b.reason ? `Blocked: ${b.reason}` : 'Blocked';
+        const label = b.reason ? t('cal.blockedReason', { reason: b.reason }) : t('cal.blocked');
         return (
           <div key={i} data-testid="resource-block" style={{ ...styles.resourceBlockOverlay, top: `${pos.top}%`, height: `${pos.height}%` }} title={label}>
             <span style={styles.resourceBlockLabel}>{label}</span>
@@ -306,6 +312,7 @@ export const columnsPerPage = (width: number) => Math.max(1, Math.min(COL_MAX, M
 interface NewBookingDraft { date: string; time: string | null; serviceId?: string; staffId?: string; colKey?: string; x: number; y: number; left?: number }
 
 export function BookingCalendar() {
+  const { t } = useTranslation('calendar');
   const navigate = useNavigate();
   const location = useLocation();
   // Coming back from the New / Edit Appointment screen: the same day, view and columns (in the address).
@@ -394,15 +401,15 @@ export function BookingCalendar() {
 
   const dateLabel = useMemo(() => {
     const d = new Date(date + 'T12:00:00Z');
-    const fmt = (x: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { ...o, timeZone: 'UTC' }).format(x);
-    if (view === 'day') return `${fmt(d, { weekday: 'long', day: 'numeric', month: 'long' })}${date === new Date().toISOString().slice(0, 10) ? ' · today' : ''}`;
+    const fmt = (x: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(currentLocale(), { ...o, timeZone: 'UTC' }).format(x);
+    if (view === 'day') return `${fmt(d, { weekday: 'long', day: 'numeric', month: 'long' })}${date === new Date().toISOString().slice(0, 10) ? ` · ${t('cal.today')}` : ''}`;
     if (view === 'week') {
       const start = getWeekStart(date);
       const end = new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000);
       return `${fmt(start, { day: 'numeric', month: 'short' })} – ${fmt(end, { day: 'numeric', month: 'short', year: 'numeric' })}`;
     }
-    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  }, [date, view]);
+    return fmt(d, { month: 'long', year: 'numeric' });
+  }, [date, view, t]);
 
   const dayHours: Record<string, DayHoursEntry> = calendarData?.day_hours || {};
   const bookings: any[] = calendarData?.bookings || [];
@@ -421,9 +428,9 @@ export function BookingCalendar() {
     const list = daySvcs.length ? daySvcs : allServices.map((s) => ({ ...s, booking_type: '', max_capacity: null, variant_id: null, staff_count: 0 }));
     return list.filter((s) => isServiceVisible(selected, s.id)).map((s) => ({
       key: 'sv:' + s.id, label: s.name, serviceId: s.id,
-      sub: s.booking_type === 'shared' ? `shared room · ${s.max_capacity} places` : s.booking_type === 'group' ? `group · ${s.max_capacity} places` : s.booking_type === 'resource' ? 'room or device' : (s as any).staff_working != null ? `${(s as any).staff_working} staff working` : s.staff_count ? `${s.staff_count} staff` : undefined,
+      sub: s.booking_type === 'shared' ? t('cal.sharedPlaces', { count: s.max_capacity ?? 0 }) : s.booking_type === 'group' ? t('cal.groupPlaces', { count: s.max_capacity ?? 0 }) : s.booking_type === 'resource' ? t('cal.roomOrDevice') : (s as any).staff_working != null ? t('cal.staffWorking', { count: (s as any).staff_working }) : s.staff_count ? t('cal.staffCount', { count: s.staff_count }) : undefined,
     }));
-  }, [view, by, calendarData, daySvcs, allServices, selected]);
+  }, [view, by, calendarData, daySvcs, allServices, selected, t]);
   const per = columnsPerPage(width);
   const colPages = Math.max(1, Math.ceil(allDayCols.length / per));
   const cp = Math.min(colPage, colPages - 1);
@@ -445,35 +452,48 @@ export function BookingCalendar() {
       {opts.map(([v, l]) => <button key={v} type="button" aria-pressed={value === v} onClick={() => onPick(v)}>{l}</button>)}
     </div>
   );
+  /** What a time cell's number means, for the tooltip. */
+  const slotTip = (name: string, cap: SlotCap | undefined, v: ReturnType<typeof slotView>, m: number, short: boolean) => {
+    const left = cap?.left || 0; const booked = cap?.booked || 0;
+    if (v.label) {
+      if (cap?.free_staff) {
+        return cap.busy_other?.length
+          ? t('cal.tipStaffBusy', { name, booked, left, free: cap.free_staff.join(', '), busy: cap.busy_other.join(', ') })
+          : t('cal.tipStaff', { name, booked, left, free: cap.free_staff.join(', ') });
+      }
+      return t('cal.tipPlaces', { name, booked, total: booked + left, left });
+    }
+    return v.none ? t(short ? 'cal.tipNoneShort' : 'cal.tipNone', { name, time: hhmm(m) }) : '';
+  };
   const ghost = draft && draft.time ? { colKey: draft.colKey || '', date: draft.date, start: toMin(draft.time), len: ghostLen, label: ghostLabel } : null;
 
   return (
     <div className="dsa dsc" style={styles.page} ref={pageRef}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Calendar</h1>
+        <h1 style={styles.title}>{t('cal.title')}</h1>
       </div>
 
       <div className="ctb">
         <div className="ctb-l">
-          <button type="button" className="nav" onClick={() => { setDraft(null); setDate(zonedParts(new Date(), businessTimezone).date); }}>Today</button>
-          <button type="button" className="nav" onClick={() => navigateDate(-1)} aria-label="Previous">‹</button>
-          <button type="button" className="nav" onClick={() => navigateDate(1)} aria-label="Next">›</button>
+          <button type="button" className="nav" onClick={() => { setDraft(null); setDate(zonedParts(new Date(), businessTimezone).date); }}>{t('cal.todayButton')}</button>
+          <button type="button" className="nav" onClick={() => navigateDate(-1)} aria-label={t('appt.previous')}>‹</button>
+          <button type="button" className="nav" onClick={() => navigateDate(1)} aria-label={t('appt.next')}>›</button>
           <b>{dateLabel}</b>
         </div>
         <div className="ctb-r">
           {locations.length > 1 && (
-            <label className="lab">Location <select value={loc} onChange={(e) => { setDraft(null); setLoc(e.target.value); }} aria-label="Location">
+            <label className="lab">{t('appt.location')} <select value={loc} onChange={(e) => { setDraft(null); setLoc(e.target.value); }} aria-label={t('appt.location')}>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select></label>
           )}
-          {seg('mode', 'calendar', [['calendar', 'Calendar'], ['list', 'List']], (v) => { if (v === 'list') navigate('/bookings/list'); }, 'Calendar or list')}
-          {seg('view', view, [['day', 'Day'], ['week', 'Week'], ['month', 'Month']], (v) => { setDraft(null); setView(v as any); }, 'View')}
-          {view === 'day' && <><span className="lab">By</span>{seg('by', by, [['service', 'Service'], ['staff', 'Staff']], (v) => { setDraft(null); setBy(v as any); }, 'Columns')}</>}
-          {view === 'month' && seg('mo', monthLayout, [['calendar', 'Calendar'], ['grid', 'Grid']], (v) => setMonthLayout(v as any), 'Month layout')}
-          <button type="button" className="nav" onClick={() => { setDraft(null); openNew({ date: date < zonedParts(new Date(), businessTimezone).date ? undefined : date, serviceId: singleService, locationId: locations.length > 1 ? loc : undefined }); }}>+ New appointment</button>
+          {seg('mode', 'calendar', [['calendar', t('cal.calendar')], ['list', t('cal.list')]], (v) => { if (v === 'list') navigate('/bookings/list'); }, t('cal.calendarOrList'))}
+          {seg('view', view, [['day', t('cal.day')], ['week', t('cal.week')], ['month', t('cal.month')]], (v) => { setDraft(null); setView(v as any); }, t('appt.view'))}
+          {view === 'day' && <><span className="lab">{t('cal.by')}</span>{seg('by', by, [['service', t('appt.service')], ['staff', t('appt.staff')]], (v) => { setDraft(null); setBy(v as any); }, t('cal.columns'))}</>}
+          {view === 'month' && seg('mo', monthLayout, [['calendar', t('cal.calendar')], ['grid', t('cal.grid')]], (v) => setMonthLayout(v as any), t('cal.monthLayout'))}
+          <button type="button" className="nav" onClick={() => { setDraft(null); openNew({ date: date < zonedParts(new Date(), businessTimezone).date ? undefined : date, serviceId: singleService, locationId: locations.length > 1 ? loc : undefined }); }}>{t('cal.newAppointment')}</button>
           {/* As on the list: sell without an appointment, and look up past sales */}
-          <button type="button" className="nav" onClick={() => navigate('/checkout?new=true')}>New Sale</button>
-          <button type="button" className="nav" onClick={() => navigate('/orders')}>Orders</button>
+          <button type="button" className="nav" onClick={() => navigate('/checkout?new=true')}>{t('cal.newSale')}</button>
+          <button type="button" className="nav" onClick={() => navigate('/orders')}>{t('cal.orders')}</button>
         </div>
       </div>
 
@@ -481,20 +501,20 @@ export function BookingCalendar() {
         <QuickFilterBar services={allServices} selected={selected} onChange={(s) => { setDraft(null); setSelected(s); }} colorMap={colorMap} />
         {view === 'day' && allDayCols.length > per && (
           <div className="cpg">
-            <button type="button" className="nav" disabled={cp === 0} onClick={() => setColPage(cp - 1)} aria-label={by === 'service' ? 'Previous services' : 'Previous staff'}>‹</button>
-            <span><b>{by === 'service' ? 'Services' : 'Staff'} {cp * per + 1}–{Math.min(allDayCols.length, cp * per + per)}</b> of {allDayCols.length}</span>
-            <span className="cpg-dots">{Array.from({ length: colPages }, (_, i) => <button key={i} type="button" aria-label={`Page ${i + 1}`} aria-pressed={i === cp} onClick={() => setColPage(i)} />)}</span>
-            <button type="button" className="nav" disabled={cp >= colPages - 1} onClick={() => setColPage(cp + 1)} aria-label={by === 'service' ? 'Next services' : 'Next staff'}>›</button>
+            <button type="button" className="nav" disabled={cp === 0} onClick={() => setColPage(cp - 1)} aria-label={by === 'service' ? t('appt.previousServices') : t('cal.previousStaff')}>‹</button>
+            <span><Trans t={t} i18nKey={by === 'service' ? 'cal.servicesRange' : 'cal.staffRange'} values={{ from: cp * per + 1, to: Math.min(allDayCols.length, cp * per + per), total: allDayCols.length }} components={[<b key="b" />]} /></span>
+            <span className="cpg-dots">{Array.from({ length: colPages }, (_, i) => <button key={i} type="button" aria-label={t('cal.page', { n: i + 1 })} aria-pressed={i === cp} onClick={() => setColPage(i)} />)}</span>
+            <button type="button" className="nav" disabled={cp >= colPages - 1} onClick={() => setColPage(cp + 1)} aria-label={by === 'service' ? t('appt.nextServices') : t('cal.nextStaff')}>›</button>
           </div>
         )}
       </div>
 
-      {loading && <p style={styles.empty}>Loading...</p>}
+      {loading && <p style={styles.empty}>{t('cal.loading')}</p>}
 
       {!loading && view === 'day' && (() => {
         const h = dayHours[date];
         if (h && 'closed' in h) return <p className="q-empty">{h.reason}.</p>;
-        if (dayCols.length === 0) return <p className="q-empty">{by === 'staff' ? 'No staff working on this day.' : 'No service chosen in the services filter.'}</p>;
+        if (dayCols.length === 0) return <p className="q-empty">{by === 'staff' ? t('cal.noStaffWorking') : t('cal.noServiceChosen')}</p>;
         return (
           <TimeGrid
             hourRange={hourRange}
@@ -515,9 +535,7 @@ export function BookingCalendar() {
                 bookings: colBks,
                 slot: caps ? (m: number) => {
                   const cap = caps[hhmm(m)]; const v = slotView(cap);
-                  const left = cap?.left || 0; const booked = cap?.booked || 0;
-                  const tip = v.label ? (cap?.free_staff ? `${svcName}: ${booked} booked, ${left} more possible (${cap.free_staff.join(', ')} free)${cap.busy_other?.length ? '; busy with other services: ' + cap.busy_other.join(', ') : ''}` : `${svcName}: ${booked} of ${booked + left} places booked, ${left} left`)
-                    : v.none ? `${svcName}: nobody can take ${hhmm(m)} (no staff, room or place free)` : '';
+                  const tip = slotTip(svcName, cap, v, m, false);
                   return { label: v.label, full: v.full, none: v.none, tip };
                 } : undefined,
                 onNew: (m: number, e: React.MouseEvent) => openDraft({ date, time: hhmm(m), serviceId: c.serviceId, staffId: c.staffId, colKey: c.key }, e),
@@ -543,13 +561,12 @@ export function BookingCalendar() {
               const h = dayHours[d]; const closed = !!h && 'closed' in h;
               return {
                 key: 'd:' + d, date: d, closed,
-                header: <span data-testid="week-day-header" data-date={d}>{dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' })}{closed && <small>closed</small>}</span>,
+                header: <span data-testid="week-day-header" data-date={d}>{dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' })}{closed && <small>{t('cal.closed')}</small>}</span>,
                 bookings: visibleBookings.filter((b) => zonedParts(new Date(b.start_time), businessTimezone).date === d),
                 slot: singleService && calendarData?.week_slot_capacity?.[d] ? (m: number) => {
                   const cap: SlotCap | undefined = calendarData.week_slot_capacity[d][hhmm(m)]; const v = slotView(cap);
                   const nm = allServices.find((x) => x.id === singleService)?.name || '';
-                  const left = cap?.left || 0; const booked = cap?.booked || 0;
-                  const tip = v.label ? (cap?.free_staff ? `${nm}: ${booked} booked, ${left} more possible (${cap.free_staff.join(', ')} free)${cap.busy_other?.length ? '; busy with other services: ' + cap.busy_other.join(', ') : ''}` : `${nm}: ${booked} of ${booked + left} places booked, ${left} left`) : v.none ? `${nm}: nobody can take ${hhmm(m)}` : '';
+                  const tip = slotTip(nm, cap, v, m, true);
                   return { label: v.label, full: v.full, none: v.none, tip };
                 } : undefined,
                 onNew: (m: number, e: React.MouseEvent) => openDraft({ date: d, time: hhmm(m), colKey: 'd:' + d }, e),
@@ -638,6 +655,7 @@ export function TimeGrid({ columns, hourRange, timezone, dayHours, colorMap, onB
   onBookingClick: (id: string) => void; ghost: { colKey: string; date: string; start: number; len: number; label: string } | null;
   maxPerTime?: number; onMore?: (date: string) => void;
 }) {
+  const { t } = useTranslation('calendar');
   const startMin = hourRange.start * 60; const endMin = hourRange.end * 60;
   const cells = Array.from({ length: Math.max(0, (endMin - startMin) / 30) }, (_, i) => startMin + i * 30);
   const now = zonedParts(new Date(), timezone);
@@ -667,9 +685,9 @@ export function TimeGrid({ columns, hourRange, timezone, dayHours, colorMap, onB
               const g = ghost && ghost.colKey === c.key && ghost.date === c.date && ghost.start >= m && ghost.start < m + 30 ? ghost : null;
               const nowHere = c.date === now.date && now.minutes >= m && now.minutes < m + 30;
               return (
-                <div key={c.key} className={`c2${off ? ' off' : ''}${none ? ' nocap' : ''}`} title={none ? s!.tip : off ? 'Outside business hours' : undefined} data-col={c.key} data-m={m}>
-                  {nowHere && <span className="nowl" style={{ top: ((now.minutes - m) / 30) * ROWH - 1 }} title="Now" />}
-                  {canNew && !none && <button type="button" className="cnew" aria-label={`New booking: ${c.date} ${hhmm(m)}`} onClick={(e) => c.onNew(m, e)}><span>+</span></button>}
+                <div key={c.key} className={`c2${off ? ' off' : ''}${none ? ' nocap' : ''}`} title={none ? s!.tip : off ? t('cal.outsideHours') : undefined} data-col={c.key} data-m={m}>
+                  {nowHere && <span className="nowl" style={{ top: ((now.minutes - m) / 30) * ROWH - 1 }} title={t('cal.now')} />}
+                  {canNew && !none && <button type="button" className="cnew" aria-label={t('cal.newBookingAt', { date: c.date, time: hhmm(m) })} onClick={(e) => c.onNew(m, e)}><span>+</span></button>}
                   {s && s.label && <span className="capn cp-ok" title={s.tip}>{s.label}</span>}
                   {startsHere.map(({ bk, st, en, col, n }) => {
                     const top = 2 + ((Math.max(st, m) - m) / 30) * ROWH;
@@ -679,13 +697,13 @@ export function TimeGrid({ columns, hourRange, timezone, dayHours, colorMap, onB
                       <button key={bk.id} type="button" className="bk2 sc" data-service-id={bk.service_id}
                         style={{ ['--sc' as any]: cv(colorMap.get(bk.service_id) || SERVICE_COLOR_VARS[0]), top, height, ...pos(col, n) }}
                         onClick={() => onBookingClick(bk.id)}
-                        title={`Edit: ${bk.customer_name} · ${bk.service_name}${bk.addon_names ? ' + ' + bk.addon_names : ''}${bk.participant_count > 1 ? ` (${bk.participant_count} people)` : ''}${bk.staff_name ? ' · ' + bk.staff_name : ''}, ${hhmm(st)}–${hhmm(en)} · ${PAYMENT_STATUS_LABEL[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_LABEL.unpaid}`}>
+                        title={t('cal.bookingTitle', { details: `${bk.customer_name} · ${bk.service_name}${bk.addon_names ? ' + ' + bk.addon_names : ''}${bk.participant_count > 1 ? ` (${t('cal.peopleCount', { count: bk.participant_count })})` : ''}${bk.staff_name ? ' · ' + bk.staff_name : ''}`, time: `${hhmm(st)}–${hhmm(en)}`, payment: paymentStatusLabel(bk.payment_status) })}>
                         <span>{label}</span>
                       </button>
                     );
                   })}
-                  {moreHere.map((mo) => <button key={'more' + mo.st} type="button" className="bk2 more" style={{ top: 2 + ((mo.st - m) / 30) * ROWH, height: ROWH - 4, ...pos(mo.col, mo.n) }} onClick={() => onMore?.(c.date)} title={`${mo.count} more bookings at ${hhmm(mo.st)}: open the day`}>+{mo.count}</button>)}
-                  {g && <div className="gh" style={{ top: 2 + ((g.start - m) / 30) * ROWH, height: Math.ceil(g.len / 30) * ROWH - 4 }}>{g.label ? `New · ${g.label}` : 'New booking'}<br />{hhmm(g.start)}–{hhmm(g.start + g.len)}</div>}
+                  {moreHere.map((mo) => <button key={'more' + mo.st} type="button" className="bk2 more" style={{ top: 2 + ((mo.st - m) / 30) * ROWH, height: ROWH - 4, ...pos(mo.col, mo.n) }} onClick={() => onMore?.(c.date)} title={t('cal.moreAt', { count: mo.count, time: hhmm(mo.st) })}>+{mo.count}</button>)}
+                  {g && <div className="gh" style={{ top: 2 + ((g.start - m) / 30) * ROWH, height: Math.ceil(g.len / 30) * ROWH - 4 }}>{g.label ? t('cal.ghostNew', { label: g.label }) : t('cal.newBooking')}<br />{hhmm(g.start)}–{hhmm(g.start + g.len)}</div>}
                 </div>
               );
             })}
@@ -708,6 +726,7 @@ function NewBookingPopup({ businessId, timezone, draft, services, locationId: ca
   businessId: string; timezone: string; draft: NewBookingDraft; services: SvcItem[]; locationId: string; staffServices: { name: string; service_ids: string[] } | null;
   onLength: (min: number) => void; onLabel: (label: string) => void; onClose: () => void; onCreated: (msg: string) => void; onMore: (p: AppointmentPrefill) => void;
 }) {
+  const { t } = useTranslation('calendar');
   const [serviceId, setServiceId] = useState(draft.serviceId || '');
   const [variantId, setVariantId] = useState('');
   const [parts, setParts] = useState(1);
@@ -763,19 +782,19 @@ function NewBookingPopup({ businessId, timezone, draft, services, locationId: ca
         service_id: serviceId, variant_id: variantId, staff_id: chosen.staff_id || undefined, start_time: chosen.start_time, participant_count: parts, override_rules: ovr,
         location_id: chosen.location_id || undefined,
       });
-      onCreated(`Booking created: ${svc.name}, ${dayLabel(draft.date)} ${time}`);
+      onCreated(t('cal.created', { service: svc.name, date: dayLabel(draft.date), time }));
     } catch (err: any) {
-      const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || 'The booking could not be created.');
+      const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || t('cal.createFailed'));
     } finally { setSaving(false); }
   };
 
   const pickRow = (kind: 'loc' | 'staff', list: Array<[string, string]>, cur: string | null, set: (v: string) => void) => {
-    const label = kind === 'loc' ? 'Location *' : 'Staff';
+    const label = kind === 'loc' ? t('cal.locationRequired') : t('appt.staff');
     if (list.length > 6) {
       return (
         <div className="mk-f"><div className="mk-l">{label}</div>
-          <select value={cur || (kind === 'staff' ? 'any' : '')} onChange={(e) => set(e.target.value)} aria-label={kind === 'loc' ? 'Location' : 'Staff'}>
-            {kind === 'staff' ? <option value="any">Any staff</option> : <option value="" disabled>Choose a location…</option>}
+          <select value={cur || (kind === 'staff' ? 'any' : '')} onChange={(e) => set(e.target.value)} aria-label={kind === 'loc' ? t('appt.location') : t('appt.staff')}>
+            {kind === 'staff' ? <option value="any">{t('appt.anyStaff')}</option> : <option value="" disabled>{t('cal.chooseLocation')}</option>}
             {list.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
         </div>
@@ -784,7 +803,7 @@ function NewBookingPopup({ businessId, timezone, draft, services, locationId: ca
     return (
       <div className="mk-f"><div className="mk-l">{label}</div>
         <div className="chips">
-          {kind === 'staff' && <button type="button" className="ch" aria-pressed={cur === 'any'} onClick={() => set('any')}>Any</button>}
+          {kind === 'staff' && <button type="button" className="ch" aria-pressed={cur === 'any'} onClick={() => set('any')}>{t('cal.any')}</button>}
           {list.map(([id, name]) => <button key={id} type="button" className="ch" aria-pressed={cur === id} onClick={() => set(id)}>{kind === 'staff' && <span className="av">{initials(name)}</span>}{name}</button>)}
         </div>
       </div>
@@ -792,35 +811,35 @@ function NewBookingPopup({ businessId, timezone, draft, services, locationId: ca
   };
 
   return (
-    <div className="dsa pop2" style={{ left, top, width: W, maxHeight: `calc(100vh - ${top}px - 12px)` }} role="dialog" aria-label="New booking">
-      <h4><span>New booking</span><small>{dayLabel(draft.date)} · {time ? `${time}${variant ? '–' + hhmm(toMin(time) + variant.duration) : ''}` : 'choose a time'}</small></h4>
+    <div className="dsa pop2" style={{ left, top, width: W, maxHeight: `calc(100vh - ${top}px - 12px)` }} role="dialog" aria-label={t('cal.newBooking')}>
+      <h4><span>{t('cal.newBooking')}</span><small>{dayLabel(draft.date)} · {time ? `${time}${variant ? '–' + hhmm(toMin(time) + variant.duration) : ''}` : t('cal.chooseTime')}</small></h4>
       <CustomerPicker businessId={businessId} customer={customer} onCustomer={setCustomer} walk={walk} onWalk={setWalk} walkName={walkName} onWalkName={setWalkName} compact startOpen />
       <ServicePicker services={services} serviceId={serviceId} onService={(id) => { setServiceId(id); setStaffId(draft.staffId || 'any'); setLocationId(calLoc || null); }} compact onlyFor={staffServices ? { name: staffServices.name, ids: staffServices.service_ids } : null} />
       <OptionChips svc={svc} variantId={variantId} onVariant={setVariantId} />
       <ParticipantsField svc={svc} parts={parts} onParts={setParts} ovr={ovr} onOvr={setOvr} />
       {svc && loaded && (!time || (time && atTime.length === 0)) && (
         <div className="mk-f">
-          <div className="mk-l">Time *</div>
-          {time && <p className="mk-warn">{time} is not free for {svc.name} {variant?.name}. Free times that day:</p>}
-          {times.length ? <div className="chips" style={{ maxHeight: '104px', overflowY: 'auto' }}>{times.map((t) => <button key={t} type="button" className="ch" aria-pressed={t === time} onClick={() => { setTime(t); setLocationId(calLoc || null); }}>{t}</button>)}</div>
-            : <p className="mk-warn">Nothing free that day for this service.</p>}
+          <div className="mk-l">{t('cal.timeRequired')}</div>
+          {time && <p className="mk-warn">{t('cal.timeNotFree', { time, service: svc.name, option: variant?.name })}</p>}
+          {times.length ? <div className="chips" style={{ maxHeight: '104px', overflowY: 'auto' }}>{times.map((tm) => <button key={tm} type="button" className="ch" aria-pressed={tm === time} onClick={() => { setTime(tm); setLocationId(calLoc || null); }}>{tm}</button>)}</div>
+            : <p className="mk-warn">{t('cal.nothingFreeService')}</p>}
         </div>
       )}
-      {svc && time && atTime.length > 0 && multiLoc && (locFree.length ? pickRow('loc', locFree, loc, setLocationId) : <div className="mk-f"><div className="mk-l">Location *</div><p className="mk-warn">No location is free at this time.</p></div>)}
+      {svc && time && atTime.length > 0 && multiLoc && (locFree.length ? pickRow('loc', locFree, loc, setLocationId) : <div className="mk-f"><div className="mk-l">{t('cal.locationRequired')}</div><p className="mk-warn">{t('cal.noLocationFree')}</p></div>)}
       {svc && time && atTime.length > 0 && hasStaff && (multiLoc && !loc
-        ? <div className="mk-f"><div className="mk-l">Staff</div><p className="mk-hint">Choose a location first: the staff free there appear here.</p></div>
-        : staffFree.length ? pickRow('staff', staffFree, pickedStaff, setStaffId) : <div className="mk-f"><div className="mk-l">Staff</div><p className="mk-warn">Nobody is free at this time.</p></div>)}
-      {colStaffBusy && <p className="mk-warn">The staff member of this column is not free then; choose someone else or another time.</p>}
-      {walkNotToday && <p className="mk-warn">A walk-in is booked for today only. For {dayLabel(draft.date)}, choose or add the customer.</p>}
-      {multiLoc && time && atTime.length > 0 && !loc && <p className="mk-hint">Choose a location.</p>}
+        ? <div className="mk-f"><div className="mk-l">{t('appt.staff')}</div><p className="mk-hint">{t('appt.chooseLocationFirst')}</p></div>
+        : staffFree.length ? pickRow('staff', staffFree, pickedStaff, setStaffId) : <div className="mk-f"><div className="mk-l">{t('appt.staff')}</div><p className="mk-warn">{t('cal.nobodyFreeNow')}</p></div>)}
+      {colStaffBusy && <p className="mk-warn">{t('cal.columnStaffBusy')}</p>}
+      {walkNotToday && <p className="mk-warn">{t('cal.walkInTodayOnly', { date: dayLabel(draft.date) })}</p>}
+      {multiLoc && time && atTime.length > 0 && !loc && <p className="mk-hint">{t('cal.chooseALocation')}</p>}
       {error && <p className="mk-warn" role="alert">{error}</p>}
       <div className="pop-act">
-        <button type="button" className="more" onClick={more}>More options ⤢</button>
+        <button type="button" className="more" onClick={more}>{t('cal.moreOptions')}</button>
         <span>
-          <button type="button" className="btn sec" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn sec" onClick={onClose}>{t('common:cancel')}</button>
           {needsMore
-            ? <button type="button" className="btn" disabled={!canCreate} onClick={more}>Next: payment ›</button>
-            : <button type="button" className="btn" disabled={!canCreate} onClick={create}>{saving ? 'Creating…' : 'Create'}</button>}
+            ? <button type="button" className="btn" disabled={!canCreate} onClick={more}>{t('appt.nextPayment')}</button>
+            : <button type="button" className="btn" disabled={!canCreate} onClick={create}>{saving ? t('cal.creating') : t('cal.create')}</button>}
         </span>
       </div>
     </div>
@@ -845,6 +864,7 @@ function MonthView({ days, capacityDays = {}, services = [], colorMap, date, day
   days: any[]; capacityDays?: Record<string, MonthCap[]>; services?: MonthSvc[]; colorMap?: Map<string, string>; date: string;
   dayHours?: Record<string, DayHoursEntry>; timezone?: string; onDayClick: (date: string) => void; onNew?: (date: string, e: React.MouseEvent) => void; picked?: string | null;
 }) {
+  const { t } = useTranslation('calendar');
   const [openDay, setOpenDay] = useState<string | null>(null);
   const svcName = (id: string) => services.find((s) => s.id === id)?.name || '';
   const d = new Date(date + 'T12:00:00Z');
@@ -855,7 +875,7 @@ function MonthView({ days, capacityDays = {}, services = [], colorMap, date, day
   for (const x of days) byDay.set(typeof x.date === 'string' ? x.date.split('T')[0] : x.date, x);
   const todayStr = zonedParts(new Date(), timezone).date;
   const line = (c: MonthCap) => (
-    <span key={c.service_id} className="ln svl" title={`${svcName(c.service_id)}: ${c.booked} booked${c.capacity !== null ? ' of ' + c.capacity : ''}`}>
+    <span key={c.service_id} className="ln svl" title={c.capacity !== null ? t('cal.bookedOf', { name: svcName(c.service_id), booked: c.booked, capacity: c.capacity }) : t('cal.booked', { name: svcName(c.service_id), booked: c.booked })}>
       <span className="sdot" style={{ ['--sc' as any]: cv(colorMap?.get(c.service_id) || SERVICE_COLOR_VARS[0]) }} />
       <span className="nm">{svcName(c.service_id)}</span>
       <b className={capCls(c.booked, c.capacity)}>{c.capacity ? `${c.booked}/${c.capacity}` : c.booked || '–'}</b>
@@ -863,7 +883,7 @@ function MonthView({ days, capacityDays = {}, services = [], colorMap, date, day
   );
   return (
     <div className="mon">
-      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((x) => <span key={x} className="dow">{x}</span>)}
+      {Array.from({ length: 7 }, (_, i) => <span key={i} className="dow">{dayLabel(`2024-01-0${i + 1}`, { weekday: 'short' })}</span>)}
       {Array.from({ length: lead }, (_, i) => <span key={'l' + i} />)}
       {Array.from({ length: total }, (_, i) => {
         const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
@@ -875,18 +895,18 @@ function MonthView({ days, capacityDays = {}, services = [], colorMap, date, day
         const dim = ds < todayStr; // past days faded, as in the hub (David, 11 Nov 2026)
         return (
           <div key={ds} className={`mday${ds === todayStr ? ' today' : ''}${dim ? ' dim' : ''}${openDay === ds ? ' up' : ''}${picked === ds ? ' pick' : ''}${closed ? ' shut' : ''}`} onClick={dim ? undefined : () => onDayClick(ds)} title={closed ? (h as any).reason : undefined}>
-            <button type="button" className="mnum" disabled={dim} aria-label={`Open ${ds} in the Day view`} onClick={(e) => { e.stopPropagation(); onDayClick(ds); }}>{i + 1}{ds === todayStr ? ' · today' : ''}</button>
-            {canAdd && <button type="button" className="mplus" aria-label={`New booking on ${ds}`} title={`New booking on ${ds}`} onClick={(e) => { e.stopPropagation(); onNew!(ds, e); }}>+</button>}
-            {dim ? null : closed ? <span className="ln">closed</span> : (
+            <button type="button" className="mnum" disabled={dim} aria-label={t('cal.openInDay', { date: ds })} onClick={(e) => { e.stopPropagation(); onDayClick(ds); }}>{i + 1}{ds === todayStr ? ' · today' : ''}</button>
+            {canAdd && <button type="button" className="mplus" aria-label={t('cal.newBookingOn', { date: ds })} title={t('cal.newBookingOn', { date: ds })} onClick={(e) => { e.stopPropagation(); onNew!(ds, e); }}>+</button>}
+            {dim ? null : closed ? <span className="ln">{t('cal.closed')}</span> : (
               <>
-                <span className="cnt">{count} booking{count === 1 ? '' : 's'}{people > count ? ` · ${people} people` : ''}</span>
+                <span className="cnt">{t('cal.bookingCount', { count })}{people > count ? ` · ${t('cal.peopleCount', { count: people })}` : ''}</span>
                 {top.map(line)}
-                {more > 0 && <button type="button" className="mmore" aria-expanded={openDay === ds} onClick={(e) => { e.stopPropagation(); setOpenDay(openDay === ds ? null : ds); }}>+{more} more</button>}
+                {more > 0 && <button type="button" className="mmore" aria-expanded={openDay === ds} onClick={(e) => { e.stopPropagation(); setOpenDay(openDay === ds ? null : ds); }}>{t('cal.moreCount', { count: more })}</button>}
                 {openDay === ds && (
-                  <div className={`mpop${col >= 4 ? ' r' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`All services on ${ds}`}>
+                  <div className={`mpop${col >= 4 ? ' r' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={t('cal.allServicesOn', { date: ds })}>
                     <b>{dayLabel(ds, { weekday: 'short', day: 'numeric', month: 'short' })}</b>
                     {all.map(line)}
-                    <span className="mpop-f"><button type="button" className="btn sec" onClick={() => setOpenDay(null)}>Close</button><button type="button" className="btn" onClick={() => onDayClick(ds)}>Open the day</button></span>
+                    <span className="mpop-f"><button type="button" className="btn sec" onClick={() => setOpenDay(null)}>{t('common:modal.close')}</button><button type="button" className="btn" onClick={() => onDayClick(ds)}>{t('cal.openTheDay')}</button></span>
                   </div>
                 )}
               </>
@@ -902,6 +922,7 @@ function MonthGrid({ capacityDays, services, days = [], colorMap, date, dayHours
   capacityDays: Record<string, MonthCap[]>; services: MonthSvc[]; days?: any[]; colorMap: Map<string, string>; date: string;
   dayHours?: Record<string, DayHoursEntry>; timezone?: string; onDayClick: (date: string) => void; onNew?: (date: string, serviceId: string, e: React.MouseEvent) => void;
 }) {
+  const { t } = useTranslation('calendar');
   const d = new Date(date + 'T12:00:00Z');
   const year = d.getUTCFullYear(); const month = d.getUTCMonth();
   const total = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -911,25 +932,25 @@ function MonthGrid({ capacityDays, services, days = [], colorMap, date, dayHours
   const count = (x: string) => days.find((y: any) => String(y.date).slice(0, 10) === x)?.count || 0;
   const ids = new Set(services.map((s) => s.id));
   const people = (x: string) => (capacityDays[x] || []).filter((y) => ids.has(y.service_id)).reduce((a, y) => a + (y.booked || 0), 0);
-  if (services.length === 0) return <p className="q-empty">No services to show.</p>;
+  if (services.length === 0) return <p className="q-empty">{t('cal.noServices')}</p>;
   return (
     <div className="mx">
       <table className="mxt">
         <colgroup><col className="mxcol" />{ds.map((x) => <col key={x} />)}</colgroup>
         <thead>
           <tr>
-            <th className="mxs">Service</th>
+            <th className="mxs">{t('appt.service')}</th>
             {ds.map((x, i) => (
               <th key={x} className={x === todayStr ? 'today' : ''}>
-                <button type="button" className="mxd" onClick={() => onDayClick(x)} title={`Open ${dayLabel(x)} in the Day view`}><span>{dayLabel(x, { weekday: 'short' }).slice(0, 2)}</span>{i + 1}</button>
+                <button type="button" className="mxd" onClick={() => onDayClick(x)} title={t('cal.openInDay', { date: dayLabel(x) })}><span>{dayLabel(x, { weekday: 'short' }).slice(0, 2)}</span>{i + 1}</button>
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
           <tr>
-            <th className="mxs">Total</th>
-            {ds.map((x) => { if (closed(x)) return <td key={x} className="off">–</td>; const n = people(x); const b = count(x); return <td key={x}><button type="button" className="mxc" onClick={() => onDayClick(x)} title={`Open ${dayLabel(x)}${n ? ` · ${n} booked (${b} booking${b === 1 ? '' : 's'})` : ''}`}>{n ? <b>{n}</b> : null}</button></td>; })}
+            <th className="mxs">{t('cal.total')}</th>
+            {ds.map((x) => { if (closed(x)) return <td key={x} className="off">–</td>; const n = people(x); const b = count(x); return <td key={x}><button type="button" className="mxc" onClick={() => onDayClick(x)} title={n ? t('cal.openDayBooked', { date: dayLabel(x), n, bookings: t('cal.bookingCount', { count: b }) }) : t('cal.openDay', { date: dayLabel(x) })}>{n ? <b>{n}</b> : null}</button></td>; })}
           </tr>
           {services.map((s) => (
             <tr key={s.id}>
@@ -942,7 +963,7 @@ function MonthGrid({ capacityDays, services, days = [], colorMap, date, dayHours
                 return (
                   <td key={x}>
                     <button type="button" className={`mxc ${capCls(u, k)}`} onClick={(e) => (canBook ? onNew!(x, s.id, e) : onDayClick(x))}
-                      title={`${dayLabel(x)} · ${s.name}: ${u} booked${k !== null ? ' of ' + k + ' ' + s.unit : ''}.${canBook ? ` Click to book ${s.name} on this day.` : ''}`}>
+                      title={[k !== null ? t('cal.cellBookedOf', { date: dayLabel(x), name: s.name, booked: u, capacity: k, unit: s.unit }) : t('cal.cellBooked', { date: dayLabel(x), name: s.name, booked: u }), canBook ? t('cal.clickToBook', { name: s.name }) : ''].filter(Boolean).join(' ')}>
                       {u ? (k ? <><b>{u}</b><small>{k}</small></> : <b>{u}</b>) : null}
                     </button>
                   </td>

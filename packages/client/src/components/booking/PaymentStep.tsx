@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import * as bookingsApi from '../../api/bookings';
 import * as checkoutApi from '../../api/checkout';
 import { apiClient } from '../../api/client';
@@ -51,13 +53,14 @@ type Choice = 'onfile' | 'card' | 'bank';
 
 const pe = (c: number) => (c < 0 ? '−' : '') + formatCurrency(Math.abs(c));
 const labelOf = (m: PaymentMethod) => m.method_type === 'bank_draw'
-  ? `${m.display_brand || 'Bank account'} ···· ${m.display_last4 || ''}`.trim()
-  : `${m.display_brand || 'Card'} ···· ${m.display_last4 || ''}`.trim();
+  ? `${m.display_brand || i18n.t('booking:payment.bankAccount')} ···· ${m.display_last4 || ''}`.trim()
+  : `${m.display_brand || i18n.t('booking:payment.card')} ···· ${m.display_last4 || ''}`.trim();
 
 export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone }: {
   businessId: string; draft: BookingDraft; mode?: 'charge' | 'hold';
   onBack: () => void; onDone: (message: string) => void;
 }) {
+  const { t } = useTranslation('booking');
   const hold = mode === 'hold';
   const [useCredit, setUseCredit] = useState(false);
   const [promoInput, setPromoInput] = useState('');
@@ -81,7 +84,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
   const walkInAttempt = useRef<{ orderId: string; clientSecret: string } | null>(null);
 
   const customerId: string | null = draft.walk ? null : draft.customer?.id || null;
-  const name = draft.walk ? (draft.walkName || 'Walk-in') : `${draft.customer?.first_name || ''} ${draft.customer?.last_name || ''}`.trim();
+  const name = draft.walk ? (draft.walkName || t('payment.walkIn')) : `${draft.customer?.first_name || ''} ${draft.customer?.last_name || ''}`.trim();
   const first = name.split(' ')[0];
   const owner = customerId ? { owner_level: 'customer' as const, business_id: businessId, customer_id: customerId } : null;
 
@@ -97,7 +100,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
       setQuote((prev) => (prev ? { ...q, cards: mergeSaved(q.cards, prev.cards), banks: mergeSaved(q.banks, prev.banks) } : q));
       if (q.cards[0] && !cardId) setCardId(q.cards[0].id);
       if (q.banks[0] && !bankId) setBankId(q.banks[0].id);
-    }).catch(() => { if (!off) setError('The price could not be worked out.'); });
+    }).catch(() => { if (!off) setError(t('price.failed')); });
     return () => { off = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId, customerId, draft.serviceId, draft.variantId, draft.parts, promo, useCredit, hold, draft.benefit, (draft.addons || []).join(',')]);
@@ -113,7 +116,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
   const ready = !!quote && !adding && (hold
     ? !!chosenId && agreed
     : !quote.credit_needs_split && (covered || !!chosenId || (newCardForWalkIn && (cardReady || !quote.publishable_key))));
-  const btnLabel = hold ? 'Save reservation' : covered ? 'Confirm booking' : `Take ${formatCurrency(due)} and confirm`;
+  const btnLabel = hold ? t('payment.saveReservation') : covered ? t('payment.confirmBooking') : t('payment.takeAndConfirm', { amount: formatCurrency(due) });
 
   const pick = (c: Choice) => {
     setMethod(c);
@@ -131,7 +134,8 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
   };
 
   const bookingData = (paymentMethodId?: string) => ({
-    business_id: businessId, customer_id: customerId || undefined, walk_in_name: draft.walk ? (draft.walkName || 'Walk-in') : undefined,
+    business_id: businessId, customer_id: customerId || undefined, walk_in_name: draft.walk ? (draft.walkName || 'Walk-in') : undefined, // i18n-ignore: stored with the booking, not shown
+   
     service_id: draft.serviceId, variant_id: draft.variantId, staff_id: draft.staffId, start_time: draft.startIso,
     notes: draft.notes || undefined, participant_count: draft.parts, override_rules: draft.ovr, location_id: draft.locationId || undefined,
     ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
@@ -145,12 +149,12 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     if (hold) {
       try {
         await bookingsApi.createBooking(bookingData(chosenId));
-        const held = (method === 'bank' ? quote?.banks : quote?.cards)?.find((x) => x.id === chosenId)?.label || 'the payment method';
-        onDone(`Reservation saved, ${held} kept and not charged: ${draft.serviceName}, ${draft.whenLabel}`);
-      } catch (err) { setError(errText(err, 'The reservation could not be saved.')); setSaving(false); }
+        const held = (method === 'bank' ? quote?.banks : quote?.cards)?.find((x) => x.id === chosenId)?.label || t('payment.paymentMethod');
+        onDone(t('payment.msgReservationSaved', { method: held, service: draft.serviceName, when: draft.whenLabel }));
+      } catch (err) { setError(errText(err, t('payment.errReservation'))); setSaving(false); }
       return;
     }
-    const paidMessage = `Booking confirmed and paid ${formatCurrency(due)}: ${draft.serviceName}, ${draft.whenLabel}`;
+    const paidMessage = t('payment.msgPaid', { amount: formatCurrency(due), service: draft.serviceName, when: draft.whenLabel });
     // Retrying a walk-in card after a decline: same booking and order, same payment.
     if (walkInAttempt.current && chargeCard.current) {
       await chargeWalkIn(walkInAttempt.current.orderId, walkInAttempt.current.clientSecret, paidMessage);
@@ -159,7 +163,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     let bookingId = '';
     try {
       bookingId = (await bookingsApi.createBooking(bookingData())).id;
-    } catch (err) { setError(errText(err, 'The booking could not be created.')); setSaving(false); return; }
+    } catch (err) { setError(errText(err, t('payment.errBooking'))); setSaving(false); return; }
     try {
       const r = await apiClient.post(`/v1/bookings/${bookingId}/pay?business_id=${businessId}`, {
         method: covered ? 'covered' : method === 'bank' ? 'bank' : method === 'onfile' ? 'onfile' : 'card',
@@ -168,7 +172,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
       const res = r.data.data;
       if (res.status === 'card_form') {
         const s = await checkoutApi.beginOneTimeCharge(res.order_id, businessId);
-        if (!s.clientSecret || !s.publishableKey) throw new Error('Card payments are not set up for this business.');
+        if (!s.clientSecret || !s.publishableKey) throw new Error(t('payment.errCardsNotSetUp'));
         if (chargeCard.current) {
           walkInAttempt.current = { orderId: res.order_id, clientSecret: s.clientSecret };
           await chargeWalkIn(res.order_id, s.clientSecret, paidMessage);
@@ -178,11 +182,13 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
         setSaving(false); return;
       }
       const message = res.order?.status === 'pending' || res.status === 'pending'
-        ? `Booking confirmed, bank payment of ${formatCurrency(due)} on its way: ${draft.serviceName}, ${draft.whenLabel}`
-        : `Booking confirmed and paid${res.total ? ' ' + formatCurrency(res.total) : ''}: ${draft.serviceName}, ${draft.whenLabel}`;
+        ? t('payment.msgBankPending', { amount: formatCurrency(due), service: draft.serviceName, when: draft.whenLabel })
+        : res.total
+          ? t('payment.msgPaid', { amount: formatCurrency(res.total), service: draft.serviceName, when: draft.whenLabel })
+          : t('payment.msgPaidNoAmount', { service: draft.serviceName, when: draft.whenLabel });
       if (res.order?.id && res.total > 0) { setPaid({ orderId: res.order.id, message }); setSaving(false); } else onDone(message);
     } catch (err) {
-      setError(`The booking is saved but the payment was not taken: ${errText(err, 'unknown reason')}. Take it from the booking's Checkout.`);
+      setError(t('payment.errNotTaken', { reason: errText(err, t('payment.unknownReason')) }));
       setSaving(false);
     }
   };
@@ -195,76 +201,76 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
       walkInAttempt.current = null;
       setPaid({ orderId, message });
     } catch (err) {
-      setError(`The card was not charged: ${errText(err, 'unknown reason')}. Check the card and try again, or take the payment at Checkout.`);
+      setError(t('payment.errCardNotCharged', { reason: errText(err, t('payment.unknownReason')) }));
     } finally { setSaving(false); }
   }
 
   const tiles: Array<[Choice, string, string]> = [
-    ...(quote?.cards.length ? [['onfile', 'Card on file', quote.cards.find((c) => c.id === cardId)?.label || quote.cards[0].label] as [Choice, string, string]] : []),
-    ['card', 'New card', 'enter it here'],
+    ...(quote?.cards.length ? [['onfile', t('payment.cardOnFile'), quote.cards.find((c) => c.id === cardId)?.label || quote.cards[0].label] as [Choice, string, string]] : []),
+    ['card', t('payment.newCard'), t('payment.newCardHint')],
     // a bank account is saved to a customer, so not for a walk-in
-    ...(customerId ? [['bank', 'Bank account', quote?.banks.length ? quote.banks.find((b) => b.id === bankId)?.label || quote.banks[0].label : 'direct debit (SEPA / ACH)'] as [Choice, string, string]] : []),
+    ...(customerId ? [['bank', t('payment.bankAccount'), quote?.banks.length ? quote.banks.find((b) => b.id === bankId)?.label || quote.banks[0].label : t('payment.bankHint')] as [Choice, string, string]] : []),
   ];
   const chosenLabel = (method === 'bank' ? quote?.banks : quote?.cards)?.find((x) => x.id === chosenId)?.label;
 
   return (
     <div className="mk-app">
-      <div className="mk-title"><span>New appointment <small>step 4 of 4 · Payment</small></span></div>
-      <div className="pay-steps"><span>1 Customer ✓</span><span>2 Service ✓</span><span>3 Date, staff &amp; location ✓</span><b>4 Payment</b></div>
+      <div className="mk-title"><span>{t('payment.newAppointment')} <small>{t('payment.stepOf')}</small></span></div>
+      <div className="pay-steps"><span>{t('payment.stepCustomer')}</span><span>{t('payment.stepService')}</span><span>{t('payment.stepDate')}</span><b>{t('payment.stepPayment')}</b></div>
       <div className="pay-a">
-        <div className="q-sec"><div className="q-sec-h"><b className="n">4</b> {hold ? 'What it costs' : 'What is paid'}</div><div className="q-sec-b">
+        <div className="q-sec"><div className="q-sec-h"><b className="n">4</b> {hold ? t('payment.whatItCosts') : t('payment.whatIsPaid')}</div><div className="q-sec-b">
           <div className="pay-bk"><span className="av">{draft.walk ? 'W' : initials(name)}</span><div><b>{name}</b><small>{draft.serviceName} {draft.variantName} · {draft.whenLabel}{draft.whoLabel ? ' · ' + draft.whoLabel : ''}</small></div></div>
-          {!quote ? <p className="mk-hint">Working out the price…</p> : (
+          {!quote ? <p className="mk-hint">{t('price.working')}</p> : (
             <>
               <div className="pay-lines">
                 {quote.lines.map((l, i) => <div key={i} className={`pay-line${i && l.amount < 0 ? ' sub' : ''}`}><span>{l.label}</span><b>{pe(l.amount)}</b></div>)}
-                <div className="pay-line tot"><span>{hold ? 'Due after the service' : 'To pay'}</span><b>{formatCurrency(due)}</b></div>
+                <div className="pay-line tot"><span>{hold ? t('payment.dueAfterService') : t('payment.toPay')}</span><b>{formatCurrency(due)}</b></div>
               </div>
-              {hold && <p className="mk-hint">Nothing is charged now. At Checkout, after the service, the card or bank account kept here is charged for the final amount, including anything added.</p>}
+              {hold && <p className="mk-hint">{t('payment.holdNote')}</p>}
               {quote.benefit && !quote.benefit.covers && (
-                <p className="mk-warn">{quote.benefit.name} does not cover this: {quote.benefit.reason} Go back to choose another, or it is paid normally.</p>
+                <p className="mk-warn">{t('payment.benefitNoCover', { name: quote.benefit.name, reason: quote.benefit.reason })}</p>
               )}
               {!hold && quote.credit > 0 && (
                 <div className="pay-uses">
-                  <span className="q-lab">What {first} already has</span>
-                  <label className="pay-use"><input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> Use account credit <small>{formatCurrency(quote.credit)} available</small></label>
+                  <span className="q-lab">{t('payment.alreadyHas', { name: first })}</span>
+                  <label className="pay-use"><input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> {t('payment.useCredit')} <small>{t('payment.creditAvailable', { amount: formatCurrency(quote.credit) })}</small></label>
                 </div>
               )}
-              {!hold && quote.credit_needs_split && <p className="mk-warn">The credit covers part of it: paying the rest with another method needs split payment (PAY-2, later). Untick the credit, or add credit.</p>}
+              {!hold && quote.credit_needs_split && <p className="mk-warn">{t('payment.creditNeedsSplit')}</p>}
               {!hold && (quote.total > 0 || promo) && (
                 <>
                   <div className="pay-promo">
-                    <input type="text" value={promoInput} onChange={(e) => setPromoInput(e.target.value)} placeholder="Promotion or discount code" aria-label="Promotion or discount code" />
-                    <button type="button" className="btn sec" onClick={() => setPromo(promoInput.trim())} disabled={!promoInput.trim()}>Apply</button>
+                    <input type="text" value={promoInput} onChange={(e) => setPromoInput(e.target.value)} placeholder={t('payment.promoPlaceholder')} aria-label={t('payment.promoPlaceholder')} />
+                    <button type="button" className="btn sec" onClick={() => setPromo(promoInput.trim())} disabled={!promoInput.trim()}>{t('payment.apply')}</button>
                   </div>
-                  {quote.promo && !quote.promo.ok && <p className="mk-warn">{quote.promo.message || 'This code is not valid.'}</p>}
+                  {quote.promo && !quote.promo.ok && <p className="mk-warn">{quote.promo.message || t('payment.promoInvalid')}</p>}
                 </>
               )}
             </>
           )}
         </div></div>
 
-        <div className="q-sec"><div className="q-sec-h">{hold ? 'Card or bank account to keep' : 'How it is paid'}</div><div className="q-sec-b">
+        <div className="q-sec"><div className="q-sec-h">{hold ? t('payment.cardToKeep') : t('payment.howPaid')}</div><div className="q-sec-b">
           {!quote ? null : paid ? (
             <>
-              <p className="pay-zero" role="status">Paid {formatCurrency(due)}. The booking is confirmed.</p>
+              <p className="pay-zero" role="status">{t('payment.paidNote', { amount: formatCurrency(due) })}</p>
               <ReceiptActions kind="order" id={paid.orderId} businessId={businessId} />
-              <p className="mk-hint">The receipt can also be printed or emailed later, from Orders or the customer's Billing tab.</p>
+              <p className="mk-hint">{t('payment.receiptNote')}</p>
             </>
           ) : cardSession ? (
-            <StripeOneTimeCardCharge clientSecret={cardSession.clientSecret} publishableKey={cardSession.publishableKey} busyLabel="Taking the payment…"
+            <StripeOneTimeCardCharge clientSecret={cardSession.clientSecret} publishableKey={cardSession.publishableKey} busyLabel={t('payment.takingPayment')}
               onPaid={async (pi) => {
                 try {
                   await checkoutApi.completeOrder(cardSession.orderId, businessId, { payment_method: 'card', one_time_charge_ref: pi });
-                  setPaid({ orderId: cardSession.orderId, message: `Booking confirmed and paid ${formatCurrency(due)}: ${draft.serviceName}, ${draft.whenLabel}` }); setCardSession(null);
+                  setPaid({ orderId: cardSession.orderId, message: t('payment.msgPaid', { amount: formatCurrency(due), service: draft.serviceName, when: draft.whenLabel }) }); setCardSession(null);
                 }
-                catch (err) { setError(`The card was charged but the order could not be closed: ${errText(err, '')}`); }
+                catch (err) { setError(t('payment.errOrderNotClosed', { reason: errText(err, '') })); }
               }}
-              onCancel={() => { setCardSession(null); setError('The booking is saved, unpaid: take the payment from its Checkout, or choose another method there.'); }} />
-          ) : covered ? <p className="pay-zero">Nothing to pay: it is covered. Confirm the booking.</p> : (
+              onCancel={() => { setCardSession(null); setError(t('payment.errUnpaid')); }} />
+          ) : covered ? <p className="pay-zero">{t('payment.covered')}</p> : (
             <>
               <div className="pay-tiles">
-                {tiles.map(([v, t, sub]) => <button key={v} type="button" className="svc pay-tile" aria-pressed={method === v} onClick={() => pick(v)}>{t}<small>{sub || ' '}</small></button>)}
+                {tiles.map(([v, title, sub]) => <button key={v} type="button" className="svc pay-tile" aria-pressed={method === v} onClick={() => pick(v)}>{title}<small>{sub || ' '}</small></button>)}
               </div>
               {method && (
                 <div className="pay-det">
@@ -275,16 +281,16 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
                   ) : (
                     <>
                       {method === 'onfile' && quote.cards.length > 1 && (
-                        <select value={cardId} onChange={(e) => setCardId(e.target.value)} aria-label="Card on file">{quote.cards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
+                        <select value={cardId} onChange={(e) => setCardId(e.target.value)} aria-label={t('payment.cardOnFile')}>{quote.cards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
                       )}
                       {method === 'bank' && quote.banks.length > 1 && (
-                        <select value={bankId} onChange={(e) => setBankId(e.target.value)} aria-label="Bank account">{quote.banks.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}</select>
+                        <select value={bankId} onChange={(e) => setBankId(e.target.value)} aria-label={t('payment.bankAccount')}>{quote.banks.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}</select>
                       )}
-                      {method === 'onfile' && <p className="mk-hint">{hold ? `${chosenLabel} is kept for the reservation, not charged now.` : `Charges ${chosenLabel} now (Stripe). The receipt goes by email.`}</p>}
-                      {method === 'bank' && <p className="mk-hint">{hold ? `${chosenLabel} is kept for the reservation, not charged now.` : `Collects ${formatCurrency(due)} from ${chosenLabel} by direct debit (Stripe). A bank payment takes a few days to arrive.`}</p>}
+                      {method === 'onfile' && <p className="mk-hint">{hold ? t('payment.keptNotCharged', { label: chosenLabel }) : t('payment.chargesCard', { label: chosenLabel })}</p>}
+                      {method === 'bank' && <p className="mk-hint">{hold ? t('payment.keptNotCharged', { label: chosenLabel }) : t('payment.collectsBank', { amount: formatCurrency(due), label: chosenLabel })}</p>}
                       {newCardForWalkIn && (quote.publishable_key
-                        ? <><StripeDeferredCard publishableKey={quote.publishable_key} onReady={onCardReady} /><p className="mk-hint">Charged when you confirm. The card is not saved. A physical card terminal is not connected (PAY-5, later).</p></>
-                        : <p className="mk-hint">The card form opens when you confirm. A physical card terminal is not connected (PAY-5, later).</p>)}
+                        ? <><StripeDeferredCard publishableKey={quote.publishable_key} onReady={onCardReady} /><p className="mk-hint">{t('payment.chargedOnConfirm')}</p></>
+                        : <p className="mk-hint">{t('payment.cardFormOpens')}</p>)}
                     </>
                   )}
                 </div>
@@ -292,8 +298,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
               {hold && chosenId && !adding && (
                 <label className="pay-use" style={{ marginTop: 'var(--space-md)' }}>
                   <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-                  {' '}{first} agrees that this {method === 'bank' ? 'bank account' : 'card'} is kept for the reservation and charged after the
-                  service, and for a no-show or late-cancellation fee under the business&apos;s policy.
+                  {' '}{t(method === 'bank' ? 'payment.agreeBank' : 'payment.agreeCard', { name: first })}
                 </label>
               )}
             </>
@@ -303,18 +308,18 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
       {error && <p className="mk-warn" role="alert">{error}</p>}
       {paid && (
         <div className="q-confirm">
-          <div className="q-ctext"><b>Paid {formatCurrency(due)}</b><span>{name} · {draft.serviceName} · {draft.whenLabel}</span></div>
+          <div className="q-ctext"><b>{t('payment.paidBanner', { amount: formatCurrency(due) })}</b><span>{name} · {draft.serviceName} · {draft.whenLabel}</span></div>
           <span />
-          <div className="q-cbtns"><button type="button" className="btn" onClick={() => onDone(paid.message)}>Done</button></div>
+          <div className="q-cbtns"><button type="button" className="btn" onClick={() => onDone(paid.message)}>{t('payment.done')}</button></div>
         </div>
       )}
       {!cardSession && !paid && (
         <div className="q-confirm">
-          <div className="q-ctext"><b>{!quote ? 'Payment' : hold ? `${formatCurrency(due)} due after the service` : `${formatCurrency(due)} to pay`}</b><span>{name} · {draft.serviceName} · {draft.whenLabel}</span></div>
+          <div className="q-ctext"><b>{!quote ? t('payment.paymentTitle') : hold ? t('payment.dueAfterBanner', { amount: formatCurrency(due) }) : t('payment.toPayBanner', { amount: formatCurrency(due) })}</b><span>{name} · {draft.serviceName} · {draft.whenLabel}</span></div>
           <span />
           <div className="q-cbtns">
-            <button type="button" className="btn ghost" onClick={onBack} disabled={saving}>‹ Back</button>
-            <button type="button" className="btn" disabled={!ready || saving} onClick={confirm}>{saving ? 'Working…' : btnLabel}</button>
+            <button type="button" className="btn ghost" onClick={onBack} disabled={saving}>{t('payment.back')}</button>
+            <button type="button" className="btn" disabled={!ready || saving} onClick={confirm}>{saving ? t('payment.workingButton') : btnLabel}</button>
           </div>
         </div>
       )}

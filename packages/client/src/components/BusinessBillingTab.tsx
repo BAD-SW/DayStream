@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { Button } from '../design-system/components/actions/Button';
 import { CurrencyInput } from './CurrencyInput';
 import { PaymentMethods } from './PaymentMethods';
 import { formatCurrency } from '../utils/currency';
+import { formatDate } from '../utils/format';
 import * as payApi from '../api/payments';
 import type { BusinessCredit } from '../api/payments';
 
@@ -23,9 +25,12 @@ interface Props {
   currency: string;
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Month numbers 1-12, shown as short month names in the language shown.
+const MONTH_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const monthName = (m: number) => formatDate(new Date(Date.UTC(2000, m - 1, 15)), { month: 'short', timeZone: 'UTC' });
 
 export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
+  const { t } = useTranslation('tenant');
   const [credits, setCredits] = useState<BusinessCredit[]>([]);
   const [creditBalance, setCreditBalance] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -79,7 +84,7 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
         setPlanStartDate(p.plan_start_date ? String(p.plan_start_date).slice(0, 10) : '');
       }
     } catch {
-      setMsg({ ok: false, text: 'Failed to load billing information.' });
+      setMsg({ ok: false, text: t('billing.loadFailed') });
     } finally { setLoading(false); }
   }, [businessId]);
 
@@ -99,26 +104,26 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
         billingDay: parseInt(billingDay, 10) || 1,
         planStartDate: planStartDate || undefined,
       });
-      setMsg({ ok: true, text: 'Billing plan saved.' });
+      setMsg({ ok: true, text: t('billing.planSaved') });
       await load();
     } catch (err: any) {
-      setMsg({ ok: false, text: err?.response?.data?.error || 'Failed to save plan.' });
+      setMsg({ ok: false, text: err?.response?.data?.error || t('billing.planSaveFailed') });
     } finally { setSavingPlan(false); }
   }
 
   async function handleIssueCredit() {
     if (creditAmount <= 0 || !creditReason.trim()) {
-      setMsg({ ok: false, text: 'Enter a credit amount and reason.' });
+      setMsg({ ok: false, text: t('billing.creditNeeded') });
       return;
     }
     setIssuingCredit(true); setMsg(null);
     try {
       await payApi.issueBusinessCredit(businessId, creditAmount, creditReason.trim());
       setCreditAmount(0); setCreditReason('');
-      setMsg({ ok: true, text: 'Credit issued.' });
+      setMsg({ ok: true, text: t('billing.creditIssued') });
       await load();
     } catch (err: any) {
-      setMsg({ ok: false, text: err?.response?.data?.error || 'Failed to issue credit.' });
+      setMsg({ ok: false, text: err?.response?.data?.error || t('billing.creditFailed') });
     } finally { setIssuingCredit(false); }
   }
 
@@ -126,19 +131,19 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
     setCharging(true); setMsg(null);
     try {
       const r = await payApi.chargeBusinessNow(businessId, chargeYear, chargeMonth, currency);
-      const label = r.status === 'settled' ? 'settled'
-        : r.status === 'pending' ? 'pending (bank settlement in progress)'
-        : r.status === 'zero' ? 'recorded as zero'
-        : `failed: ${r.failureReason ?? ''}`;
-      setMsg({ ok: r.status !== 'failed', text: `Charge ${r.referenceNumber} ${label}.` });
+      const label = r.status === 'settled' ? t('billing.chargeSettled', { ref: r.referenceNumber })
+        : r.status === 'pending' ? t('billing.chargePending', { ref: r.referenceNumber })
+        : r.status === 'zero' ? t('billing.chargeZero', { ref: r.referenceNumber })
+        : t('billing.chargeFailed', { ref: r.referenceNumber, reason: r.failureReason ?? '' });
+      setMsg({ ok: r.status !== 'failed', text: label });
       await load();
     } catch (err: any) {
       const code = err?.response?.data?.code;
-      setMsg({ ok: false, text: code === 'NO_PLAN' ? 'Configure a billing plan first.' : (err?.response?.data?.error || 'Charge failed.') });
+      setMsg({ ok: false, text: code === 'NO_PLAN' ? t('billing.noPlan') : (err?.response?.data?.error || t('billing.chargeFailedGeneric')) });
     } finally { setCharging(false); }
   }
 
-  if (loading) return <p style={styles.muted}>Loading billing…</p>;
+  if (loading) return <p style={styles.muted}>{t('billing.loading')}</p>;
 
   return (
     <div style={styles.wrap}>
@@ -149,14 +154,14 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
       <div style={styles.grid}>
         {/* ---- Plan editor ---- */}
         <section style={styles.card}>
-          <h4 style={styles.cardTitle}>Billing Plan</h4>
-          <p style={styles.help}>What this tenant charges the business each cycle. Flat and/or a percentage of net collections.</p>
+          <h4 style={styles.cardTitle}>{t('billing.planTitle')}</h4>
+          <p style={styles.help}>{t('billing.planHelp')}</p>
 
           <div style={styles.row2}>
-            <Field label="Flat amount / cycle">
+            <Field label={t('billing.flatAmount')}>
               <CurrencyInput style={styles.input} value={flat} onChange={setFlat} />
             </Field>
-            <Field label="Percentage of net collections (%)">
+            <Field label={t('billing.percentage')}>
               <input style={styles.input} value={pct} onChange={(e) => setPct(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" />
             </Field>
           </div>
@@ -164,17 +169,17 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
           <div style={styles.capRow}>
             <label style={styles.checkLabel}>
               <input type="checkbox" checked={capEnabled} onChange={(e) => setCapEnabled(e.target.checked)} />
-              Per-cycle cap
+              {t('billing.cap')}
             </label>
             {capEnabled && (
               <div style={styles.row2}>
-                <Field label="Cap amount">
+                <Field label={t('billing.capAmount')}>
                   <CurrencyInput style={styles.input} value={capAmount} onChange={setCapAmount} />
                 </Field>
-                <Field label="Cap applies to">
+                <Field label={t('billing.capAppliesTo')}>
                   <select style={styles.input} value={capAppliesTo} onChange={(e) => setCapAppliesTo(e.target.value as any)}>
-                    <option value="combined">Flat + percentage</option>
-                    <option value="percentage">Percentage only</option>
+                    <option value="combined">{t('billing.capCombined')}</option>
+                    <option value="percentage">{t('billing.capPercentageOnly')}</option>
                   </select>
                 </Field>
               </div>
@@ -182,29 +187,29 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
           </div>
 
           <div style={styles.row3}>
-            <Field label="Intro period (months)">
+            <Field label={t('billing.introMonths')}>
               <input style={styles.input} value={introMonths} onChange={(e) => setIntroMonths(e.target.value.replace(/\D/g, ''))} inputMode="numeric" />
             </Field>
-            <Field label="Intro flat / cycle">
+            <Field label={t('billing.introFlat')}>
               <CurrencyInput style={styles.input} value={introFlat} onChange={setIntroFlat} />
             </Field>
-            <Field label="Intro % rate">
+            <Field label={t('billing.introRate')}>
               <input style={styles.input} value={introPct} onChange={(e) => setIntroPct(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" />
             </Field>
           </div>
 
           <div style={styles.row2}>
-            <Field label="Billing day (of month)">
+            <Field label={t('billing.billingDay')}>
               <input style={styles.input} value={billingDay} onChange={(e) => setBillingDay(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" />
             </Field>
-            <Field label="Plan start date">
+            <Field label={t('billing.planStart')}>
               <input style={styles.input} type="date" value={planStartDate} onChange={(e) => setPlanStartDate(e.target.value)} />
             </Field>
           </div>
-          <p style={styles.help}>The intro period counts from the plan start date. Defaults to today if left blank.</p>
+          <p style={styles.help}>{t('billing.introHelp')}</p>
 
           <div style={styles.actions}>
-            <Button variant="primary" size="sm" loading={savingPlan} onClick={handleSavePlan}>Save plan</Button>
+            <Button variant="primary" size="sm" loading={savingPlan} onClick={handleSavePlan}>{t('billing.savePlan')}</Button>
           </div>
         </section>
 
@@ -213,7 +218,7 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
           <PaymentMethods
             owner={{ owner_level: 'business', business_id: businessId, ...(tenantId ? { tenant_id: tenantId } : {}) }}
             allowedTypes={['card', 'bank_draw']}
-            title="Payment Methods on File (charged for tenant billing)"
+            title={t('billing.paymentMethodsTitle')}
           />
         </section>
       </div>
@@ -221,50 +226,50 @@ export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
       {/* ---- Charge now + credits ---- */}
       <div style={styles.grid}>
         <section style={styles.card}>
-          <h4 style={styles.cardTitle}>Charge now</h4>
-          <p style={styles.help}>Manually bill a cycle (billed in arrears). Idempotent — re-running a settled cycle won't double-charge.</p>
+          <h4 style={styles.cardTitle}>{t('billing.chargeNowTitle')}</h4>
+          <p style={styles.help}>{t('billing.chargeNowHelp')}</p>
           <div style={styles.row2}>
-            <Field label="Year">
+            <Field label={t('billing.year')}>
               <input style={styles.input} value={chargeYear} onChange={(e) => setChargeYear(parseInt(e.target.value.replace(/\D/g, '') || '0', 10))} inputMode="numeric" />
             </Field>
-            <Field label="Month">
+            <Field label={t('billing.month')}>
               <select style={styles.input} value={chargeMonth} onChange={(e) => setChargeMonth(parseInt(e.target.value, 10))}>
-                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                {MONTH_NUMBERS.map((m) => <option key={m} value={m}>{monthName(m)}</option>)}
               </select>
             </Field>
           </div>
           <div style={styles.actions}>
-            <Button variant="outline" size="sm" loading={charging} onClick={handleChargeNow}>Charge this cycle</Button>
+            <Button variant="outline" size="sm" loading={charging} onClick={handleChargeNow}>{t('billing.chargeCycle')}</Button>
           </div>
         </section>
 
         <section style={styles.card}>
-          <h4 style={styles.cardTitle}>Credits</h4>
-          <p style={styles.help}>Carry-forward balance: <strong>{formatCurrency(creditBalance, currency)}</strong></p>
+          <h4 style={styles.cardTitle}>{t('billing.creditsTitle')}</h4>
+          <p style={styles.help}><Trans t={t} i18nKey="billing.carryForward" values={{ amount: formatCurrency(creditBalance, currency) }} components={[<strong key="s" />]} /></p>
           <div style={styles.row2}>
-            <Field label="Amount">
+            <Field label={t('billing.amount')}>
               <CurrencyInput style={styles.input} value={creditAmount} onChange={setCreditAmount} />
             </Field>
-            <Field label="Reason">
-              <input style={styles.input} value={creditReason} onChange={(e) => setCreditReason(e.target.value)} placeholder="e.g. service outage" />
+            <Field label={t('billing.reason')}>
+              <input style={styles.input} value={creditReason} onChange={(e) => setCreditReason(e.target.value)} placeholder={t('billing.reasonPlaceholder')} />
             </Field>
           </div>
           <div style={styles.actions}>
-            <Button variant="outline" size="sm" loading={issuingCredit} onClick={handleIssueCredit}>Issue credit</Button>
+            <Button variant="outline" size="sm" loading={issuingCredit} onClick={handleIssueCredit}>{t('billing.issueCredit')}</Button>
           </div>
           {(() => {
             const active = credits.filter((c) => c.remaining_cents > 0);
             if (active.length === 0) {
-              return <p style={styles.help}>No credits with a remaining balance.</p>;
+              return <p style={styles.help}>{t('billing.noCredits')}</p>;
             }
             return (
               <>
-                <p style={styles.help}>{active.length} credit{active.length === 1 ? '' : 's'} with a remaining balance</p>
+                <p style={styles.help}>{t('billing.creditsRemaining', { count: active.length })}</p>
                 <ul style={styles.scrollList}>
                   {active.map((c) => (
                     <li key={c.id} style={styles.listItem}>
-                      <span>{formatCurrency(c.amount_cents, currency)} — {c.reason}</span>
-                      <span style={styles.help}>{formatCurrency(c.remaining_cents, currency)} left</span>
+                      <span>{t('billing.creditLine', { amount: formatCurrency(c.amount_cents, currency), reason: c.reason })}</span>
+                      <span style={styles.help}>{t('billing.creditLeft', { amount: formatCurrency(c.remaining_cents, currency) })}</span>
                     </li>
                   ))}
                 </ul>
