@@ -1,0 +1,37 @@
+.login-backdrop {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  z-index: var(--z-base);
+}
+
+.login-backdrop__word {
+  position: absolute;
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translate(0, -50%) rotate(var(--login-word-rotate));
+  animation-name: login-word-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes login-word-drift {
+  from {
+    transform: translate(0, -50%) rotate(var(--login-word-rotate));
+  }
+  to {
+    transform: translate(var(--login-word-dx), calc(-50% + var(--login-word-dy))) rotate(var(--login-word-turn));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-backdrop__word {
+    animation: none;
+  }
+}

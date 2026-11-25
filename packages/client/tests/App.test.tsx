@@ -20,7 +20,7 @@ function renderApp(route = '/login') {
 describe('App', () => {
   it('renders login page by default', () => {
     renderApp('/login');
-    expect(screen.getByText('DayStream')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'DayStream' })).toBeInTheDocument();
     expect(screen.getByText('Sign in to your account')).toBeInTheDocument();
   });
 

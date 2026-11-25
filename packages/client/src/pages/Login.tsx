@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { PublicLanguageBar } from '../components/PublicLanguageBar';
+import { LoginBackdrop } from '../components/LoginBackdrop';
 
 export function Login() {
   const { t } = useTranslation('auth');
@@ -37,6 +38,7 @@ export function Login() {
 
   return (
     <div style={styles.container}>
+      <LoginBackdrop />
       <PublicLanguageBar />
       <div style={styles.card}>
         <h1 style={styles.title}>{tc('app_name')}</h1>
@@ -107,12 +109,18 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative' as const,
   },
   card: {
-    backgroundColor: 'var(--color-surface)',
+    // The light theme's surface is partly see-through; laid over the solid page colour it looks the
+    // same but hides the wordmarks behind the panel.
+    backgroundColor: 'var(--color-background)',
+    backgroundImage: 'linear-gradient(var(--color-surface), var(--color-surface))',
     borderRadius: '12px',
     padding: '48px 40px',
     width: '100%',
     maxWidth: '400px',
     border: '1px solid var(--color-border)',
+    // Above the scattered wordmarks behind it.
+    position: 'relative' as const,
+    zIndex: 1,
   },
   title: {
     color: 'var(--color-text)',
